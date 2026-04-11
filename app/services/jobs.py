@@ -104,6 +104,7 @@ def create_job_note(
     subject: str,
     notes: str,
     occurred_at: datetime | None = None,
+    follow_up_at: datetime | None = None,
 ) -> Communication:
     event = Communication(
         job_id=job.id,
@@ -111,6 +112,7 @@ def create_job_note(
         event_type="note",
         direction="internal",
         occurred_at=occurred_at or datetime.now(UTC),
+        follow_up_at=follow_up_at,
         subject=subject.strip(),
         notes=notes.strip(),
     )

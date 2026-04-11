@@ -21,6 +21,7 @@ class Communication(IdMixin, TimestampMixin, Base):
     event_type: Mapped[str] = mapped_column(String(100), default="note", index=True, nullable=False)
     direction: Mapped[str | None] = mapped_column(String(50), nullable=True)
     occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
     subject: Mapped[str | None] = mapped_column(String(300), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -28,4 +29,3 @@ class Communication(IdMixin, TimestampMixin, Base):
     application = relationship("Application", back_populates="communications")
     interview_event = relationship("InterviewEvent", back_populates="communications")
     owner = relationship("User", back_populates="communications")
-

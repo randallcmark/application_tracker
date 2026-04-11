@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from alembic import command
@@ -29,7 +30,8 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
     run_migrations(database_url)
 
     engine = create_engine(database_url)
-    tables = set(inspect(engine).get_table_names())
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
 
     assert {
         "alembic_version",
@@ -42,6 +44,9 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
         "jobs",
         "users",
     }.issubset(tables)
+
+    communication_columns = {column["name"] for column in inspector.get_columns("communications")}
+    assert "follow_up_at" in communication_columns
 
 
 def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) -> None:
@@ -89,6 +94,7 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
             owner_user_id=user.id,
             event_type="note",
             notes="Initial recruiter screen scheduled.",
+            follow_up_at=datetime(2026, 4, 12, 9, 0),
         )
         artefact = Artefact(
             owner_user_id=user.id,
@@ -109,4 +115,5 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         assert stored_job.applications[0].channel == "company_site"
         assert stored_job.interviews[0].stage == "screen"
         assert stored_job.communications[0].event_type == "note"
+        assert stored_job.communications[0].follow_up_at is not None
         assert stored_job.artefacts[0].storage_key == "jobs/example/resume.pdf"

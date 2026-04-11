@@ -32,6 +32,10 @@ anonymous users are sent to `/login`.
   - `rejected`
 - Shows how long each job has been in its current stage.
 - Flags stale cards using conservative stage thresholds.
+- Shows follow-up indicators from timeline notes with follow-up dates:
+  - `Follow-up due today`
+  - `Follow-up overdue`
+  - `Follow-up YYYY-MM-DD`
 - Provides previous/next buttons and a status dropdown on each card.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
 - Supports dragging cards within and across columns.

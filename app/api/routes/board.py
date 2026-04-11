@@ -90,6 +90,34 @@ def _stage_age(job: Job) -> str:
     return f'<p class="stage-age{stale_class}">In stage: {age_days} {label}{stale_text}</p>'
 
 
+def _next_follow_up(job: Job) -> datetime | None:
+    follow_ups = []
+    for event in job.communications:
+        if event.follow_up_at is None:
+            continue
+        follow_up_at = event.follow_up_at
+        if follow_up_at.tzinfo is None:
+            follow_up_at = follow_up_at.replace(tzinfo=UTC)
+        follow_ups.append(follow_up_at)
+    return min(follow_ups) if follow_ups else None
+
+
+def _follow_up_indicator(job: Job) -> str:
+    follow_up_at = _next_follow_up(job)
+    if follow_up_at is None:
+        return ""
+    if follow_up_at.tzinfo is None:
+        follow_up_at = follow_up_at.replace(tzinfo=UTC)
+
+    today = datetime.now(UTC).date()
+    follow_up_date = follow_up_at.date()
+    if follow_up_date < today:
+        return '<p class="follow-up overdue">Follow-up overdue</p>'
+    if follow_up_date == today:
+        return '<p class="follow-up due-today">Follow-up due today</p>'
+    return f'<p class="follow-up">Follow-up {escape(follow_up_date.isoformat())}</p>'
+
+
 def _workflow_nav(current_workflow: str) -> str:
     links = []
     for workflow, label in WORKFLOW_LABELS.items():
@@ -118,6 +146,7 @@ def _job_card(job: Job) -> str:
         {company}
         {location}
         {_stage_age(job)}
+        {_follow_up_indicator(job)}
       </div>
       <div class="card-meta">
         <span>Position {job.board_position}</span>
@@ -331,6 +360,18 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
     .stage-age.stale {{
       color: var(--warn);
       font-weight: 700;
+    }}
+
+    .follow-up {{
+      color: var(--accent-strong);
+      font-size: 0.88rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }}
+
+    .follow-up.overdue,
+    .follow-up.due-today {{
+      color: var(--warn);
     }}
 
     .card-meta {{

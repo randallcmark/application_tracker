@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
 from typing import Annotated
@@ -67,11 +67,17 @@ def _field(label: str, value: object) -> str:
 
 def _timeline_event(event: Communication) -> str:
     occurred_at = event.occurred_at or event.created_at
+    follow_up = (
+        f'<p class="follow-up">Follow-up: {escape(_value(event.follow_up_at))}</p>'
+        if event.follow_up_at
+        else ""
+    )
     notes = f"<p>{escape(event.notes)}</p>" if event.notes else ""
     return f"""
     <li>
       <time>{escape(_value(occurred_at))}</time>
       <strong>{escape(event.subject or event.event_type)}</strong>
+      {follow_up}
       {notes}
     </li>
     """
@@ -94,6 +100,10 @@ def _note_form(job: Job) -> str:
       <label>
         Note
         <textarea name="notes" rows="5" required></textarea>
+      </label>
+      <label>
+        Follow-up date
+        <input name="follow_up_at" type="date">
       </label>
       <button type="submit">Add note</button>
     </form>
@@ -330,6 +340,20 @@ def _parse_decimal(value: str, *, field_name: str) -> Decimal | None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{field_name} must be a valid number",
         ) from exc
+
+
+def _parse_follow_up_date(value: str) -> datetime | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        parsed = date.fromisoformat(cleaned)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Follow-up date must be a valid date",
+        ) from exc
+    return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
 
 
 def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
@@ -895,6 +919,7 @@ def create_job_note_form(
     current_user: Annotated[User, Depends(get_current_user)],
     subject: Annotated[str, Form()] = "Note",
     notes: Annotated[str, Form()] = "",
+    follow_up_at: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     note_text = notes.strip()
     if not note_text:
@@ -906,6 +931,7 @@ def create_job_note_form(
         job,
         subject=subject.strip() or "Note",
         notes=note_text,
+        follow_up_at=_parse_follow_up_date(follow_up_at),
     )
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)

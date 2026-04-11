@@ -367,7 +367,7 @@ Tasks:
 - Add stage-aging indicators:
   - Days in current stage. Done on board cards.
   - Stale cards. Done on board cards with conservative thresholds.
-  - Follow-up due.
+  - Follow-up due. Done from timeline note follow-up dates.
 - Add filters:
   - owner/user.
   - source.

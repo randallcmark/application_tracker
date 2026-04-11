@@ -378,18 +378,24 @@ def test_create_job_timeline_note_adds_owned_note(tmp_path: Path, monkeypatch) -
 
         response = client.post(
             f"/api/jobs/{job_uuid}/timeline",
-            json={"subject": "Recruiter call", "notes": "Follow up next week."},
+            json={
+                "subject": "Recruiter call",
+                "notes": "Follow up next week.",
+                "follow_up_at": "2026-04-12T09:00:00Z",
+            },
         )
 
         assert response.status_code == 201
         assert response.json()["event_type"] == "note"
         assert response.json()["subject"] == "Recruiter call"
         assert response.json()["notes"] == "Follow up next week."
+        assert response.json()["follow_up_at"] == "2026-04-12T09:00:00"
 
         timeline_response = client.get(f"/api/jobs/{job_uuid}/timeline")
 
         assert timeline_response.status_code == 200
         assert timeline_response.json()[0]["event_type"] == "note"
+        assert timeline_response.json()[0]["follow_up_at"] == "2026-04-12T09:00:00"
     finally:
         app.dependency_overrides.clear()
 

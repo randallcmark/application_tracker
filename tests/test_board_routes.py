@@ -184,6 +184,67 @@ def test_board_shows_stage_age_and_stale_indicator(tmp_path: Path, monkeypatch) 
         app.dependency_overrides.clear()
 
 
+def test_board_shows_follow_up_indicators(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            overdue_job = Job(owner_user_id=user.id, title="Overdue follow-up", status="applied")
+            today_job = Job(owner_user_id=user.id, title="Today follow-up", status="interviewing")
+            future_job = Job(owner_user_id=user.id, title="Future follow-up", status="preparing")
+            db.add_all([overdue_job, today_job, future_job])
+            db.flush()
+            now = datetime.now(UTC)
+            db.add_all(
+                [
+                    Communication(
+                        job_id=overdue_job.id,
+                        owner_user_id=user.id,
+                        event_type="note",
+                        direction="internal",
+                        subject="Follow up",
+                        notes="Chase recruiter.",
+                        follow_up_at=now - timedelta(days=1),
+                    ),
+                    Communication(
+                        job_id=today_job.id,
+                        owner_user_id=user.id,
+                        event_type="note",
+                        direction="internal",
+                        subject="Follow up",
+                        notes="Check interview details.",
+                        follow_up_at=now,
+                    ),
+                    Communication(
+                        job_id=future_job.id,
+                        owner_user_id=user.id,
+                        event_type="note",
+                        direction="internal",
+                        subject="Follow up",
+                        notes="Review later.",
+                        follow_up_at=now + timedelta(days=2),
+                    ),
+                ]
+            )
+            db.commit()
+
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "jobseeker@example.com", "password": "password"},
+        )
+        assert login_response.status_code == 200
+
+        response = client.get("/board")
+
+        assert response.status_code == 200
+        assert "Follow-up overdue" in response.text
+        assert "Follow-up due today" in response.text
+        assert f"Follow-up {(datetime.now(UTC) + timedelta(days=2)).date().isoformat()}" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_root_redirects_logged_in_user_to_board(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:

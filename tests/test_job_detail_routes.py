@@ -176,7 +176,11 @@ def test_job_detail_note_form_adds_note_and_redirects(tmp_path: Path, monkeypatc
 
         response = client.post(
             f"/jobs/{job_uuid}/notes",
-            data={"subject": "Prep", "notes": "Update resume bullets."},
+            data={
+                "subject": "Prep",
+                "notes": "Update resume bullets.",
+                "follow_up_at": "2026-04-12",
+            },
             follow_redirects=False,
         )
 
@@ -188,6 +192,13 @@ def test_job_detail_note_form_adds_note_and_redirects(tmp_path: Path, monkeypatc
         assert detail_response.status_code == 200
         assert "Prep" in detail_response.text
         assert "Update resume bullets." in detail_response.text
+        assert "Follow-up: 2026-04-12 00:00" in detail_response.text
+
+        with session_local() as db:
+            event = db.scalar(select(Communication).where(Communication.subject == "Prep"))
+
+            assert event is not None
+            assert event.follow_up_at is not None
     finally:
         app.dependency_overrides.clear()
 

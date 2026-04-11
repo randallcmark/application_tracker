@@ -22,7 +22,7 @@ http://127.0.0.1:8000/jobs/new
 - Shows the captured description.
 - Creates manual jobs from the browser.
 - Shows the job timeline, including `stage_change` events recorded from board movement.
-- Adds notes to the timeline.
+- Adds notes to the timeline, with an optional follow-up date.
 - Uploads, lists, and downloads job-level artefacts.
 - Marks a job applied and creates or updates the application record.
 - Schedules interviews and shows scheduled interview records.
@@ -59,7 +59,7 @@ http://127.0.0.1:8000/board
 
 7. Upload a resume or cover letter artefact and confirm it appears in Artefacts with a download link.
 
-8. Add a note and confirm it appears in the timeline.
+8. Add a note with a follow-up date and confirm it appears in the timeline.
 
 9. Use Mark Applied and confirm the page shows an application record and a timeline event.
 

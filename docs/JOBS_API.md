@@ -96,11 +96,16 @@ curl -s \
   -X POST \
   -b cookies.txt \
   -H "Content-Type: application/json" \
-  -d '{"subject":"Recruiter call","notes":"Follow up next week."}' \
+  -d '{
+    "subject":"Recruiter call",
+    "notes":"Follow up next week.",
+    "follow_up_at":"2026-04-12T09:00:00Z"
+  }' \
   http://127.0.0.1:8000/api/jobs/job-uuid/timeline
 ```
 
-Notes are stored as `note` events in the same timeline.
+Notes are stored as `note` events in the same timeline. `follow_up_at` is optional. When set, the
+board can show follow-up due, overdue, and future follow-up indicators on the job card.
 
 ## Upload Job Artefact
 

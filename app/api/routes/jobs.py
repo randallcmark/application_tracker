@@ -84,6 +84,7 @@ class JobTimelineEventResponse(BaseModel):
     event_type: str
     direction: str | None
     occurred_at: datetime | None
+    follow_up_at: datetime | None
     subject: str | None
     notes: str | None
 
@@ -92,6 +93,7 @@ class JobTimelineCreateRequest(BaseModel):
     subject: str = Field(default="Note", max_length=300)
     notes: str
     occurred_at: datetime | None = None
+    follow_up_at: datetime | None = None
 
 
 class MarkAppliedRequest(BaseModel):
@@ -302,6 +304,7 @@ def create_job_timeline_event(
         subject=subject,
         notes=notes,
         occurred_at=payload.occurred_at,
+        follow_up_at=payload.follow_up_at,
     )
     db.commit()
     return event
