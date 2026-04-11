@@ -253,11 +253,11 @@ Status: Done
 
 ### Slice 4: API Tokens
 
-Status: Planned
+Status: Done
 
-- Add API token creation/revocation.
-- Add bearer-token auth dependency.
-- Add `capture:jobs` scope.
+- Add API token creation/revocation. Done.
+- Add bearer-token auth dependency. Done.
+- Add `capture:jobs` scope. Done.
 
 ### Slice 5: Generic OIDC
 

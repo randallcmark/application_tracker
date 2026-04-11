@@ -4,6 +4,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import DbSession, get_current_user, issue_csrf_token
+from app.auth.api_tokens import create_user_api_token, decode_scopes, revoke_user_api_token
 from app.auth.csrf import clear_csrf_cookie
 from app.auth.passwords import verify_password
 from app.auth.sessions import create_user_session, revoke_session
@@ -28,6 +29,18 @@ class UserResponse(BaseModel):
 
 class CsrfResponse(BaseModel):
     csrf_token: str
+
+
+class ApiTokenCreateRequest(BaseModel):
+    name: str
+    scopes: list[str] | None = None
+
+
+class ApiTokenCreateResponse(BaseModel):
+    uuid: str
+    name: str
+    scopes: list[str]
+    token: str
 
 
 def user_response(user: User) -> UserResponse:
@@ -96,3 +109,44 @@ def me(current_user: Annotated[User, Depends(get_current_user)]) -> UserResponse
 @router.get("/csrf", response_model=CsrfResponse)
 def csrf(response: Response) -> CsrfResponse:
     return CsrfResponse(csrf_token=issue_csrf_token(response))
+
+
+@router.post("/api-tokens", response_model=ApiTokenCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_api_token(
+    payload: ApiTokenCreateRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiTokenCreateResponse:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token name is required")
+
+    try:
+        raw_token, api_token = create_user_api_token(
+            db,
+            current_user,
+            name=name,
+            scopes=payload.scopes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    db.commit()
+    return ApiTokenCreateResponse(
+        uuid=api_token.uuid,
+        name=api_token.name,
+        scopes=decode_scopes(api_token.scopes),
+        token=raw_token,
+    )
+
+
+@router.delete("/api-tokens/{token_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_api_token(
+    token_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    if not revoke_user_api_token(db, current_user, token_uuid):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API token not found")
+
+    db.commit()
