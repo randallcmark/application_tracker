@@ -15,6 +15,26 @@ Last planning update: 2026-04-11
 
 ---
 
+## Current Checkpoint
+
+As of 2026-04-11, the Stage 3 board workflow is browser-tested through:
+
+- Login/logout.
+- Manual job creation from `/jobs/new`.
+- Board workflow views for prospects, in progress, outcomes, all active, and archived jobs.
+- Drag/drop and button/dropdown stage movement.
+- Job detail notes, status-change timeline, mark applied, schedule interview, archive, and unarchive.
+- Job-level artefact upload/download.
+- Stage-aging, stale-card, and follow-up due indicators on board cards.
+
+Known next product focus:
+
+- Board filter controls for company, source, remote policy, keywords, and date added.
+- UI polish for the board and job detail page now that the core workflow is usable.
+- Future job detail overlay/modal instead of full navigation away from the board.
+
+---
+
 ## 1. Product Context
 
 Application Tracker began as a personal ATS used during an active job search. The MVP proved the core workflow but was paused after the original user found work. The intended next version is broader:
