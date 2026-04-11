@@ -361,7 +361,7 @@ Tasks:
   - Mark applied. Done on job detail pages and jobs API.
   - Schedule interview.
   - Upload artefact.
-  - Archive.
+  - Archive. Done on job detail pages and jobs API.
 - Add stage-aging indicators:
   - Days in current stage.
   - Stale cards.

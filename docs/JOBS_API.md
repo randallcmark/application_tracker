@@ -89,6 +89,20 @@ curl -s \
 This creates or updates the job's application record, moves the job to `applied`, and records
 timeline events. Repeating the request reuses the existing application record.
 
+## Archive Job
+
+```bash
+curl -s \
+  -X POST \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"notes":"Role closed before applying."}' \
+  http://127.0.0.1:8000/api/jobs/job-uuid/archive
+```
+
+This moves the job to `archived`, sets `archived_at`, and records a status-change event. If
+`notes` is provided, it also creates an `Archived` note in the timeline.
+
 ## Update Board State
 
 Use this endpoint for kanban stage changes and card ordering:

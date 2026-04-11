@@ -13,7 +13,12 @@ from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.applications import mark_job_applied
-from app.services.jobs import create_job_note, get_user_job_by_uuid, record_job_status_change, update_job_board_state
+from app.services.jobs import (
+    create_job_note,
+    get_user_job_by_uuid,
+    record_job_status_change,
+    update_job_board_state,
+)
 
 router = APIRouter(tags=["job-detail"])
 
@@ -91,6 +96,20 @@ def _mark_applied_form(job: Job) -> str:
         <textarea name="notes" rows="4" placeholder="Resume version, referral, confirmation number"></textarea>
       </label>
       <button type="submit">Mark applied</button>
+    </form>
+    """
+
+
+def _archive_form(job: Job) -> str:
+    disabled = " disabled" if job.status == "archived" else ""
+    button_label = "Archived" if job.status == "archived" else "Archive"
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/archive">
+      <label>
+        Archive note
+        <textarea name="notes" rows="3" placeholder="Why this job is being archived"></textarea>
+      </label>
+      <button type="submit"{disabled}>{button_label}</button>
     </form>
     """
 
@@ -386,6 +405,10 @@ def render_job_detail(job: Job) -> str:
           {_mark_applied_form(job)}
         </section>
         <section>
+          <h2>Archive</h2>
+          {_archive_form(job)}
+        </section>
+        <section>
           <h2>Add Note</h2>
           {_note_form(job)}
         </section>
@@ -451,5 +474,27 @@ def mark_job_applied_form(
     )
     update_job_board_state(job, status="applied")
     record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/archive", include_in_schema=False)
+def archive_job_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    notes: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    update_job_board_state(job, status="archived")
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    if notes.strip():
+        create_job_note(
+            db,
+            job,
+            subject="Archived",
+            notes=notes.strip(),
+        )
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)

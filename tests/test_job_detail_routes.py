@@ -73,6 +73,7 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "Open apply link" in response.text
         assert '<form class="note-form"' in response.text
         assert '<form class="quick-action-form"' in response.text
+        assert f'action="/jobs/{job_uuid}/archive"' in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
     finally:
@@ -150,6 +151,47 @@ def test_job_detail_mark_applied_form_creates_application_and_redirects(
         assert detail_response.status_code == 200
         assert "Submitted through ATS." in detail_response.text
         assert "Marked applied" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_archive_form_archives_job_and_redirects(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Archive target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/archive",
+            data={"notes": "No longer relevant."},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.status == "archived"
+            assert job.archived_at is not None
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+
+        assert detail_response.status_code == 200
+        assert "Archived" in detail_response.text
+        assert "No longer relevant." in detail_response.text
     finally:
         app.dependency_overrides.clear()
 

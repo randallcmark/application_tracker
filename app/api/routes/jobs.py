@@ -79,6 +79,10 @@ class MarkAppliedRequest(BaseModel):
     applied_at: datetime | None = None
 
 
+class ArchiveJobRequest(BaseModel):
+    notes: str | None = None
+
+
 class ApplicationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -236,3 +240,25 @@ def mark_job_applied_route(
         response.status_code = status.HTTP_200_OK
     application.created = created
     return application
+
+
+@router.post("/{job_uuid}/archive", response_model=JobResponse)
+def archive_job_route(
+    job_uuid: str,
+    payload: ArchiveJobRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Job:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    update_job_board_state(job, status="archived")
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    if payload.notes and payload.notes.strip():
+        create_job_note(
+            db,
+            job,
+            subject="Archived",
+            notes=payload.notes.strip(),
+        )
+    db.commit()
+    return job
