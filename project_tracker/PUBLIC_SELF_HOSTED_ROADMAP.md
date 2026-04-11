@@ -414,10 +414,10 @@ Current repo context:
 
 Tasks:
 
-- Define a stable capture API:
-  - `POST /api/capture/jobs`
-  - Bearer token auth.
-  - Idempotency/dedupe by canonical URL.
+- Define a stable capture API. In progress:
+  - `POST /api/capture/jobs`. Done.
+  - Bearer token auth. Done.
+  - Idempotency/dedupe by canonical URL. Started with owner-scoped `source_url` dedupe.
 - Accept payload fields:
   - source URL.
   - apply URL.

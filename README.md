@@ -25,6 +25,10 @@ The detailed staged roadmap lives in:
 - `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
 - `ROADMAP.md`
 
+API token and browser capture examples live in:
+
+- `docs/API_TOKENS_AND_CAPTURE.md`
+
 ## Current State
 
 This clean repo currently contains the minimal application skeleton:

@@ -201,6 +201,8 @@ Rules:
 - tokens belong to a user;
 - captured jobs inherit that user as owner.
 
+Endpoint usage examples live in `docs/API_TOKENS_AND_CAPTURE.md`.
+
 ---
 
 ## 4. Production Guardrails
