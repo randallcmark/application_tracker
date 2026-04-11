@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     session_secret_key: str = DEVELOPMENT_SESSION_SECRET
     session_cookie_name: str = "ats_session"
     session_expire_days: int = 14
+    csrf_cookie_name: str = "ats_csrf"
+    csrf_expire_seconds: int = 2 * 60 * 60
     public_base_url: AnyHttpUrl = "http://localhost:8000"
     trusted_proxy_auth: bool = False
     database_url: str = "sqlite:///./data/app.db"

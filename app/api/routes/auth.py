@@ -3,7 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr
 
-from app.api.deps import DbSession, get_current_user
+from app.api.deps import DbSession, get_current_user, issue_csrf_token
+from app.auth.csrf import clear_csrf_cookie
 from app.auth.passwords import verify_password
 from app.auth.sessions import create_user_session, revoke_session
 from app.auth.users import get_user_by_email
@@ -23,6 +24,10 @@ class UserResponse(BaseModel):
     email: EmailStr
     display_name: str | None
     is_admin: bool
+
+
+class CsrfResponse(BaseModel):
+    csrf_token: str
 
 
 def user_response(user: User) -> UserResponse:
@@ -80,8 +85,14 @@ def logout(
         db.commit()
 
     response.delete_cookie(settings.session_cookie_name, path="/")
+    clear_csrf_cookie(response)
 
 
 @router.get("/me", response_model=UserResponse)
 def me(current_user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
     return user_response(current_user)
+
+
+@router.get("/csrf", response_model=CsrfResponse)
+def csrf(response: Response) -> CsrfResponse:
+    return CsrfResponse(csrf_token=issue_csrf_token(response))

@@ -245,11 +245,11 @@ Status: Done
 
 ### Slice 3: CSRF And Ownership
 
-Status: Planned
+Status: Done
 
-- Add CSRF tokens for server-rendered forms.
-- Add centralized ownership helpers.
-- Add cross-user access tests.
+- Add CSRF tokens for server-rendered forms. Done.
+- Add centralized ownership helpers. Done.
+- Add cross-user access tests. Done.
 
 ### Slice 4: API Tokens
 
