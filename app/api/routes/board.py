@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from app.api.deps import DbSession, get_current_user
 from app.db.models.job import Job
 from app.db.models.user import User
-from app.services.jobs import BOARD_STATUSES, JOB_STATUSES, list_user_jobs
+from app.services.jobs import BOARD_STATUSES, list_user_jobs
 
 router = APIRouter(tags=["board"])
 
@@ -50,9 +50,9 @@ STALE_AFTER_DAYS = {
 }
 
 
-def _status_options(current_status: str) -> str:
+def _status_options(current_status: str, statuses: Iterable[str]) -> str:
     options = []
-    for job_status in JOB_STATUSES:
+    for job_status in statuses:
         label = BOARD_LABELS.get(job_status, job_status.title())
         selected = " selected" if job_status == current_status else ""
         options.append(f'<option value="{escape(job_status)}"{selected}>{escape(label)}</option>')
@@ -119,17 +119,23 @@ def _follow_up_indicator(job: Job) -> str:
 
 
 def _workflow_nav(current_workflow: str) -> str:
-    links = []
+    options = []
     for workflow, label in WORKFLOW_LABELS.items():
-        current = ' aria-current="page"' if workflow == current_workflow else ""
-        links.append(
-            f'<a class="workflow-link" href="/board?workflow={escape(workflow, quote=True)}"{current}>'
-            f"{escape(label)}</a>"
+        selected = " selected" if workflow == current_workflow else ""
+        options.append(
+            f'<option value="{escape(workflow, quote=True)}"{selected}>{escape(label)}</option>'
         )
-    return "\n".join(links)
+    return f"""
+    <label>
+      Workflow
+      <select class="workflow-select" aria-label="Workflow view">
+        {"".join(options)}
+      </select>
+    </label>
+    """
 
 
-def _job_card(job: Job) -> str:
+def _job_card(job: Job, statuses: Iterable[str]) -> str:
     company = f"<p>{escape(job.company)}</p>" if job.company else ""
     location = f"<p>{escape(job.location)}</p>" if job.location else ""
     source_link = ""
@@ -153,18 +159,19 @@ def _job_card(job: Job) -> str:
         {source_link}
       </div>
       <div class="card-actions">
-        <button type="button" data-move="previous">Previous</button>
-        <select aria-label="Status for {escape(job.title, quote=True)}">
-          {_status_options(job.status)}
-        </select>
-        <button type="button" data-move="next">Next</button>
+        <label>
+          Move to column
+          <select class="job-status-select" aria-label="Move {escape(job.title, quote=True)} to column">
+            {_status_options(job.status, statuses)}
+          </select>
+        </label>
       </div>
     </article>
     """
 
 
-def _column(status: str, jobs: Iterable[Job]) -> str:
-    cards = "\n".join(_job_card(job) for job in jobs)
+def _column(status: str, jobs: Iterable[Job], statuses: Iterable[str]) -> str:
+    cards = "\n".join(_job_card(job, statuses) for job in jobs)
     empty = '<p class="empty">No jobs in this stage.</p>' if not cards else ""
     label = BOARD_LABELS[status]
     return f"""
@@ -187,7 +194,7 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
         if job.status in jobs_by_status:
             jobs_by_status[job.status].append(job)
 
-    columns = "\n".join(_column(status, jobs_by_status[status]) for status in statuses)
+    columns = "\n".join(_column(status, jobs_by_status[status], statuses) for status in statuses)
     status_list = ",".join(statuses)
     column_count = len(statuses)
     workflow_label = WORKFLOW_LABELS[workflow]
@@ -265,26 +272,12 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
     }}
 
     .workflow-nav {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
       margin: 0 auto 18px;
       max-width: 1440px;
     }}
 
-    .workflow-link {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      color: var(--accent-strong);
-      font-weight: 700;
-      padding: 8px 10px;
-      text-decoration: none;
-    }}
-
-    .workflow-link[aria-current="page"] {{
-      background: var(--accent);
-      color: #ffffff;
+    .workflow-nav label {{
+      max-width: 260px;
     }}
 
     .board {{
@@ -398,8 +391,22 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       grid-template-columns: 1fr;
     }}
 
-    button,
     select {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      min-height: 38px;
+      width: 100%;
+    }}
+
+    label {{
+      display: grid;
+      font-size: 0.88rem;
+      font-weight: 700;
+      gap: 6px;
+    }}
+
+    button {{
       border: 1px solid var(--line);
       border-radius: 8px;
       font: inherit;
@@ -517,52 +524,30 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       }}
     }}
 
-    function nextStatus(current, direction) {{
-      const index = statuses.indexOf(current);
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= statuses.length) {{
-        return current;
-      }}
-      return statuses[nextIndex];
-    }}
-
-    document.addEventListener("click", async (event) => {{
-      const button = event.target.closest("button[data-move]");
-      if (!button) {{
-        return;
-      }}
-
-      const card = button.closest(".job-card");
-      const column = card.closest(".board-column");
-      const direction = button.dataset.move === "next" ? 1 : -1;
-      const status = nextStatus(column.dataset.status, direction);
-      if (status === column.dataset.status) {{
-        return;
-      }}
-
-      button.disabled = true;
-      notice.textContent = "";
-      try {{
-        await updateJob(card, status);
-        window.location.reload();
-      }} catch (error) {{
-        notice.textContent = error.message;
-        button.disabled = false;
-      }}
-    }});
-
     document.addEventListener("change", async (event) => {{
-      if (event.target.tagName !== "SELECT") {{
+      if (event.target.classList.contains("workflow-select")) {{
+        window.location.href = `/board?workflow=${{event.target.value}}`;
+        return;
+      }}
+
+      if (!event.target.classList.contains("job-status-select")) {{
         return;
       }}
 
       const card = event.target.closest(".job-card");
+      const column = card.closest(".board-column");
+      if (event.target.value === column.dataset.status) {{
+        return;
+      }}
+
+      event.target.disabled = true;
       notice.textContent = "";
       try {{
         await updateJob(card, event.target.value);
         window.location.reload();
       }} catch (error) {{
         notice.textContent = error.message;
+        event.target.disabled = false;
       }}
     }});
 

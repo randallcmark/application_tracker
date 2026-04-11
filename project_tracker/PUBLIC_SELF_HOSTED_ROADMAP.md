@@ -21,8 +21,8 @@ As of 2026-04-11, the Stage 3 board workflow is browser-tested through:
 
 - Login/logout.
 - Manual job creation from `/jobs/new`.
-- Board workflow views for prospects, in progress, outcomes, all active, and archived jobs.
-- Drag/drop and button/dropdown stage movement.
+- Board workflow dropdown views for prospects, in progress, outcomes, all active, and archived jobs.
+- Drag/drop and `Move to column` dropdown stage movement.
 - Job detail notes, status-change timeline, mark applied, schedule interview, archive, and unarchive.
 - Job-level artefact upload/download.
 - Stage-aging, stale-card, and follow-up due indicators on board cards.
@@ -31,6 +31,10 @@ Known next product focus:
 
 - Board filter controls for company, source, remote policy, keywords, and date added.
 - UI polish for the board and job detail page now that the core workflow is usable.
+- Prospects may become a row-list triage view rather than kanban cards, with quick action to mark
+  interesting jobs for a focused interested/progression workflow.
+- Job detail editing is needed; currently captured/manual fields can be viewed but not corrected
+  after creation.
 - Future job detail overlay/modal instead of full navigation away from the board.
 
 ---

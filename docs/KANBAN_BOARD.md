@@ -20,6 +20,7 @@ anonymous users are sent to `/login`.
   - `/board?workflow=all` for all active board statuses.
   - `/board?workflow=archived` for archived jobs.
 - Hides `archived` jobs from active workflow views.
+- Uses a compact workflow dropdown rather than large workflow buttons.
 - Links to the manual add-job form at `/jobs/new`.
 - Links each card title to a job detail page at `/jobs/{job_uuid}`.
 - Groups cards into the selected workflow stages:
@@ -36,13 +37,13 @@ anonymous users are sent to `/login`.
   - `Follow-up due today`
   - `Follow-up overdue`
   - `Follow-up YYYY-MM-DD`
-- Provides previous/next buttons and a status dropdown on each card.
+- Provides a `Move to column` dropdown on each card.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
 - Supports dragging cards within and across columns.
 - Persists drag-and-drop ordering with `PATCH /api/jobs/board`.
 - Records status changes in each job's timeline.
 
-The buttons and dropdown remain available as the keyboard-friendly fallback.
+The card dropdown remains available as the keyboard-friendly fallback to drag-and-drop.
 
 ## Browser Test
 
@@ -75,7 +76,7 @@ http://127.0.0.1:8000/login
 
 9. Confirm each card shows `In stage: X days`, and stale cards include `stale`.
 
-10. Drag the card to another stage, or use the card controls.
+10. Drag the card to another stage, or use the `Move to column` dropdown.
 
 11. Refresh the page and confirm the job remains in the new stage.
 

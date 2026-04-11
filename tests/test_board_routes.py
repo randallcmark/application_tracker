@@ -75,6 +75,10 @@ def test_board_defaults_to_in_progress_workflow(tmp_path: Path, monkeypatch) -> 
         assert 'data-status="interviewing"' in response.text
         assert 'data-status="saved"' not in response.text
         assert 'draggable="true"' in response.text
+        assert 'class="workflow-select"' in response.text
+        assert 'class="job-status-select"' in response.text
+        assert 'data-move="previous"' not in response.text
+        assert 'data-move="next"' not in response.text
         assert "/jobs/" in response.text
         assert 'fetch("/api/jobs/board"' in response.text
     finally:
@@ -112,6 +116,7 @@ def test_board_prospects_workflow_shows_discovery_stages(tmp_path: Path, monkeyp
         assert 'data-status="saved"' in response.text
         assert 'data-status="interested"' in response.text
         assert 'data-status="applied"' not in response.text
+        assert 'option value="applied"' not in response.text
     finally:
         app.dependency_overrides.clear()
 
