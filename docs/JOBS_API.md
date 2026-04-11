@@ -51,6 +51,17 @@ curl -s \
 
 Jobs are owner-scoped. Another user's job returns `404`.
 
+## Get Job Timeline
+
+```bash
+curl -s \
+  -b cookies.txt \
+  http://127.0.0.1:8000/api/jobs/job-uuid/timeline
+```
+
+Status changes are recorded as `stage_change` events. Timeline entries are owner-scoped with
+the job.
+
 ## Update Board State
 
 Use this endpoint for kanban stage changes and card ordering:
@@ -65,7 +76,7 @@ curl -s \
 ```
 
 Moving a job to `archived` sets `archived_at`. Moving it back to another status clears
-`archived_at`.
+`archived_at`. Changing status also creates a `stage_change` timeline event.
 
 ## Update Full Board Order
 
@@ -92,3 +103,4 @@ curl -s \
 ```
 
 The array order in each column becomes the stored `board_position`.
+Jobs moved between columns create `stage_change` timeline events.

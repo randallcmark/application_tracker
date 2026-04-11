@@ -373,7 +373,7 @@ Tasks:
   - role keywords.
   - date added.
   - archived visibility.
-- Add timeline event creation for stage changes.
+- Add timeline event creation for stage changes. Done for job `stage_change` events.
 - Normalize status naming across application and job stages.
 
 Implementation notes:

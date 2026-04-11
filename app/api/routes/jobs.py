@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
+from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.jobs import (
@@ -14,6 +15,7 @@ from app.services.jobs import (
     BoardOrderValidationError,
     get_user_job_by_uuid,
     list_user_jobs,
+    record_job_status_change,
     update_job_board_state,
     update_user_board_order,
 )
@@ -49,6 +51,17 @@ class JobBoardUpdateRequest(BaseModel):
 
 class JobBoardOrderRequest(BaseModel):
     columns: dict[str, list[str]]
+
+
+class JobTimelineEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: str
+    event_type: str
+    direction: str | None
+    occurred_at: datetime | None
+    subject: str | None
+    notes: str | None
 
 
 def _validate_status(job_status: str | None) -> None:
@@ -100,6 +113,19 @@ def get_job(
     return require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
 
 
+@router.get("/{job_uuid}/timeline", response_model=list[JobTimelineEventResponse])
+def get_job_timeline(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[Communication]:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    return sorted(
+        job.communications,
+        key=lambda event: event.occurred_at or event.created_at,
+    )
+
+
 @router.patch("/{job_uuid}/board", response_model=JobResponse)
 def update_job_board(
     job_uuid: str,
@@ -115,10 +141,13 @@ def update_job_board(
 
     _validate_status(payload.status)
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
     update_job_board_state(
         job,
         status=payload.status,
         board_position=payload.board_position,
     )
+    if payload.status is not None:
+        record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
     return job

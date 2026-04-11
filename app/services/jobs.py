@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.db.models.user import User
 
@@ -72,6 +73,30 @@ def update_job_board_state(
     return job
 
 
+def record_job_status_change(
+    db: Session,
+    job: Job,
+    *,
+    old_status: str,
+    new_status: str,
+) -> Communication | None:
+    if old_status == new_status:
+        return None
+
+    event = Communication(
+        job_id=job.id,
+        owner_user_id=job.owner_user_id,
+        event_type="stage_change",
+        direction="internal",
+        occurred_at=datetime.now(UTC),
+        subject=f"Status changed from {old_status} to {new_status}",
+        notes=f"Job status changed from {old_status} to {new_status}.",
+    )
+    db.add(event)
+    db.flush()
+    return event
+
+
 class BoardOrderValidationError(ValueError):
     pass
 
@@ -110,7 +135,9 @@ def update_user_board_order(
     for job_status, job_uuids in columns.items():
         for position, job_uuid in enumerate(job_uuids):
             job = jobs_by_uuid[job_uuid]
+            old_status = job.status
             update_job_board_state(job, status=job_status, board_position=position)
+            record_job_status_change(db, job, old_status=old_status, new_status=job.status)
             updated_jobs.append(job)
 
     db.flush()

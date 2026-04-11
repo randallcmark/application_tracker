@@ -25,6 +25,7 @@ anonymous users are sent to `/login`.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
 - Supports dragging cards within and across columns.
 - Persists drag-and-drop ordering with `PATCH /api/jobs/board`.
+- Records status changes in each job's timeline.
 
 The buttons and dropdown remain available as the keyboard-friendly fallback.
 

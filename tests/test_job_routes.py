@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth.users import create_local_user
+from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.main import app
 from tests.test_local_auth_routes import build_client
@@ -116,6 +117,17 @@ def test_update_job_board_persists_status_and_position(tmp_path: Path, monkeypat
             assert job.status == "interviewing"
             assert job.board_position == 4
             assert job.archived_at is None
+
+            event = db.scalar(
+                select(Communication).where(
+                    Communication.job_id == job.id,
+                    Communication.event_type == "stage_change",
+                )
+            )
+            assert event is not None
+            assert event.owner_user_id == job.owner_user_id
+            assert event.subject == "Status changed from saved to interviewing"
+            assert event.notes == "Job status changed from saved to interviewing."
     finally:
         app.dependency_overrides.clear()
 
@@ -150,6 +162,27 @@ def test_update_job_board_rejects_unknown_status(tmp_path: Path, monkeypatch) ->
 
         assert response.status_code == 400
         assert "Unsupported job status" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_job_board_position_only_does_not_create_stage_event(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(f"/api/jobs/{job_uuid}/board", json={"board_position": 9})
+
+        assert response.status_code == 200
+
+        with session_local() as db:
+            events = db.scalars(select(Communication)).all()
+
+            assert events == []
     finally:
         app.dependency_overrides.clear()
 
@@ -190,6 +223,14 @@ def test_bulk_board_update_persists_statuses_and_positions(tmp_path: Path, monke
             assert saved_job.board_position == 0
             assert applied_job.status == "saved"
             assert applied_job.board_position == 0
+
+            events = db.scalars(
+                select(Communication).order_by(Communication.subject)
+            ).all()
+            assert [event.subject for event in events] == [
+                "Status changed from applied to saved",
+                "Status changed from saved to applied",
+            ]
     finally:
         app.dependency_overrides.clear()
 
@@ -245,5 +286,39 @@ def test_bulk_board_update_rejects_duplicate_job_uuid(tmp_path: Path, monkeypatc
 
         assert response.status_code == 400
         assert response.json()["detail"] == "A job can appear only once in a board update"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_timeline_lists_stage_change_events(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+        update_response = client.patch(
+            f"/api/jobs/{job_uuid}/board",
+            json={"status": "interviewing"},
+        )
+        assert update_response.status_code == 200
+
+        response = client.get(f"/api/jobs/{job_uuid}/timeline")
+
+        assert response.status_code == 200
+        assert response.json()[0]["event_type"] == "stage_change"
+        assert response.json()[0]["subject"] == "Status changed from saved to interviewing"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_timeline_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        other_job_uuid = create_user_with_jobs(session_local, email="other@example.com")[0]
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/api/jobs/{other_job_uuid}/timeline")
+
+        assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
