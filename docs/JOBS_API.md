@@ -1,0 +1,68 @@
+# Jobs API
+
+The jobs API is the owner-scoped read and board-update surface for the kanban workflow.
+
+All routes require a logged-in browser session cookie.
+
+## List Jobs
+
+```bash
+curl -s \
+  -b cookies.txt \
+  http://127.0.0.1:8000/api/jobs
+```
+
+Archived jobs are hidden by default. Include them with:
+
+```bash
+curl -s \
+  -b cookies.txt \
+  "http://127.0.0.1:8000/api/jobs?include_archived=true"
+```
+
+Filter by status:
+
+```bash
+curl -s \
+  -b cookies.txt \
+  "http://127.0.0.1:8000/api/jobs?status=applied"
+```
+
+Supported statuses:
+
+```text
+saved
+interested
+preparing
+applied
+interviewing
+offer
+rejected
+archived
+```
+
+## Get One Job
+
+```bash
+curl -s \
+  -b cookies.txt \
+  http://127.0.0.1:8000/api/jobs/job-uuid
+```
+
+Jobs are owner-scoped. Another user's job returns `404`.
+
+## Update Board State
+
+Use this endpoint for kanban stage changes and card ordering:
+
+```bash
+curl -s \
+  -X PATCH \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"status":"interviewing","board_position":4}' \
+  http://127.0.0.1:8000/api/jobs/job-uuid/board
+```
+
+Moving a job to `archived` sets `archived_at`. Moving it back to another status clears
+`archived_at`.

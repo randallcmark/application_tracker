@@ -29,6 +29,10 @@ API token and browser capture examples live in:
 
 - `docs/API_TOKENS_AND_CAPTURE.md`
 
+Jobs API examples live in:
+
+- `docs/JOBS_API.md`
+
 ## Current State
 
 This clean repo currently contains the minimal application skeleton:

@@ -19,6 +19,7 @@ venv/
 
 # Runtime data
 data/
+cookies.txt
 *.db
 *.sqlite
 *.sqlite3
@@ -33,4 +34,3 @@ artefacts/
 # Build outputs
 dist/
 build/
-
