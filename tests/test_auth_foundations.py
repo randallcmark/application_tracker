@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.auth.passwords import hash_password, verify_password
 from app.auth.tokens import create_api_token, create_session_token, hash_secret, verify_secret
 from app.core.config import DEVELOPMENT_SESSION_SECRET, Settings
@@ -108,3 +110,18 @@ def test_auth_session_model_persists_hashed_session(tmp_path, monkeypatch) -> No
         assert stored is not None
         assert stored.user.email == "jobseeker@example.com"
         assert verify_secret(raw_session_token, stored.session_hash)
+
+
+def test_require_admin_accepts_admin_user() -> None:
+    user = User(email="admin@example.com", is_admin=True)
+
+    assert require_admin(user) is user
+
+
+def test_require_admin_rejects_non_admin_user() -> None:
+    user = User(email="user@example.com", is_admin=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        require_admin(user)
+
+    assert exc_info.value.status_code == 403

@@ -14,5 +14,8 @@ check: lint test
 migrate:
 	.venv/bin/alembic upgrade head
 
+create-admin:
+	$(PYTHON) -m app.cli users create-admin --email "$$EMAIL"
+
 run:
 	$(UVICORN) app.main:app --reload

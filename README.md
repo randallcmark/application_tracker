@@ -73,6 +73,12 @@ Apply database migrations:
 make migrate
 ```
 
+Create the first local admin user:
+
+```bash
+EMAIL=you@example.com make create-admin
+```
+
 ## Docker
 
 Build and run locally:

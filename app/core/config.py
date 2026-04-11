@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     auth_mode: Literal["local", "oidc", "mixed", "proxy", "none"] = "local"
     session_secret_key: str = DEVELOPMENT_SESSION_SECRET
+    session_cookie_name: str = "ats_session"
+    session_expire_days: int = 14
     public_base_url: AnyHttpUrl = "http://localhost:8000"
     trusted_proxy_auth: bool = False
     database_url: str = "sqlite:///./data/app.db"
@@ -43,6 +45,10 @@ class Settings(BaseSettings):
             raise ValueError("TRUSTED_PROXY_AUTH=true is required when AUTH_MODE=proxy")
 
         return self
+
+    @property
+    def session_cookie_secure(self) -> bool:
+        return self.app_env == "production"
 
 
 @lru_cache
