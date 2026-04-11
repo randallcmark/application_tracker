@@ -353,6 +353,7 @@ Tasks:
 - Add owner-scoped jobs API for board reads and updates. Done.
 - Add first server-rendered board view. Done.
 - Add job detail pages with timeline visibility. Done.
+- Add browser manual job creation. Done from `/jobs/new`.
 - Implement drag-and-drop stage changes. Done.
 - Persist card order within each column. Done with `PATCH /api/jobs/board`.
 - Add optimistic UI updates with clear failure rollback.
@@ -360,7 +361,7 @@ Tasks:
   - Add note. Done on job detail pages and timeline API.
   - Mark applied. Done on job detail pages and jobs API.
   - Schedule interview. Done on job detail pages and jobs API.
-  - Upload artefact.
+  - Upload artefact. Done for job-level artefacts on job detail pages and jobs API.
   - Archive. Done on job detail pages and jobs API.
   - Unarchive. Done on job detail pages and jobs API.
 - Add stage-aging indicators:

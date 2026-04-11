@@ -13,6 +13,7 @@ anonymous users are sent to `/login`.
 
 - Shows owner-scoped jobs only.
 - Hides `archived` jobs.
+- Links to the manual add-job form at `/jobs/new`.
 - Links each card title to a job detail page at `/jobs/{job_uuid}`.
 - Groups cards into the current workflow stages:
   - `saved`
@@ -50,15 +51,17 @@ http://127.0.0.1:8000/login
 
 4. Sign in with the user credentials.
 
-5. Confirm the captured job appears in `Saved`.
+5. Use Add job and confirm the created job appears in the selected board stage.
 
-6. Open the card title and confirm the detail page shows the job fields and timeline.
+6. Confirm the captured job appears in `Saved`.
 
-7. Return to the board.
+7. Open the card title and confirm the detail page shows the job fields and timeline.
 
-8. Drag the card to another stage, or use the card controls.
+8. Return to the board.
 
-9. Refresh the page and confirm the job remains in the new stage.
+9. Drag the card to another stage, or use the card controls.
+
+10. Refresh the page and confirm the job remains in the new stage.
 
 ## Terminal Check
 

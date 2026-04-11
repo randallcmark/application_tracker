@@ -1,19 +1,23 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from html import escape
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
 from app.db.models.application import Application
+from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.applications import mark_job_applied
+from app.services.artefacts import get_user_job_artefact_by_uuid, store_job_artefact
 from app.services.interviews import schedule_interview
 from app.services.jobs import (
     BOARD_STATUSES,
@@ -22,6 +26,7 @@ from app.services.jobs import (
     record_job_status_change,
     update_job_board_state,
 )
+from app.storage.provider import get_storage_provider
 
 router = APIRouter(tags=["job-detail"])
 
@@ -41,6 +46,14 @@ def _link(label: str, url: str | None) -> str:
         return '<span class="muted">Not set</span>'
     escaped_url = escape(url, quote=True)
     return f'<a href="{escaped_url}" target="_blank" rel="noreferrer">{escape(label)}</a>'
+
+
+def _status_options(current_status: str = "saved") -> str:
+    return "\n".join(
+        f'<option value="{escape(job_status, quote=True)}"'
+        f'{" selected" if job_status == current_status else ""}>{escape(job_status.title())}</option>'
+        for job_status in BOARD_STATUSES
+    )
 
 
 def _field(label: str, value: object) -> str:
@@ -83,6 +96,66 @@ def _note_form(job: Job) -> str:
         <textarea name="notes" rows="5" required></textarea>
       </label>
       <button type="submit">Add note</button>
+    </form>
+    """
+
+
+def _new_job_form() -> str:
+    return f"""
+    <form class="job-form" method="post" action="/jobs/new">
+      <label>
+        Title
+        <input name="title" maxlength="300" required>
+      </label>
+      <label>
+        Company
+        <input name="company" maxlength="300">
+      </label>
+      <label>
+        Status
+        <select name="job_status">
+          {_status_options()}
+        </select>
+      </label>
+      <label>
+        Source URL
+        <input name="source_url" type="url" maxlength="2048">
+      </label>
+      <label>
+        Apply URL
+        <input name="apply_url" type="url" maxlength="2048">
+      </label>
+      <label>
+        Location
+        <input name="location" maxlength="300">
+      </label>
+      <label>
+        Remote policy
+        <input name="remote_policy" maxlength="50" placeholder="remote, hybrid, onsite">
+      </label>
+      <div class="inline-fields">
+        <label>
+          Salary min
+          <input name="salary_min">
+        </label>
+        <label>
+          Salary max
+          <input name="salary_max">
+        </label>
+        <label>
+          Currency
+          <input name="salary_currency" maxlength="3" placeholder="GBP">
+        </label>
+      </div>
+      <label>
+        Description
+        <textarea name="description_raw" rows="8"></textarea>
+      </label>
+      <label>
+        Initial note
+        <textarea name="initial_note" rows="4" placeholder="Why this is worth tracking"></textarea>
+      </label>
+      <button type="submit">Create job</button>
     </form>
     """
 
@@ -170,6 +243,22 @@ def _schedule_interview_form(job: Job) -> str:
     """
 
 
+def _artefact_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" enctype="multipart/form-data" action="/jobs/{escape(job.uuid, quote=True)}/artefacts">
+      <label>
+        Kind
+        <input name="kind" value="resume" maxlength="100">
+      </label>
+      <label>
+        File
+        <input name="file" type="file" required>
+      </label>
+      <button type="submit">Upload artefact</button>
+    </form>
+    """
+
+
 def _application(application: Application) -> str:
     return f"""
     <li>
@@ -205,6 +294,193 @@ def _interviews(interviews: list[InterviewEvent]) -> str:
         return '<p class="empty">No interviews scheduled yet.</p>'
     items = "\n".join(_interview(interview) for interview in interviews)
     return f"<ol>{items}</ol>"
+
+
+def _artefact(artefact: Artefact) -> str:
+    size = f"{artefact.size_bytes} bytes" if artefact.size_bytes is not None else "Size not set"
+    return f"""
+    <li>
+      <strong>{escape(artefact.filename)}</strong>
+      <p>{escape(artefact.kind)} · {escape(size)}</p>
+      <p><a href="/jobs/{escape(artefact.job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}">Download</a></p>
+    </li>
+    """
+
+
+def _artefacts(artefacts: list[Artefact]) -> str:
+    if not artefacts:
+        return '<p class="empty">No artefacts uploaded yet.</p>'
+    items = "\n".join(_artefact(artefact) for artefact in artefacts)
+    return f"<ol>{items}</ol>"
+
+
+def _clean_optional(value: str) -> str | None:
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _parse_decimal(value: str, *, field_name: str) -> Decimal | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} must be a valid number",
+        ) from exc
+
+
+def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
+    return (
+        db.scalar(
+            select(func.max(Job.board_position)).where(
+                Job.owner_user_id == user.id,
+                Job.status == job_status,
+            )
+        )
+        or -1
+    ) + 1
+
+
+def render_new_job() -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Job - Application Tracker</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --page: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1d1f24;
+      --muted: #626b76;
+      --line: #d7dce2;
+      --accent: #147a5c;
+      --accent-strong: #0f5d47;
+    }}
+
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      background: var(--page);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+    }}
+
+    main {{
+      margin: 0 auto;
+      max-width: 840px;
+      min-height: 100vh;
+      padding: 24px;
+    }}
+
+    .topbar {{
+      align-items: center;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }}
+
+    h1, p {{
+      margin: 0;
+    }}
+
+    h1 {{
+      font-size: 2rem;
+      line-height: 1.1;
+    }}
+
+    a {{
+      color: var(--accent-strong);
+      font-weight: 700;
+    }}
+
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }}
+
+    .job-form {{
+      display: grid;
+      gap: 14px;
+    }}
+
+    .inline-fields {{
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }}
+
+    label {{
+      display: grid;
+      font-weight: 700;
+      gap: 6px;
+    }}
+
+    input,
+    select,
+    textarea {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      padding: 8px 10px;
+      width: 100%;
+    }}
+
+    textarea {{
+      resize: vertical;
+    }}
+
+    button {{
+      background: var(--accent);
+      border: 0;
+      border-radius: 8px;
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      min-height: 38px;
+      padding: 0 14px;
+    }}
+
+    button:hover {{
+      background: var(--accent-strong);
+    }}
+
+    @media (max-width: 720px) {{
+      main {{
+        padding: 16px;
+      }}
+
+      .topbar,
+      .inline-fields {{
+        display: grid;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <h1>Add job</h1>
+      <a href="/board">Board</a>
+    </header>
+    <section>
+      {_new_job_form()}
+    </section>
+  </main>
+</body>
+</html>"""
 
 
 def render_job_detail(job: Job) -> str:
@@ -329,6 +605,7 @@ def render_job_detail(job: Job) -> str:
     }}
 
     .note-form,
+    .job-form,
     .quick-action-form {{
       display: grid;
       gap: 12px;
@@ -477,6 +754,14 @@ def render_job_detail(job: Job) -> str:
           {_applications(job.applications)}
         </section>
         <section>
+          <h2>Artefacts</h2>
+          {_artefacts(job.artefacts)}
+        </section>
+        <section>
+          <h2>Upload Artefact</h2>
+          {_artefact_form(job)}
+        </section>
+        <section>
           <h2>Interviews</h2>
           {_interviews(job.interviews)}
         </section>
@@ -511,6 +796,67 @@ def render_job_detail(job: Job) -> str:
 </html>"""
 
 
+@router.get("/jobs/new", response_class=HTMLResponse)
+def new_job(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> HTMLResponse:
+    _ = current_user
+    return HTMLResponse(render_new_job())
+
+
+@router.post("/jobs/new", include_in_schema=False)
+def create_job_form(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    title: Annotated[str, Form()] = "",
+    company: Annotated[str, Form()] = "",
+    job_status: Annotated[str, Form()] = "saved",
+    source_url: Annotated[str, Form()] = "",
+    apply_url: Annotated[str, Form()] = "",
+    location: Annotated[str, Form()] = "",
+    remote_policy: Annotated[str, Form()] = "",
+    salary_min: Annotated[str, Form()] = "",
+    salary_max: Annotated[str, Form()] = "",
+    salary_currency: Annotated[str, Form()] = "",
+    description_raw: Annotated[str, Form()] = "",
+    initial_note: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job_title = title.strip()
+    if not job_title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job title is required")
+
+    target_status = job_status.strip() or "saved"
+    if target_status not in BOARD_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New job status must be an active board status",
+        )
+
+    job = Job(
+        owner_user_id=current_user.id,
+        title=job_title,
+        company=_clean_optional(company),
+        status=target_status,
+        board_position=_next_board_position(db, current_user, target_status),
+        source="manual",
+        source_url=_clean_optional(source_url),
+        apply_url=_clean_optional(apply_url),
+        location=_clean_optional(location),
+        remote_policy=_clean_optional(remote_policy),
+        salary_min=_parse_decimal(salary_min, field_name="Salary min"),
+        salary_max=_parse_decimal(salary_max, field_name="Salary max"),
+        salary_currency=_clean_optional(salary_currency),
+        description_raw=_clean_optional(description_raw),
+        description_clean=_clean_optional(description_raw),
+    )
+    db.add(job)
+    db.flush()
+    if initial_note.strip():
+        create_job_note(db, job, subject="Created manually", notes=initial_note.strip())
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/jobs/{job_uuid}", response_class=HTMLResponse)
 def job_detail(
     job_uuid: str,
@@ -519,6 +865,27 @@ def job_detail(
 ) -> HTMLResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     return HTMLResponse(render_job_detail(job))
+
+
+@router.get("/jobs/{job_uuid}/artefacts/{artefact_uuid}", include_in_schema=False)
+def download_job_artefact(
+    job_uuid: str,
+    artefact_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
+    if artefact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    content = get_storage_provider().load(artefact.storage_key)
+    filename = quote(artefact.filename)
+    return Response(
+        content=content,
+        media_type=artefact.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.post("/jobs/{job_uuid}/notes", include_in_schema=False)
@@ -621,6 +988,36 @@ def archive_job_form(
             subject="Archived",
             notes=notes.strip(),
         )
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/artefacts", include_in_schema=False)
+def upload_job_artefact_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    kind: Annotated[str, Form()] = "other",
+    file: UploadFile = File(...),
+) -> RedirectResponse:
+    filename = file.filename or ""
+    if not filename.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required")
+
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    artefact = store_job_artefact(
+        db,
+        job,
+        kind=kind,
+        filename=filename,
+        content=content,
+        content_type=file.content_type,
+    )
+    create_job_note(db, job, subject="Artefact uploaded", notes=f"Uploaded {artefact.filename}.")
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
 

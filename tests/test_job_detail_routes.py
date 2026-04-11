@@ -4,7 +4,9 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth.users import create_local_user
+from app.core.config import settings
 from app.db.models.application import Application
+from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -76,8 +78,85 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert '<form class="quick-action-form"' in response.text
         assert f'action="/jobs/{job_uuid}/interviews"' in response.text
         assert f'action="/jobs/{job_uuid}/archive"' in response.text
+        assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_new_job_form_creates_job_and_redirects(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        login(client, "jobseeker@example.com")
+
+        form_response = client.get("/jobs/new")
+
+        assert form_response.status_code == 200
+        assert '<form class="job-form" method="post" action="/jobs/new">' in form_response.text
+
+        response = client.post(
+            "/jobs/new",
+            data={
+                "title": "Manual UI role",
+                "company": "Manual UI Co",
+                "job_status": "preparing",
+                "source_url": "https://jobs.example.com/ui",
+                "apply_url": "https://jobs.example.com/ui/apply",
+                "location": "Remote",
+                "remote_policy": "remote",
+                "salary_min": "90000",
+                "salary_max": "110000",
+                "salary_currency": "GBP",
+                "description_raw": "Own the UI.",
+                "initial_note": "Good fit.",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.title == "Manual UI role"))
+
+            assert job is not None
+            assert response.headers["location"] == f"/jobs/{job.uuid}"
+            assert job.status == "preparing"
+            assert job.board_position == 0
+            assert job.source == "manual"
+            assert job.salary_min == 90000
+            assert job.communications[0].subject == "Created manually"
+
+        detail_response = client.get(response.headers["location"])
+
+        assert detail_response.status_code == 200
+        assert "Manual UI role" in detail_response.text
+        assert "Own the UI." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_new_job_form_rejects_bad_status(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            "/jobs/new",
+            data={"title": "Bad status role", "job_status": "archived"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "New job status must be an active board status"
     finally:
         app.dependency_overrides.clear()
 
@@ -194,6 +273,92 @@ def test_job_detail_archive_form_archives_job_and_redirects(
         assert detail_response.status_code == 200
         assert "Archived" in detail_response.text
         assert "No longer relevant." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_upload_artefact_form_stores_and_downloads_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "local_storage_path", str(tmp_path / "artefacts"))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Artefact target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/artefacts",
+            data={"kind": "cover_letter"},
+            files={"file": ("cover-letter.txt", b"letter bytes", "text/plain")},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            artefact = db.scalar(select(Artefact))
+
+            assert artefact is not None
+            assert artefact.filename == "cover-letter.txt"
+            assert artefact.kind == "cover_letter"
+            artefact_uuid = artefact.uuid
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+
+        assert detail_response.status_code == 200
+        assert "cover-letter.txt" in detail_response.text
+        assert "Artefact uploaded" in detail_response.text
+
+        download_response = client.get(f"/jobs/{job_uuid}/artefacts/{artefact_uuid}")
+
+        assert download_response.status_code == 200
+        assert download_response.content == b"letter bytes"
+        assert download_response.headers["content-type"] == "text/plain; charset=utf-8"
+        assert "cover-letter.txt" in download_response.headers["content-disposition"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_download_hides_cross_user_artefact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_storage_path", str(tmp_path / "artefacts"))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            other = create_local_user(db, email="other@example.com", password="password")
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            other_job = Job(owner_user_id=other.id, title="Private file role", status="saved")
+            user_job = Job(owner_user_id=user.id, title="Visible role", status="saved")
+            db.add_all([other_job, user_job])
+            db.flush()
+            artefact = Artefact(
+                owner_user_id=other.id,
+                job_id=other_job.id,
+                kind="resume",
+                filename="private.txt",
+                content_type="text/plain",
+                storage_key="jobs/private/private.txt",
+                size_bytes=7,
+            )
+            db.add(artefact)
+            db.commit()
+            other_job_uuid = other_job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{other_job_uuid}/artefacts/{artefact_uuid}")
+
+        assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
 

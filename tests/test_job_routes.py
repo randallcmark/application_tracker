@@ -3,7 +3,9 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth.users import create_local_user
+from app.core.config import settings
 from app.db.models.application import Application
+from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -79,6 +81,62 @@ def test_list_jobs_can_include_archived_jobs(tmp_path: Path, monkeypatch) -> Non
         assert response.status_code == 200
         titles = {job["title"] for job in response.json()}
         assert titles == {"Saved role", "Applied role", "Archived role"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_job_adds_manual_job_for_current_user(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            "/api/jobs",
+            json={
+                "title": "Manual role",
+                "company": "Manual Co",
+                "status": "interested",
+                "source_url": "https://jobs.example.com/manual",
+                "apply_url": "https://jobs.example.com/manual/apply",
+                "location": "Remote",
+                "remote_policy": "remote",
+                "salary_min": "100000",
+                "salary_max": "120000",
+                "salary_currency": "GBP",
+                "description_raw": "Build useful systems.",
+                "initial_note": "Worth tracking.",
+            },
+        )
+
+        assert response.status_code == 201
+        assert response.json()["title"] == "Manual role"
+        assert response.json()["status"] == "interested"
+        assert response.json()["board_position"] == 0
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == response.json()["uuid"]))
+
+            assert job is not None
+            assert job.owner.email == "jobseeker@example.com"
+            assert job.source == "manual"
+            assert job.company == "Manual Co"
+            assert job.description_raw == "Build useful systems."
+            assert job.communications[0].subject == "Created manually"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_job_rejects_archived_status(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.post("/api/jobs", json={"title": "Old role", "status": "archived"})
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "New job status must be an active board status"
     finally:
         app.dependency_overrides.clear()
 
@@ -363,6 +421,57 @@ def test_create_job_timeline_note_hides_cross_user_job(tmp_path: Path, monkeypat
         response = client.post(
             f"/api/jobs/{other_job_uuid}/timeline",
             json={"subject": "Nope", "notes": "Cannot see this."},
+        )
+
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_upload_job_artefact_stores_file_and_journals_note(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_storage_path", str(tmp_path / "artefacts"))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/api/jobs/{job_uuid}/artefacts",
+            data={"kind": "resume"},
+            files={"file": ("../Resume Final.pdf", b"resume bytes", "application/pdf")},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["kind"] == "resume"
+        assert response.json()["filename"] == "Resume Final.pdf"
+        assert response.json()["size_bytes"] == len(b"resume bytes")
+
+        with session_local() as db:
+            artefact = db.scalar(select(Artefact))
+            event = db.scalar(select(Communication).where(Communication.subject == "Artefact uploaded"))
+
+            assert artefact is not None
+            assert artefact.job.uuid == job_uuid
+            assert artefact.owner.email == "jobseeker@example.com"
+            assert (tmp_path / "artefacts" / artefact.storage_key).read_bytes() == b"resume bytes"
+            assert event is not None
+            assert event.notes == "Uploaded Resume Final.pdf."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_upload_job_artefact_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "local_storage_path", str(tmp_path / "artefacts"))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        other_job_uuid = create_user_with_jobs(session_local, email="other@example.com")[0]
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/api/jobs/{other_job_uuid}/artefacts",
+            data={"kind": "resume"},
+            files={"file": ("resume.pdf", b"resume bytes", "application/pdf")},
         )
 
         assert response.status_code == 404

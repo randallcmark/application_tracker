@@ -51,6 +51,33 @@ curl -s \
 
 Jobs are owner-scoped. Another user's job returns `404`.
 
+## Create Job
+
+```bash
+curl -s \
+  -X POST \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title":"Manual role",
+    "company":"Example Co",
+    "status":"saved",
+    "source_url":"https://jobs.example.com/role",
+    "apply_url":"https://jobs.example.com/role/apply",
+    "location":"Remote",
+    "remote_policy":"remote",
+    "salary_min":"90000",
+    "salary_max":"110000",
+    "salary_currency":"GBP",
+    "description_raw":"Role notes.",
+    "initial_note":"Worth tracking."
+  }' \
+  http://127.0.0.1:8000/api/jobs
+```
+
+This creates an owner-scoped manual job and places it at the end of the selected active board
+status. `status` defaults to `saved` and cannot be `archived`.
+
 ## Get Job Timeline
 
 ```bash
@@ -74,6 +101,20 @@ curl -s \
 ```
 
 Notes are stored as `note` events in the same timeline.
+
+## Upload Job Artefact
+
+```bash
+curl -s \
+  -X POST \
+  -b cookies.txt \
+  -F "kind=resume" \
+  -F "file=@/path/to/resume.pdf" \
+  http://127.0.0.1:8000/api/jobs/job-uuid/artefacts
+```
+
+This stores the file using the configured artefact storage provider, creates an owner-scoped
+artefact record, and records an `Artefact uploaded` timeline note.
 
 ## Mark Applied
 

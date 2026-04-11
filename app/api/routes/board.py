@@ -323,6 +323,7 @@ def render_board(user: User, jobs: list[Job]) -> str:
         <p>{escape(user.email)}</p>
       </div>
       <nav>
+        <a class="docs-link" href="/jobs/new">Add job</a>
         <a class="docs-link" href="/docs">API docs</a>
         <form method="post" action="/logout">
           <button type="submit">Sign out</button>
