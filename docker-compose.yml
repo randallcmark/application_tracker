@@ -6,6 +6,9 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-Application Tracker}
       APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-local}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-dev-insecure-change-me}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/data/artefacts}

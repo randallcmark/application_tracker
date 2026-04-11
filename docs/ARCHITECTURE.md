@@ -32,3 +32,4 @@ Optional later deployment:
 - Reverse proxy auth or local session auth.
 
 The detailed staged plan is in `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
+The detailed authentication plan is in `docs/AUTHENTICATION.md`.

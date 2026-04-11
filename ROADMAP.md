@@ -17,3 +17,4 @@ Current priority order:
 
 Use the roadmap file as the source of truth when resuming implementation work.
 
+Authentication has its own detailed resumable plan in `docs/AUTHENTICATION.md`.

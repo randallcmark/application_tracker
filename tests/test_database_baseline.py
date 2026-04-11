@@ -36,6 +36,7 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
         "api_tokens",
         "applications",
         "artefacts",
+        "auth_sessions",
         "communications",
         "interview_events",
         "jobs",
@@ -109,4 +110,3 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         assert stored_job.interviews[0].stage == "screen"
         assert stored_job.communications[0].event_type == "note"
         assert stored_job.artefacts[0].storage_key == "jobs/example/resume.pdf"
-

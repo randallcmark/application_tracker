@@ -94,3 +94,5 @@ Do not commit runtime databases, uploaded resumes, cover letters, screenshots, o
 ## Security
 
 See `SECURITY.md` before deploying this app beyond local development.
+
+The detailed auth model and implementation sequence lives in `docs/AUTHENTICATION.md`.
