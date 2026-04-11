@@ -23,6 +23,7 @@ The target product is:
 The detailed staged roadmap lives in:
 
 - `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
+- `ROADMAP.md`
 
 ## Current State
 
@@ -57,7 +58,13 @@ uvicorn app.main:app --reload
 Run tests:
 
 ```bash
-pytest
+make test
+```
+
+Run all local checks:
+
+```bash
+make check
 ```
 
 ## Docker
@@ -78,3 +85,6 @@ http://localhost:8000/health
 
 Do not commit runtime databases, uploaded resumes, cover letters, screenshots, or generated local artefacts. The app should remain safe to publish and sync to GitHub as development continues.
 
+## Security
+
+See `SECURITY.md` before deploying this app beyond local development.
