@@ -75,6 +75,20 @@ curl -s \
 
 Notes are stored as `note` events in the same timeline.
 
+## Mark Applied
+
+```bash
+curl -s \
+  -X POST \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"company_site","notes":"Used tailored resume."}' \
+  http://127.0.0.1:8000/api/jobs/job-uuid/mark-applied
+```
+
+This creates or updates the job's application record, moves the job to `applied`, and records
+timeline events. Repeating the request reuses the existing application record.
+
 ## Update Board State
 
 Use this endpoint for kanban stage changes and card ordering:

@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.auth.users import create_local_user
+from app.db.models.application import Application
 from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.main import app
@@ -69,6 +72,7 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "Open source" in response.text
         assert "Open apply link" in response.text
         assert '<form class="note-form"' in response.text
+        assert '<form class="quick-action-form"' in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
     finally:
@@ -102,6 +106,50 @@ def test_job_detail_note_form_adds_note_and_redirects(tmp_path: Path, monkeypatc
         assert detail_response.status_code == 200
         assert "Prep" in detail_response.text
         assert "Update resume bullets." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_mark_applied_form_creates_application_and_redirects(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Apply target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/mark-applied",
+            data={"channel": "company_site", "notes": "Submitted through ATS."},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            application = db.scalar(select(Application))
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert application is not None
+            assert application.channel == "company_site"
+            assert application.notes == "Submitted through ATS."
+            assert job is not None
+            assert job.status == "applied"
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+
+        assert detail_response.status_code == 200
+        assert "Submitted through ATS." in detail_response.text
+        assert "Marked applied" in detail_response.text
     finally:
         app.dependency_overrides.clear()
 

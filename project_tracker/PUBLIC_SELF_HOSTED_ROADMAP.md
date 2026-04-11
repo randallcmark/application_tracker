@@ -358,7 +358,7 @@ Tasks:
 - Add optimistic UI updates with clear failure rollback.
 - Add quick actions on cards:
   - Add note. Done on job detail pages and timeline API.
-  - Mark applied.
+  - Mark applied. Done on job detail pages and jobs API.
   - Schedule interview.
   - Upload artefact.
   - Archive.

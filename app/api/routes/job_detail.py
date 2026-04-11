@@ -8,10 +8,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
+from app.db.models.application import Application
 from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.db.models.user import User
-from app.services.jobs import create_job_note, get_user_job_by_uuid
+from app.services.applications import mark_job_applied
+from app.services.jobs import create_job_note, get_user_job_by_uuid, record_job_status_change, update_job_board_state
 
 router = APIRouter(tags=["job-detail"])
 
@@ -75,6 +77,40 @@ def _note_form(job: Job) -> str:
       <button type="submit">Add note</button>
     </form>
     """
+
+
+def _mark_applied_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/mark-applied">
+      <label>
+        Channel
+        <input name="channel" placeholder="company_site">
+      </label>
+      <label>
+        Notes
+        <textarea name="notes" rows="4" placeholder="Resume version, referral, confirmation number"></textarea>
+      </label>
+      <button type="submit">Mark applied</button>
+    </form>
+    """
+
+
+def _application(application: Application) -> str:
+    return f"""
+    <li>
+      <strong>{escape(application.status)}</strong>
+      <p>Applied: {escape(_value(application.applied_at))}</p>
+      <p>Channel: {escape(_value(application.channel))}</p>
+      {f'<p>{escape(application.notes)}</p>' if application.notes else ""}
+    </li>
+    """
+
+
+def _applications(applications: list[Application]) -> str:
+    if not applications:
+        return '<p class="empty">No application record yet.</p>'
+    items = "\n".join(_application(application) for application in applications)
+    return f"<ol>{items}</ol>"
 
 
 def render_job_detail(job: Job) -> str:
@@ -197,7 +233,8 @@ def render_job_detail(job: Job) -> str:
       gap: 6px;
     }}
 
-    .note-form {{
+    .note-form,
+    .quick-action-form {{
       display: grid;
       gap: 12px;
     }}
@@ -341,6 +378,14 @@ def render_job_detail(job: Job) -> str:
           </dl>
         </section>
         <section>
+          <h2>Application</h2>
+          {_applications(job.applications)}
+        </section>
+        <section>
+          <h2>Mark Applied</h2>
+          {_mark_applied_form(job)}
+        </section>
+        <section>
           <h2>Add Note</h2>
           {_note_form(job)}
         </section>
@@ -384,5 +429,27 @@ def create_job_note_form(
         subject=subject.strip() or "Note",
         notes=note_text,
     )
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/mark-applied", include_in_schema=False)
+def mark_job_applied_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    channel: Annotated[str, Form()] = "",
+    notes: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    mark_job_applied(
+        db,
+        job,
+        channel=channel.strip() or None,
+        notes=notes.strip() or None,
+    )
+    update_job_board_state(job, status="applied")
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)

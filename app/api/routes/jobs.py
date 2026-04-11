@@ -2,14 +2,16 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
+from app.db.models.application import Application
 from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.services.applications import mark_job_applied
 from app.services.jobs import (
     JOB_STATUSES,
     BoardOrderValidationError,
@@ -69,6 +71,24 @@ class JobTimelineCreateRequest(BaseModel):
     subject: str = Field(default="Note", max_length=300)
     notes: str
     occurred_at: datetime | None = None
+
+
+class MarkAppliedRequest(BaseModel):
+    channel: str | None = Field(default=None, max_length=100)
+    notes: str | None = None
+    applied_at: datetime | None = None
+
+
+class ApplicationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: str
+    job_id: int
+    status: str
+    channel: str | None
+    applied_at: datetime | None
+    notes: str | None
+    created: bool
 
 
 def _validate_status(job_status: str | None) -> None:
@@ -186,3 +206,33 @@ def update_job_board(
         record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
     return job
+
+
+@router.post(
+    "/{job_uuid}/mark-applied",
+    response_model=ApplicationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def mark_job_applied_route(
+    job_uuid: str,
+    payload: MarkAppliedRequest,
+    response: Response,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Application:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    application, created, _ = mark_job_applied(
+        db,
+        job,
+        channel=payload.channel.strip() if payload.channel else None,
+        notes=payload.notes.strip() if payload.notes else None,
+        applied_at=payload.applied_at,
+    )
+    update_job_board_state(job, status="applied")
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    db.commit()
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    application.created = created
+    return application

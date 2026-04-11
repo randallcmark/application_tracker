@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth.users import create_local_user
+from app.db.models.application import Application
 from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.main import app
@@ -376,6 +377,92 @@ def test_job_timeline_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
         login(client, "jobseeker@example.com")
 
         response = client.get(f"/api/jobs/{other_job_uuid}/timeline")
+
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_mark_applied_creates_application_and_journal_events(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/api/jobs/{job_uuid}/mark-applied",
+            json={"channel": "company_site", "notes": "Used tailored resume."},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["created"] is True
+        assert response.json()["status"] == "applied"
+        assert response.json()["channel"] == "company_site"
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.status == "applied"
+            assert len(job.applications) == 1
+            assert job.applications[0].notes == "Used tailored resume."
+
+            event_subjects = [
+                event.subject
+                for event in db.scalars(
+                    select(Communication).order_by(Communication.subject)
+                ).all()
+            ]
+            assert event_subjects == [
+                "Marked applied",
+                "Status changed from saved to applied",
+            ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_mark_applied_reuses_existing_application(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        first = client.post(
+            f"/api/jobs/{job_uuid}/mark-applied",
+            json={"channel": "company_site", "notes": "First submission."},
+        )
+        second = client.post(
+            f"/api/jobs/{job_uuid}/mark-applied",
+            json={"channel": "referral", "notes": "Updated channel."},
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert second.json()["created"] is False
+        assert second.json()["channel"] == "referral"
+
+        with session_local() as db:
+            applications = db.scalars(select(Application)).all()
+
+            assert len(applications) == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_mark_applied_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        other_job_uuid = create_user_with_jobs(session_local, email="other@example.com")[0]
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/api/jobs/{other_job_uuid}/mark-applied",
+            json={"channel": "company_site"},
+        )
 
         assert response.status_code == 404
     finally:
