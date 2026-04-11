@@ -1,0 +1,28 @@
+# Decisions
+
+## 2026-04-11: Fresh Rebuild
+
+The original personal MVP has been moved to:
+
+```text
+/Volumes/Media/Repository/application_tracker_old
+```
+
+This repository starts clean so it can be safely synced to GitHub as work progresses.
+
+Rationale:
+
+- Avoid publishing personal runtime data, resumes, cover letters, and old generated artefacts.
+- Avoid carrying MVP implementation debt directly into the public product.
+- Keep the useful planning and domain lessons while rebuilding deliberately.
+
+## 2026-04-11: FastAPI Monolith First
+
+The first public version will remain a FastAPI monolith.
+
+Rationale:
+
+- The product is workflow-heavy but not yet large enough to justify a split frontend/backend architecture.
+- Docker Compose deployment should remain simple.
+- Server-rendered pages plus focused JavaScript are enough for the initial kanban workflow.
+
