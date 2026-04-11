@@ -198,6 +198,85 @@ def test_job_detail_archive_form_archives_job_and_redirects(
         app.dependency_overrides.clear()
 
 
+def test_job_detail_unarchive_form_restores_job_and_redirects(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Restore target",
+                status="archived",
+                archived_at=datetime(2026, 4, 11, 12, 0, tzinfo=UTC),
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+
+        assert detail_response.status_code == 200
+        assert f'action="/jobs/{job_uuid}/unarchive"' in detail_response.text
+
+        response = client.post(
+            f"/jobs/{job_uuid}/unarchive",
+            data={"target_status": "interested", "notes": "Worth another look."},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.status == "interested"
+            assert job.archived_at is None
+
+        restored_response = client.get(f"/jobs/{job_uuid}")
+
+        assert restored_response.status_code == 200
+        assert "Status changed from archived to interested" in restored_response.text
+        assert "Worth another look." in restored_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_unarchive_form_rejects_archived_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Bad restore target", status="archived")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/unarchive",
+            data={"target_status": "archived"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Unsupported unarchive target status"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_job_detail_schedule_interview_form_creates_interview_and_redirects(
     tmp_path: Path,
     monkeypatch,

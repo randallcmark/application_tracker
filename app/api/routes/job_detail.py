@@ -16,6 +16,7 @@ from app.db.models.user import User
 from app.services.applications import mark_job_applied
 from app.services.interviews import schedule_interview
 from app.services.jobs import (
+    BOARD_STATUSES,
     create_job_note,
     get_user_job_by_uuid,
     record_job_status_change,
@@ -112,6 +113,31 @@ def _archive_form(job: Job) -> str:
         <textarea name="notes" rows="3" placeholder="Why this job is being archived"></textarea>
       </label>
       <button type="submit"{disabled}>{button_label}</button>
+    </form>
+    """
+
+
+def _unarchive_form(job: Job) -> str:
+    if job.status != "archived":
+        return '<p class="empty">Available after a job is archived.</p>'
+
+    options = "\n".join(
+        f'<option value="{escape(job_status, quote=True)}">{escape(job_status.title())}</option>'
+        for job_status in BOARD_STATUSES
+    )
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/unarchive">
+      <label>
+        Restore to
+        <select name="target_status">
+          {options}
+        </select>
+      </label>
+      <label>
+        Unarchive note
+        <textarea name="notes" rows="3" placeholder="Why this job is being restored"></textarea>
+      </label>
+      <button type="submit">Unarchive</button>
     </form>
     """
 
@@ -283,6 +309,7 @@ def render_job_detail(job: Job) -> str:
     }}
 
     input,
+    select,
     textarea {{
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -466,6 +493,10 @@ def render_job_detail(job: Job) -> str:
           {_archive_form(job)}
         </section>
         <section>
+          <h2>Unarchive</h2>
+          {_unarchive_form(job)}
+        </section>
+        <section>
           <h2>Add Note</h2>
           {_note_form(job)}
         </section>
@@ -588,6 +619,36 @@ def archive_job_form(
             db,
             job,
             subject="Archived",
+            notes=notes.strip(),
+        )
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/unarchive", include_in_schema=False)
+def unarchive_job_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    target_status: Annotated[str, Form()] = "saved",
+    notes: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    restore_status = target_status.strip() or "saved"
+    if restore_status not in BOARD_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported unarchive target status",
+        )
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    update_job_board_state(job, status=restore_status)
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    if notes.strip():
+        create_job_note(
+            db,
+            job,
+            subject="Unarchived",
             notes=notes.strip(),
         )
     db.commit()

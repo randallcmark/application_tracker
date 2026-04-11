@@ -19,6 +19,7 @@ The page requires a logged-in browser session and is owner-scoped. Another user'
 - Marks a job applied and creates or updates the application record.
 - Schedules interviews and shows scheduled interview records.
 - Archives a job with an optional timeline note.
+- Restores an archived job to an active board status with an optional timeline note.
 - Links back to `/board`.
 
 ## Browser Test
@@ -54,5 +55,8 @@ http://127.0.0.1:8000/board
 
 9. Use Archive and confirm the job is archived with a timeline event.
 
-10. Move another job to a different stage on the board, then open the detail page again and confirm the
+10. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
+   job returns to that status with a timeline event.
+
+11. Move another job to a different stage on the board, then open the detail page again and confirm the
    new `stage_change` event appears in the timeline.

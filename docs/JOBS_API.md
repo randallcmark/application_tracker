@@ -123,6 +123,21 @@ curl -s \
 This moves the job to `archived`, sets `archived_at`, and records a status-change event. If
 `notes` is provided, it also creates an `Archived` note in the timeline.
 
+## Unarchive Job
+
+```bash
+curl -s \
+  -X POST \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"target_status":"saved","notes":"Back in scope."}' \
+  http://127.0.0.1:8000/api/jobs/job-uuid/unarchive
+```
+
+This restores an archived job to an active board status, clears `archived_at`, and records a
+status-change event. If `notes` is provided, it also creates an `Unarchived` note in the timeline.
+`target_status` defaults to `saved` and must be one of the active board statuses, not `archived`.
+
 ## Update Board State
 
 Use this endpoint for kanban stage changes and card ordering:

@@ -362,6 +362,7 @@ Tasks:
   - Schedule interview. Done on job detail pages and jobs API.
   - Upload artefact.
   - Archive. Done on job detail pages and jobs API.
+  - Unarchive. Done on job detail pages and jobs API.
 - Add stage-aging indicators:
   - Days in current stage.
   - Stale cards.

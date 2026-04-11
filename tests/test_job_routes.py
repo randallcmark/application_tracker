@@ -535,6 +535,92 @@ def test_archive_job_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
         app.dependency_overrides.clear()
 
 
+def test_unarchive_job_restores_active_status_and_journals_status_change(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+        archive_response = client.post(f"/api/jobs/{job_uuid}/archive", json={})
+        assert archive_response.status_code == 200
+
+        response = client.post(
+            f"/api/jobs/{job_uuid}/unarchive",
+            json={"target_status": "interested", "notes": "Back in scope."},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "interested"
+        assert response.json()["archived_at"] is None
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.status == "interested"
+            assert job.archived_at is None
+            event_subjects = [
+                event.subject
+                for event in db.scalars(
+                    select(Communication).order_by(Communication.subject)
+                ).all()
+            ]
+            assert event_subjects == [
+                "Status changed from archived to interested",
+                "Status changed from saved to archived",
+                "Unarchived",
+            ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unarchive_job_defaults_to_saved(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        archived_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[2]
+        login(client, "jobseeker@example.com")
+
+        response = client.post(f"/api/jobs/{archived_uuid}/unarchive", json={})
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "saved"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unarchive_job_rejects_archived_target_status(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        archived_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[2]
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/api/jobs/{archived_uuid}/unarchive",
+            json={"target_status": "archived"},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Unarchive target status cannot be archived"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unarchive_job_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        other_job_uuid = create_user_with_jobs(session_local, email="other@example.com")[2]
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.post(f"/api/jobs/{other_job_uuid}/unarchive", json={})
+
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_schedule_interview_creates_event_moves_job_and_journals(
     tmp_path: Path,
     monkeypatch,

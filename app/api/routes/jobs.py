@@ -85,6 +85,11 @@ class ArchiveJobRequest(BaseModel):
     notes: str | None = None
 
 
+class UnarchiveJobRequest(BaseModel):
+    target_status: str = "saved"
+    notes: str | None = None
+
+
 class ApplicationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -123,6 +128,15 @@ def _validate_status(job_status: str | None) -> None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported job status. Allowed values: {allowed}",
+        )
+
+
+def _validate_unarchive_target(target_status: str) -> None:
+    _validate_status(target_status)
+    if target_status == "archived":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unarchive target status cannot be archived",
         )
 
 
@@ -313,6 +327,31 @@ def archive_job_route(
             db,
             job,
             subject="Archived",
+            notes=payload.notes.strip(),
+        )
+    db.commit()
+    return job
+
+
+@router.post("/{job_uuid}/unarchive", response_model=JobResponse)
+def unarchive_job_route(
+    job_uuid: str,
+    payload: UnarchiveJobRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Job:
+    target_status = payload.target_status.strip() or "saved"
+    _validate_unarchive_target(target_status)
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    update_job_board_state(job, status=target_status)
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    if payload.notes and payload.notes.strip():
+        create_job_note(
+            db,
+            job,
+            subject="Unarchived",
             notes=payload.notes.strip(),
         )
     db.commit()
