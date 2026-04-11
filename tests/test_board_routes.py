@@ -1,6 +1,8 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.auth.users import create_local_user
+from app.db.models.communication import Communication
 from app.db.models.job import Job
 from app.main import app
 from tests.test_local_auth_routes import build_client
@@ -16,7 +18,7 @@ def test_board_requires_login(tmp_path: Path, monkeypatch) -> None:
         app.dependency_overrides.clear()
 
 
-def test_board_renders_current_users_jobs_by_stage(tmp_path: Path, monkeypatch) -> None:
+def test_board_defaults_to_in_progress_workflow(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:
         with session_local() as db:
@@ -63,15 +65,121 @@ def test_board_renders_current_users_jobs_by_stage(tmp_path: Path, monkeypatch) 
 
         assert response.status_code == 200
         assert "Application Board" in response.text
-        assert "Visible saved role" in response.text
+        assert "In Progress" in response.text
+        assert "Visible saved role" not in response.text
         assert "Visible applied role" in response.text
         assert "Hidden archived role" not in response.text
         assert "Other user role" not in response.text
-        assert 'data-status="saved"' in response.text
+        assert 'data-status="preparing"' in response.text
         assert 'data-status="applied"' in response.text
+        assert 'data-status="interviewing"' in response.text
+        assert 'data-status="saved"' not in response.text
         assert 'draggable="true"' in response.text
         assert "/jobs/" in response.text
         assert 'fetch("/api/jobs/board"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_board_prospects_workflow_shows_discovery_stages(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            db.add_all(
+                [
+                    Job(owner_user_id=user.id, title="Saved role", status="saved"),
+                    Job(owner_user_id=user.id, title="Interested role", status="interested"),
+                    Job(owner_user_id=user.id, title="Applied role", status="applied"),
+                ]
+            )
+            db.commit()
+
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "jobseeker@example.com", "password": "password"},
+        )
+        assert login_response.status_code == 200
+
+        response = client.get("/board?workflow=prospects")
+
+        assert response.status_code == 200
+        assert "Prospects" in response.text
+        assert "Saved role" in response.text
+        assert "Interested role" in response.text
+        assert "Applied role" not in response.text
+        assert 'data-status="saved"' in response.text
+        assert 'data-status="interested"' in response.text
+        assert 'data-status="applied"' not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_board_archived_workflow_shows_archived_jobs(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            db.add_all(
+                [
+                    Job(owner_user_id=user.id, title="Active role", status="saved"),
+                    Job(owner_user_id=user.id, title="Archived role", status="archived"),
+                ]
+            )
+            db.commit()
+
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "jobseeker@example.com", "password": "password"},
+        )
+        assert login_response.status_code == 200
+
+        response = client.get("/board?workflow=archived")
+
+        assert response.status_code == 200
+        assert "Archived role" in response.text
+        assert "Active role" not in response.text
+        assert 'data-status="archived"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_board_shows_stage_age_and_stale_indicator(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Stale applied role", status="applied")
+            db.add(job)
+            db.flush()
+            db.add(
+                Communication(
+                    job_id=job.id,
+                    owner_user_id=user.id,
+                    event_type="stage_change",
+                    direction="internal",
+                    occurred_at=datetime.now(UTC) - timedelta(days=11),
+                    subject="Status changed from preparing to applied",
+                    notes="Job status changed from preparing to applied.",
+                )
+            )
+            db.commit()
+
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "jobseeker@example.com", "password": "password"},
+        )
+        assert login_response.status_code == 200
+
+        response = client.get("/board")
+
+        assert response.status_code == 200
+        assert "Stale applied role" in response.text
+        assert "In stage: 11 days" in response.text
+        assert "stale" in response.text
     finally:
         app.dependency_overrides.clear()
 

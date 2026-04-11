@@ -365,8 +365,8 @@ Tasks:
   - Archive. Done on job detail pages and jobs API.
   - Unarchive. Done on job detail pages and jobs API.
 - Add stage-aging indicators:
-  - Days in current stage.
-  - Stale cards.
+  - Days in current stage. Done on board cards.
+  - Stale cards. Done on board cards with conservative thresholds.
   - Follow-up due.
 - Add filters:
   - owner/user.
@@ -375,7 +375,7 @@ Tasks:
   - remote/hybrid/onsite.
   - role keywords.
   - date added.
-  - archived visibility.
+  - archived visibility. Done through the archived workflow view.
 - Add timeline event creation for stage changes. Done for job `stage_change` events.
 - Normalize status naming across application and job stages.
 
@@ -826,12 +826,13 @@ board.
 Implementation guidance:
 
 - Keep the canonical statuses as the durable database values.
-- Add workflow modes such as `prospects`, `in_progress`, `outcomes`, and `all`.
-- Prefer URLs like `/board?workflow=prospects` or `/board?workflow=in_progress`.
+- Add workflow modes such as `prospects`, `in_progress`, `outcomes`, and `all`. Done.
+- Prefer URLs like `/board?workflow=prospects` or `/board?workflow=in_progress`. Done.
 - Default `/board` should eventually open the most useful daily workflow, likely `in_progress`,
-  with a fallback to `prospects` when no active jobs exist.
+  with a fallback to `prospects` when no active jobs exist. Default `in_progress` is done; fallback
+  remains planned.
 - Drag-and-drop should normally stay within the selected workflow view, while an explicit `all`
-  view can remain available for power users or maintenance.
+  view can remain available for power users or maintenance. Done for current server-rendered board.
 
 ### 11.6 Interview Scheduling Is Usually An Inbound Outcome
 

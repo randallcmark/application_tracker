@@ -1,8 +1,9 @@
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from html import escape
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import DbSession, get_current_user
@@ -20,6 +21,32 @@ BOARD_LABELS = {
     "interviewing": "Interviewing",
     "offer": "Offer",
     "rejected": "Rejected",
+    "archived": "Archived",
+}
+
+WORKFLOW_VIEWS = {
+    "prospects": ("saved", "interested"),
+    "in_progress": ("preparing", "applied", "interviewing"),
+    "outcomes": ("offer", "rejected"),
+    "all": BOARD_STATUSES,
+    "archived": ("archived",),
+}
+
+WORKFLOW_LABELS = {
+    "prospects": "Prospects",
+    "in_progress": "In Progress",
+    "outcomes": "Outcomes",
+    "all": "All Active",
+    "archived": "Archived",
+}
+
+STALE_AFTER_DAYS = {
+    "saved": 7,
+    "interested": 7,
+    "preparing": 3,
+    "applied": 10,
+    "interviewing": 10,
+    "offer": 3,
 }
 
 
@@ -30,6 +57,48 @@ def _status_options(current_status: str) -> str:
         selected = " selected" if job_status == current_status else ""
         options.append(f'<option value="{escape(job_status)}"{selected}>{escape(label)}</option>')
     return "\n".join(options)
+
+
+def _stage_started_at(job: Job) -> datetime:
+    latest_matching_event = None
+    for event in job.communications:
+        if event.event_type != "stage_change":
+            continue
+        if not (event.subject or "").endswith(f" to {job.status}"):
+            continue
+        occurred_at = event.occurred_at or event.created_at
+        if latest_matching_event is None or occurred_at > latest_matching_event:
+            latest_matching_event = occurred_at
+    return latest_matching_event or job.created_at
+
+
+def _stage_age_days(job: Job) -> int:
+    started_at = _stage_started_at(job)
+    now = datetime.now(UTC)
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return max((now - started_at).days, 0)
+
+
+def _stage_age(job: Job) -> str:
+    age_days = _stage_age_days(job)
+    threshold = STALE_AFTER_DAYS.get(job.status)
+    stale = threshold is not None and age_days >= threshold
+    stale_class = " stale" if stale else ""
+    label = "day" if age_days == 1 else "days"
+    stale_text = " · stale" if stale else ""
+    return f'<p class="stage-age{stale_class}">In stage: {age_days} {label}{stale_text}</p>'
+
+
+def _workflow_nav(current_workflow: str) -> str:
+    links = []
+    for workflow, label in WORKFLOW_LABELS.items():
+        current = ' aria-current="page"' if workflow == current_workflow else ""
+        links.append(
+            f'<a class="workflow-link" href="/board?workflow={escape(workflow, quote=True)}"{current}>'
+            f"{escape(label)}</a>"
+        )
+    return "\n".join(links)
 
 
 def _job_card(job: Job) -> str:
@@ -48,6 +117,7 @@ def _job_card(job: Job) -> str:
         <h3><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></h3>
         {company}
         {location}
+        {_stage_age(job)}
       </div>
       <div class="card-meta">
         <span>Position {job.board_position}</span>
@@ -81,14 +151,17 @@ def _column(status: str, jobs: Iterable[Job]) -> str:
     """
 
 
-def render_board(user: User, jobs: list[Job]) -> str:
-    jobs_by_status = {status: [] for status in BOARD_STATUSES}
+def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") -> str:
+    statuses = WORKFLOW_VIEWS[workflow]
+    jobs_by_status = {status: [] for status in statuses}
     for job in jobs:
         if job.status in jobs_by_status:
             jobs_by_status[job.status].append(job)
 
-    columns = "\n".join(_column(status, jobs_by_status[status]) for status in BOARD_STATUSES)
-    status_list = ",".join(BOARD_STATUSES)
+    columns = "\n".join(_column(status, jobs_by_status[status]) for status in statuses)
+    status_list = ",".join(statuses)
+    column_count = len(statuses)
+    workflow_label = WORKFLOW_LABELS[workflow]
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -162,10 +235,33 @@ def render_board(user: User, jobs: list[Job]) -> str:
       font-weight: 700;
     }}
 
+    .workflow-nav {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 auto 18px;
+      max-width: 1440px;
+    }}
+
+    .workflow-link {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--accent-strong);
+      font-weight: 700;
+      padding: 8px 10px;
+      text-decoration: none;
+    }}
+
+    .workflow-link[aria-current="page"] {{
+      background: var(--accent);
+      color: #ffffff;
+    }}
+
     .board {{
       display: grid;
       gap: 14px;
-      grid-template-columns: repeat(7, minmax(220px, 1fr));
+      grid-template-columns: repeat({column_count}, minmax(220px, 1fr));
       margin: 0 auto;
       max-width: 1440px;
       overflow-x: auto;
@@ -224,11 +320,17 @@ def render_board(user: User, jobs: list[Job]) -> str:
     }}
 
     .job-card p,
-    .card-meta {{
+    .card-meta,
+    .stage-age {{
       color: var(--muted);
       font-size: 0.88rem;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }}
+
+    .stage-age.stale {{
+      color: var(--warn);
+      font-weight: 700;
     }}
 
     .card-meta {{
@@ -310,7 +412,7 @@ def render_board(user: User, jobs: list[Job]) -> str:
       }}
 
       .board {{
-        grid-template-columns: repeat(7, minmax(240px, 82vw));
+        grid-template-columns: repeat({column_count}, minmax(240px, 82vw));
       }}
     }}
   </style>
@@ -320,7 +422,7 @@ def render_board(user: User, jobs: list[Job]) -> str:
     <header class="topbar">
       <div>
         <h1>Application Board</h1>
-        <p>{escape(user.email)}</p>
+        <p>{escape(user.email)} · {escape(workflow_label)}</p>
       </div>
       <nav>
         <a class="docs-link" href="/jobs/new">Add job</a>
@@ -330,6 +432,9 @@ def render_board(user: User, jobs: list[Job]) -> str:
         </form>
       </nav>
     </header>
+    <nav class="workflow-nav" aria-label="Workflow views">
+      {_workflow_nav(workflow)}
+    </nav>
     <p class="notice" role="status" aria-live="polite"></p>
     <div class="board" data-statuses="{escape(status_list)}">
       {columns}
@@ -504,6 +609,9 @@ def render_board(user: User, jobs: list[Job]) -> str:
 def board(
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
+    workflow: Annotated[str, Query()] = "in_progress",
 ) -> HTMLResponse:
-    jobs = list_user_jobs(db, current_user)
-    return HTMLResponse(render_board(current_user, jobs))
+    if workflow not in WORKFLOW_VIEWS:
+        workflow = "in_progress"
+    jobs = list_user_jobs(db, current_user, include_archived=workflow == "archived")
+    return HTMLResponse(render_board(current_user, jobs, workflow=workflow))

@@ -12,10 +12,17 @@ anonymous users are sent to `/login`.
 ## Current Behavior
 
 - Shows owner-scoped jobs only.
-- Hides `archived` jobs.
+- Defaults to the `in_progress` workflow view.
+- Provides workflow views:
+  - `/board?workflow=prospects` for `saved` and `interested`.
+  - `/board?workflow=in_progress` for `preparing`, `applied`, and `interviewing`.
+  - `/board?workflow=outcomes` for `offer` and `rejected`.
+  - `/board?workflow=all` for all active board statuses.
+  - `/board?workflow=archived` for archived jobs.
+- Hides `archived` jobs from active workflow views.
 - Links to the manual add-job form at `/jobs/new`.
 - Links each card title to a job detail page at `/jobs/{job_uuid}`.
-- Groups cards into the current workflow stages:
+- Groups cards into the selected workflow stages:
   - `saved`
   - `interested`
   - `preparing`
@@ -23,6 +30,8 @@ anonymous users are sent to `/login`.
   - `interviewing`
   - `offer`
   - `rejected`
+- Shows how long each job has been in its current stage.
+- Flags stale cards using conservative stage thresholds.
 - Provides previous/next buttons and a status dropdown on each card.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
 - Supports dragging cards within and across columns.
@@ -57,11 +66,14 @@ http://127.0.0.1:8000/login
 
 7. Open the card title and confirm the detail page shows the job fields and timeline.
 
-8. Return to the board.
+8. Return to the board and switch between `Prospects`, `In Progress`, `Outcomes`, `All Active`,
+   and `Archived`.
 
-9. Drag the card to another stage, or use the card controls.
+9. Confirm each card shows `In stage: X days`, and stale cards include `stale`.
 
-10. Refresh the page and confirm the job remains in the new stage.
+10. Drag the card to another stage, or use the card controls.
+
+11. Refresh the page and confirm the job remains in the new stage.
 
 ## Terminal Check
 
