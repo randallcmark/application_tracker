@@ -28,6 +28,7 @@ The detailed staged roadmap lives in:
 API token and browser capture examples live in:
 
 - `docs/API_TOKENS_AND_CAPTURE.md`
+- `docs/FIREFOX_EXTENSION.md`
 
 Jobs API examples live in:
 

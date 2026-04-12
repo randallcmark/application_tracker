@@ -475,12 +475,12 @@ Jobseekers discover opportunities across many job boards and ATS pages. Capture 
 
 Current repo context:
 
-- This checkout currently does not contain the previously referenced `extensions/` tree.
+- Firefox extension source now exists under `extensions/firefox`.
 - A bookmarklet setup page exists at `/api/capture/bookmarklet` as the first browser capture path.
 - User-owned API token creation and revocation exists in `/settings`, so bookmarklet setup can be
   completed without terminal commands.
-- Chrome, Firefox, and Safari extension work should either restore the prior extension source or
-  scaffold a new extension against the stable capture API.
+- Chrome should reuse the Firefox extension shape after the Firefox path is stable. Safari remains
+  deferred because it requires Xcode packaging.
 
 Tasks:
 
@@ -499,8 +499,8 @@ Tasks:
   - source platform.
   - raw extraction metadata.
 - Add extension settings UI for:
-  - tracker base URL.
-  - API token. Done for bookmarklet setup through `/settings` plus `/api/capture/bookmarklet`.
+  - tracker base URL. Done for experimental Firefox extension.
+  - API token. Done for bookmarklet setup and experimental Firefox extension.
   - default stage.
   - capture selected text vs full page.
 - Add supported extractor strategy:
@@ -515,6 +515,7 @@ Tasks:
   - auth failed.
   - unsupported page.
   - duplicate job found.
+- Add experimental Firefox extension. Done with temporary-load WebExtension source and docs.
 - Add a bookmarklet as a low-friction alternative before polished extension packaging. Done with
   `/api/capture/bookmarklet`, token-authenticated capture, JSON-LD fallback extraction, selected
   text, and body text fallback.
