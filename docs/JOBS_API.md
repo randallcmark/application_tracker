@@ -75,7 +75,8 @@ curl -s \
 ```
 
 Only fields provided in the JSON body are updated. `null` clears optional fields. Status changes
-use the same board-state logic as the board and create a `stage_change` timeline event.
+use the same board-state logic as the board and create a `stage_change` timeline event. Changed
+non-status fields create a `Job edited` journal entry listing the updated fields.
 
 ## Create Job
 

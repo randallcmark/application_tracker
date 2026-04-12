@@ -171,6 +171,21 @@ class JobArtefactResponse(BaseModel):
     checksum_sha256: str | None
 
 
+_UPDATE_FIELD_LABELS = {
+    "title": "title",
+    "company": "company",
+    "source": "source",
+    "source_url": "source URL",
+    "apply_url": "apply URL",
+    "location": "location",
+    "remote_policy": "remote policy",
+    "salary_min": "salary minimum",
+    "salary_max": "salary maximum",
+    "salary_currency": "salary currency",
+    "description_raw": "description",
+}
+
+
 def _validate_status(job_status: str | None) -> None:
     if job_status is not None and job_status not in JOB_STATUSES:
         allowed = ", ".join(JOB_STATUSES)
@@ -224,6 +239,36 @@ def _apply_job_update(job: Job, payload: UpdateJobRequest) -> None:
     if "description_raw" in fields:
         job.description_raw = _clean_optional(payload.description_raw)
         job.description_clean = _clean_optional(payload.description_raw)
+
+
+def _snapshot_updated_fields(job: Job, payload: UpdateJobRequest) -> dict[str, object]:
+    return {
+        field_name: getattr(job, field_name)
+        for field_name in _UPDATE_FIELD_LABELS
+        if field_name in payload.model_fields_set
+    }
+
+
+def _record_job_field_edits(
+    db: DbSession,
+    job: Job,
+    *,
+    before: dict[str, object],
+) -> None:
+    changed_fields = [
+        _UPDATE_FIELD_LABELS[field_name]
+        for field_name, old_value in before.items()
+        if getattr(job, field_name) != old_value
+    ]
+    if not changed_fields:
+        return
+
+    create_job_note(
+        db,
+        job,
+        subject="Job edited",
+        notes=f"Updated fields: {', '.join(changed_fields)}.",
+    )
 
 
 @router.get("", response_model=list[JobResponse])
@@ -331,10 +376,12 @@ def update_job(
     _validate_status(payload.status)
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     old_status = job.status
+    before = _snapshot_updated_fields(job, payload)
     _apply_job_update(job, payload)
     if "status" in payload.model_fields_set:
         update_job_board_state(job, status=payload.status)
         record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    _record_job_field_edits(db, job, before=before)
     db.commit()
     return job
 

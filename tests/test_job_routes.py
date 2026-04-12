@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.auth.users import create_local_user
 from app.core.config import settings
@@ -199,6 +199,72 @@ def test_update_job_edits_fields_and_journals_status_change(tmp_path: Path, monk
             )
             assert event is not None
             assert event.subject == "Status changed from saved to preparing"
+            edit_event = db.scalar(
+                select(Communication).where(
+                    Communication.job_id == job.id,
+                    Communication.subject == "Job edited",
+                )
+            )
+            assert edit_event is not None
+            assert edit_event.notes == (
+                "Updated fields: title, company, source, apply URL, location, remote policy, "
+                "salary minimum, salary maximum, salary currency, description."
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_job_journals_field_edits_without_status_change(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(
+            f"/api/jobs/{job_uuid}",
+            json={"location": "Remote", "salary_currency": "GBP"},
+        )
+
+        assert response.status_code == 200
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            event = db.scalar(
+                select(Communication).where(
+                    Communication.job_id == job.id,
+                    Communication.subject == "Job edited",
+                )
+            )
+            assert event is not None
+            assert event.event_type == "note"
+            assert event.notes == "Updated fields: location, salary currency."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_job_does_not_journal_unchanged_fields(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(f"/api/jobs/{job_uuid}", json={"company": "Example Co"})
+
+        assert response.status_code == 200
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            event_count = db.scalar(
+                select(func.count(Communication.id)).where(
+                    Communication.job_id == job.id,
+                    Communication.subject == "Job edited",
+                )
+            )
+            assert event_count == 0
     finally:
         app.dependency_overrides.clear()
 
