@@ -358,9 +358,10 @@ def _refined_meta(job: Job) -> str:
     return rendered or "<span>No extra details yet</span>"
 
 
-def _refined_item(job: Job, *, draggable: bool = False) -> str:
+def _refined_item(job: Job, *, draggable: bool = False, show_status: bool = True) -> str:
     draggable_attr = ' draggable="true"' if draggable else ""
     status_label = BOARD_LABELS.get(job.status, job.status.title())
+    status_pill = f"<span>{escape(status_label)}</span>" if show_status else ""
     source_link = ""
     if job.source_url:
         source_link = (
@@ -372,7 +373,7 @@ def _refined_item(job: Job, *, draggable: bool = False) -> str:
       <div class="item-main">
         <div class="item-title">
           <h3><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></h3>
-          <span>{escape(status_label)}</span>
+          {status_pill}
         </div>
         <div class="item-meta">
           {_refined_meta(job)}
@@ -382,16 +383,16 @@ def _refined_item(job: Job, *, draggable: bool = False) -> str:
           {_stage_age(job)}
           {_follow_up_indicator(job)}
         </div>
-      </div>
-      <div class="item-actions">
-        {_refined_action_buttons(job)}
+        <div class="item-actions" aria-label="Next actions">
+          {_refined_action_buttons(job)}
+        </div>
       </div>
     </article>
     """
 
 
 def _refined_lane(status_name: str, jobs: Iterable[Job]) -> str:
-    cards = "\n".join(_refined_item(job, draggable=True) for job in jobs)
+    cards = "\n".join(_refined_item(job, draggable=True, show_status=False) for job in jobs)
     empty = '<p class="empty refined-empty">Nothing here.</p>' if not cards else ""
     return f"""
     <section class="refined-lane" data-status="{escape(status_name, quote=True)}">
@@ -637,16 +638,13 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     .refined-item {{
-      align-items: center;
       background: var(--panel);
       border: 1px solid var(--line);
       border-left: 5px solid var(--accent);
       border-radius: 8px;
-      box-shadow: var(--shadow);
-      display: grid;
-      gap: 14px;
-      grid-template-columns: minmax(0, 1fr) auto;
-      min-height: 92px;
+      box-shadow: 0 8px 22px rgba(23, 25, 28, 0.06);
+      display: block;
+      min-height: 112px;
       padding: 14px;
     }}
 
@@ -685,21 +683,22 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
 
     .item-main {{
       display: grid;
-      gap: 7px;
+      gap: 9px;
       min-width: 0;
     }}
 
     .item-title {{
-      align-items: center;
+      align-items: start;
       display: flex;
       gap: 10px;
       justify-content: space-between;
     }}
 
     .item-title h3 {{
-      font-size: 1rem;
-      line-height: 1.25;
-      overflow-wrap: anywhere;
+      font-size: 1.04rem;
+      line-height: 1.28;
+      max-width: 100%;
+      overflow-wrap: break-word;
     }}
 
     .item-title h3 a {{
@@ -714,10 +713,10 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       border-radius: 999px;
       color: var(--muted);
       flex: 0 0 auto;
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       font-weight: 800;
       line-height: 1;
-      padding: 6px 8px;
+      padding: 5px 7px;
     }}
 
     .item-meta,
@@ -728,6 +727,11 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       gap: 5px 12px;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }}
+
+    .item-meta {{
+      color: var(--ink);
+      font-weight: 650;
     }}
 
     .stage-age.stale,
@@ -743,32 +747,40 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     .item-actions {{
-      justify-content: end;
-      min-width: 150px;
+      border-top: 1px solid var(--line);
+      justify-content: start;
+      margin-top: 2px;
+      padding-top: 10px;
     }}
 
     .refined-action {{
-      background: #ffffff;
-      border: 1px solid var(--line);
-      color: var(--ink);
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
       cursor: pointer;
-      font-weight: 800;
-      padding: 0 11px;
+      font-size: 0.82rem;
+      font-weight: 750;
+      min-height: 30px;
+      padding: 0 9px;
       width: auto;
     }}
 
     .refined-action.positive {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
+      background: #edf6f2;
+      border-color: #c6ded5;
+      color: var(--accent-strong);
     }}
 
     .refined-action.negative {{
+      background: #fff5f4;
+      border-color: #efd0cb;
       color: var(--danger);
     }}
 
     .refined-action:hover {{
+      background: var(--ink);
       border-color: var(--ink);
+      color: #ffffff;
     }}
 
     .refined-action:disabled {{
@@ -794,8 +806,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         padding: 16px;
       }}
 
-      .topbar,
-      .refined-item {{
+      .topbar {{
         grid-template-columns: 1fr;
       }}
 
