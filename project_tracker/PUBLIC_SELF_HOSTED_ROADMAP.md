@@ -22,6 +22,7 @@ As of 2026-04-12, the Stage 3 board workflow is browser-tested through:
 - Login/logout.
 - Manual job creation from `/jobs/new`.
 - Board workflow dropdown views for prospects, in progress, outcomes, all active, and archived jobs.
+- Refined board UI as the default board experience, with classic board mode available via toggle.
 - Focused list views for prospects, outcomes, and archived jobs.
 - Prospects quick-triage actions for interested and archive.
 - Drag/drop and `Move to column` dropdown stage movement in kanban views.

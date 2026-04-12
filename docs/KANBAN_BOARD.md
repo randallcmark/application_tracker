@@ -12,7 +12,7 @@ anonymous users are sent to `/login`.
 ## Current Behavior
 
 - Shows owner-scoped jobs only.
-- Defaults to the `in_progress` workflow view.
+- Defaults to the `in_progress` workflow view in the refined board UI.
 - Provides workflow views:
   - `/board?workflow=prospects` for `saved` and `interested`.
   - `/board?workflow=in_progress` for `preparing`, `applied`, and `interviewing`.
@@ -20,15 +20,17 @@ anonymous users are sent to `/login`.
   - `/board?workflow=all` for all active board statuses.
   - `/board?workflow=archived` for archived jobs.
 - Hides `archived` jobs from active workflow views.
-- Uses a compact workflow dropdown rather than large workflow buttons.
+- Uses workflow tabs in the refined UI.
+- Keeps the previous kanban/dropdown UI available at `/board?ui=classic`.
+- Provides a `Classic` toggle from the refined board and a `Refined` toggle from classic mode.
 - Links to the manual add-job form at `/jobs/new`.
 - Links each card title to a job detail page at `/jobs/{job_uuid}`.
 - Shows focused list views for:
-  - `prospects`, with row actions to archive a job or mark it as interested.
+  - `prospects`, with compact contextual actions to dismiss or keep a job.
   - `outcomes`, with offer rows visually marked green and rejected rows visually marked red.
   - `archived`, with archived jobs shown as a compact list.
 - Visually marks interested prospects so reviewed jobs remain easy to identify.
-- Groups cards into columns for active kanban workflow stages:
+- Groups jobs into lanes for active workflow stages:
   - `saved`
   - `interested`
   - `preparing`
@@ -42,14 +44,14 @@ anonymous users are sent to `/login`.
   - `Follow-up due today`
   - `Follow-up overdue`
   - `Follow-up YYYY-MM-DD`
-- Provides a `Move to column` dropdown on kanban cards.
+- Provides compact contextual status actions on refined jobs.
+- Provides a `Move to column` dropdown on classic kanban cards.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
-- Supports dragging kanban cards within and across columns.
+- Supports dragging refined lane jobs and classic kanban cards within and across columns.
 - Persists drag-and-drop ordering with `PATCH /api/jobs/board`.
 - Records status changes in each job's timeline.
 
-The card dropdown remains available as the keyboard-friendly fallback to drag-and-drop in kanban
-views. Focused list views use small row actions for quick triage.
+Classic mode remains available while the refined UI is being tested and polished.
 
 ## Browser Test
 
@@ -80,9 +82,9 @@ http://127.0.0.1:8000/login
 8. Return to the board and switch between `Prospects`, `In Progress`, `Outcomes`, `All Active`,
    and `Archived`.
 
-9. Confirm `Prospects`, `Outcomes`, and `Archived` render as row lists rather than columns.
+9. Confirm `Prospects`, `Outcomes`, and `Archived` render as focused row lists rather than columns.
 
-10. In `Prospects`, use `Interested` to keep a job in review and `Archive` to remove it from the
+10. In `Prospects`, use `Keep` to keep a job in review and `Dismiss` to remove it from the
     active board.
 
 11. Confirm interested prospects have a distinct visual indicator.
@@ -91,9 +93,11 @@ http://127.0.0.1:8000/login
 
 13. Confirm each row or card shows `In stage: X days`, and stale items include `stale`.
 
-14. In kanban views, drag a card to another stage, or use the `Move to column` dropdown.
+14. In refined lane views, drag a job to another lane or use its compact action chips.
 
 15. Refresh the page and confirm the job remains in the new stage.
+
+16. Use `Classic` and confirm `/board?ui=classic` still exposes the original dropdown board.
 
 ## Terminal Check
 

@@ -64,23 +64,55 @@ def test_board_defaults_to_in_progress_workflow(tmp_path: Path, monkeypatch) -> 
         response = client.get("/board")
 
         assert response.status_code == 200
-        assert "Application Board" in response.text
+        assert "Application Tracker" in response.text
         assert "In Progress" in response.text
         assert "Visible saved role" not in response.text
         assert "Visible applied role" in response.text
         assert "Hidden archived role" not in response.text
         assert "Other user role" not in response.text
+        assert 'class="refined-board"' in response.text
+        assert 'class="workflow-tab active" href="/board?workflow=in_progress"' in response.text
+        assert 'href="/board?workflow=in_progress&ui=classic"' in response.text
         assert 'data-status="preparing"' in response.text
         assert 'data-status="applied"' in response.text
         assert 'data-status="interviewing"' in response.text
         assert 'data-status="saved"' not in response.text
         assert 'draggable="true"' in response.text
-        assert 'class="workflow-select"' in response.text
-        assert 'class="job-status-select"' in response.text
+        assert 'class="workflow-select"' not in response.text
+        assert 'class="job-status-select"' not in response.text
+        assert 'class="refined-action positive"' in response.text
         assert 'data-move="previous"' not in response.text
         assert 'data-move="next"' not in response.text
         assert "/jobs/" in response.text
         assert 'fetch("/api/jobs/board"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_board_classic_ui_keeps_legacy_controls(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            db.add(Job(owner_user_id=user.id, title="Applied role", status="applied"))
+            db.commit()
+
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "jobseeker@example.com", "password": "password"},
+        )
+        assert login_response.status_code == 200
+
+        response = client.get("/board?workflow=in_progress&ui=classic")
+
+        assert response.status_code == 200
+        assert "Application Board" in response.text
+        assert "Applied role" in response.text
+        assert 'class="workflow-select"' in response.text
+        assert 'class="job-status-select"' in response.text
+        assert 'href="/board?workflow=in_progress">Refined</a>' in response.text
+        assert "ui=classic" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -113,12 +145,12 @@ def test_board_prospects_workflow_shows_discovery_stages(tmp_path: Path, monkeyp
         assert "Saved role" in response.text
         assert "Interested role" in response.text
         assert "Applied role" not in response.text
-        assert 'class="board list-board"' in response.text
-        assert 'class="job-row status-saved"' in response.text
-        assert 'class="job-row status-interested"' in response.text
+        assert 'class="refined-list"' in response.text
+        assert 'class="refined-item status-saved"' in response.text
+        assert 'class="refined-item status-interested"' in response.text
         assert 'data-status-target="archived"' in response.text
         assert 'data-status-target="interested"' in response.text
-        assert 'class="row-state-marker reviewed">Interested</span>' in response.text
+        assert ">Keep</button>" in response.text
         assert 'class="board-column"' not in response.text
         assert 'data-status="applied"' not in response.text
         assert 'option value="applied"' not in response.text
@@ -154,11 +186,11 @@ def test_board_outcomes_workflow_shows_status_indicated_rows(tmp_path: Path, mon
         assert "Offer role" in response.text
         assert "Rejected role" in response.text
         assert "Applied role" not in response.text
-        assert 'class="board list-board"' in response.text
-        assert 'class="job-row status-offer"' in response.text
-        assert 'class="job-row status-rejected"' in response.text
+        assert 'class="refined-list"' in response.text
+        assert 'class="refined-item status-offer"' in response.text
+        assert 'class="refined-item status-rejected"' in response.text
         assert 'class="board-column"' not in response.text
-        assert 'data-status-target="archived"' not in response.text
+        assert 'data-status-target="archived"' in response.text
         assert 'data-status-target="interested"' not in response.text
     finally:
         app.dependency_overrides.clear()
@@ -189,8 +221,9 @@ def test_board_archived_workflow_shows_archived_jobs(tmp_path: Path, monkeypatch
         assert response.status_code == 200
         assert "Archived role" in response.text
         assert "Active role" not in response.text
-        assert 'class="board list-board"' in response.text
-        assert 'class="job-row status-archived"' in response.text
+        assert 'class="refined-list"' in response.text
+        assert 'class="refined-item status-archived"' in response.text
+        assert 'data-status-target="saved"' in response.text
         assert 'class="board-column"' not in response.text
     finally:
         app.dependency_overrides.clear()
