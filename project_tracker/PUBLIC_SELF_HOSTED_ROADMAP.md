@@ -11,7 +11,7 @@ Status key:
 - Planned: not started or needs a substantial rebuild.
 - Deferred: intentionally out of scope until the core product is stable.
 
-Last planning update: 2026-04-11
+Last planning update: 2026-04-12
 
 ---
 
@@ -37,6 +37,12 @@ Known next product focus:
 - Editing still needs to expand beyond core job fields into notes, applications, interviews, and
   artefact metadata.
 - Future job detail overlay/modal instead of full navigation away from the board.
+
+Known bugs:
+
+- Timeline/journal timestamps are stored in UTC and currently rendered as UTC on server-rendered pages.
+  Browser users should see times in their local timezone, for example BST instead of UTC during daylight
+  savings.
 
 ---
 
