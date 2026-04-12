@@ -564,7 +564,8 @@ Tasks:
   - seniority.
   - apply URL. Done from submitted fields or JSON-LD relative URL resolution.
   - closing date where available.
-  - description sections. Started with readable description text from submitted fields, JSON-LD, selected text, or HTML body.
+  - description sections. Started with Markdown-style headings, paragraphs, bullets, numbered lists,
+    and links from submitted HTML, JSON-LD, selected text, or HTML body.
 - Preserve:
   - raw HTML or raw extension payload. Done for capture API `raw_html`.
   - clean description text. Done for capture API.

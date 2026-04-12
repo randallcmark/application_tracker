@@ -131,7 +131,7 @@ def test_capture_job_extracts_jsonld_from_raw_html(tmp_path: Path, monkeypatch) 
                   }
                 },
                 "url": "/structured/apply",
-                "description": "<p>Lead structured capture.</p>"
+                "description": "<h2>About</h2><p>Lead structured capture.</p><ul><li>Keep formatting</li></ul>"
               }
             </script>
           </head>
@@ -160,7 +160,7 @@ def test_capture_job_extracts_jsonld_from_raw_html(tmp_path: Path, monkeypatch) 
 
             assert job is not None
             assert job.location == "London, GB"
-            assert job.description_raw == "Lead structured capture."
+            assert job.description_raw == "## About\n\nLead structured capture.\n\n- Keep formatting"
             assert job.structured_data["capture"]["raw_html"] == raw_html
             assert job.structured_data["capture"]["extraction"] == {
                 "warnings": [],

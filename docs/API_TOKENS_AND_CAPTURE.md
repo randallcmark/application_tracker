@@ -100,8 +100,10 @@ The bookmarklet sends:
 - extraction metadata including page title, hostname source platform, body text sample, and capture time.
 
 The backend parses `raw_html` for JSON-LD `JobPosting` data. Explicit payload fields take
-precedence, then JSON-LD fields, then selected/page text fallbacks. Raw HTML and extraction warnings
-are preserved in the job structured data for debugging.
+precedence, then JSON-LD fields, then selected/page text fallbacks. HTML descriptions are converted
+to readable Markdown-style text with headings, paragraphs, bullets, numbered lists, and links
+preserved where possible. Raw HTML and extraction warnings are preserved in the job structured data
+for debugging.
 
 Because the bookmarklet runs on third-party job sites, the app allows CORS preflight requests for
 token-authenticated capture. The capture route still requires the bearer token.

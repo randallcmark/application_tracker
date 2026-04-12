@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from html import unescape
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urljoin
@@ -34,6 +35,120 @@ class _HtmlTextParser(HTMLParser):
             cleaned = _clean_text(data)
             if cleaned:
                 self.parts.append(cleaned)
+
+
+class _HtmlMarkdownParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._list_stack: list[str] = []
+        self._ordered_indexes: list[int] = []
+        self._link_stack: list[str | None] = []
+        self.parts: list[str] = []
+
+    def _append(self, value: str) -> None:
+        if not value:
+            return
+        self.parts.append(value)
+
+    def _ensure_block(self) -> None:
+        current = "".join(self.parts)
+        if not current.strip():
+            self.parts = []
+            return
+        if current.endswith("\n\n"):
+            return
+        stripped = current.rstrip()
+        if current.endswith("\n"):
+            self.parts = [stripped, "\n\n"]
+        else:
+            self.parts = [stripped, "\n\n"]
+
+    def _ensure_line(self) -> None:
+        current = "".join(self.parts)
+        if not current.strip():
+            self.parts = []
+            return
+        if current.endswith("\n\n"):
+            return
+        if current.endswith("\n"):
+            return
+        stripped = current.rstrip()
+        if stripped.endswith("\n"):
+            self.parts = [stripped]
+        else:
+            self.parts = [stripped, "\n"]
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style", "noscript"}:
+            self._skip_depth += 1
+            return
+        if self._skip_depth:
+            return
+
+        attrs_dict = {name.lower(): value for name, value in attrs}
+        if tag in {"p", "section", "article", "div", "blockquote"}:
+            self._ensure_block()
+        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            self._ensure_block()
+            level = min(int(tag[1]), 6)
+            self._append(f"{'#' * level} ")
+        elif tag == "br":
+            self._ensure_line()
+        elif tag == "ul":
+            self._ensure_block()
+            self._list_stack.append("ul")
+        elif tag == "ol":
+            self._ensure_block()
+            self._list_stack.append("ol")
+            self._ordered_indexes.append(1)
+        elif tag == "li":
+            self._ensure_line()
+            indent = "  " * max(len(self._list_stack) - 1, 0)
+            if self._list_stack and self._list_stack[-1] == "ol":
+                index = self._ordered_indexes[-1]
+                self._ordered_indexes[-1] += 1
+                self._append(f"{indent}{index}. ")
+            else:
+                self._append(f"{indent}- ")
+        elif tag == "a":
+            self._link_stack.append(attrs_dict.get("href"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style", "noscript"} and self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if self._skip_depth:
+            return
+
+        if tag in {"p", "section", "article", "div", "blockquote"}:
+            self._ensure_block()
+        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            self._ensure_block()
+        elif tag == "li":
+            self._ensure_line()
+        elif tag == "ul" and self._list_stack:
+            self._list_stack.pop()
+            self._ensure_block()
+        elif tag == "ol" and self._list_stack:
+            self._list_stack.pop()
+            if self._ordered_indexes:
+                self._ordered_indexes.pop()
+            self._ensure_block()
+        elif tag == "a" and self._link_stack:
+            href = self._link_stack.pop()
+            if href:
+                self._append(f" ({href})")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        cleaned = _clean_text(unescape(data))
+        if cleaned:
+            current = "".join(self.parts)
+            if current and not current.endswith((" ", "\n", "(", "[", "- ")):
+                self._append(" ")
+            self._append(cleaned)
 
 
 class _JsonLdParser(HTMLParser):
@@ -83,6 +198,17 @@ def html_to_text(html: str | None) -> str | None:
     parser = _HtmlTextParser()
     parser.feed(html)
     return _clean_text(" ".join(parser.parts))
+
+
+def html_to_markdown(html: str | None) -> str | None:
+    if not html:
+        return None
+    parser = _HtmlMarkdownParser()
+    parser.feed(html)
+    rendered = "".join(parser.parts)
+    rendered = re.sub(r"[ \t]+\n", "\n", rendered)
+    rendered = re.sub(r"\n{3,}", "\n\n", rendered)
+    return rendered.strip() or None
 
 
 def _iter_jsonld_objects(value: Any) -> list[dict[str, Any]]:
@@ -183,9 +309,9 @@ def extract_job_capture(
 ) -> ExtractedJob:
     warnings: list[str] = []
     job_posting = extract_jsonld_job_posting(raw_html, warnings)
-    html_text = html_to_text(raw_html)
+    html_text = html_to_markdown(raw_html)
     jsonld_description = (
-        html_to_text(str(job_posting.get("description")))
+        html_to_markdown(str(job_posting.get("description")))
         if job_posting and job_posting.get("description")
         else None
     )
