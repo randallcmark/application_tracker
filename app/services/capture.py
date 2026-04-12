@@ -20,6 +20,8 @@ def capture_job(
     selected_text: str | None = None,
     source_platform: str | None = None,
     raw_extraction_metadata: dict | None = None,
+    raw_html: str | None = None,
+    extraction: dict | None = None,
 ) -> tuple[Job, bool]:
     existing_job = None
     if source_url:
@@ -34,6 +36,8 @@ def capture_job(
         "capture": {
             "selected_text": selected_text,
             "raw_extraction_metadata": raw_extraction_metadata or {},
+            "raw_html": raw_html,
+            "extraction": extraction or {},
         }
     }
 

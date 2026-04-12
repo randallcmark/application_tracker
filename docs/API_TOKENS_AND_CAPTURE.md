@@ -95,8 +95,13 @@ The bookmarklet sends:
 - page title or first `h1` as `title`;
 - selected text as `selected_text`;
 - page text as fallback `description`;
+- raw page HTML as `raw_html`;
 - JSON-LD `JobPosting` title, company, location, and description when present;
 - extraction metadata including page title, hostname source platform, body text sample, and capture time.
+
+The backend parses `raw_html` for JSON-LD `JobPosting` data. Explicit payload fields take
+precedence, then JSON-LD fields, then selected/page text fallbacks. Raw HTML and extraction warnings
+are preserved in the job structured data for debugging.
 
 Because the bookmarklet runs on third-party job sites, the app allows CORS preflight requests for
 token-authenticated capture. The capture route still requires the bearer token.
@@ -118,6 +123,7 @@ curl -i \
     "description": "Own the roadmap.",
     "selected_text": "Interesting role",
     "source_platform": "example_jobs",
+    "raw_html": "<html>...</html>",
     "raw_extraction_metadata": {"extractor": "generic"}
   }' \
   http://127.0.0.1:8000/api/capture/jobs

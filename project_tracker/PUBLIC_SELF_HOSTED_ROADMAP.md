@@ -550,26 +550,26 @@ Captured data drives filtering, matching, analytics, and writing assistance. The
 Tasks:
 
 - Consolidate API and UI ingestion into one shared service.
-- Parse JSON-LD `JobPosting` where present.
+- Parse JSON-LD `JobPosting` where present. Done for capture API raw HTML.
 - Resolve relative URLs with `urljoin`.
 - Extract:
-  - title.
-  - company.
-  - location.
+  - title. Done from submitted fields or JSON-LD.
+  - company. Done from submitted fields or JSON-LD.
+  - location. Done from submitted fields or JSON-LD.
   - remote/hybrid/onsite policy.
   - salary range and currency.
   - employment type.
   - seniority.
-  - apply URL.
+  - apply URL. Done from submitted fields or JSON-LD relative URL resolution.
   - closing date where available.
-  - description sections.
+  - description sections. Started with readable description text from submitted fields, JSON-LD, selected text, or HTML body.
 - Preserve:
-  - raw HTML or raw extension payload.
-  - clean description text.
-  - structured extraction metadata.
-  - warnings and confidence.
+  - raw HTML or raw extension payload. Done for capture API `raw_html`.
+  - clean description text. Done for capture API.
+  - structured extraction metadata. Done for capture API.
+  - warnings and confidence. Done for capture API.
 - Add source-specific extractors only after generic structured extraction.
-- Add fixture-based tests for representative pages.
+- Add fixture-based tests for representative pages. Started with service-level HTML and JSON-LD tests.
 
 Acceptance criteria:
 

@@ -9,6 +9,7 @@ from app.api.deps import DbSession, get_current_user, require_capture_jobs_api_t
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.capture import capture_job
+from app.services.extraction import extract_job_capture
 
 router = APIRouter(prefix="/api/capture", tags=["capture"])
 
@@ -23,11 +24,12 @@ class CaptureJobRequest(BaseModel):
     selected_text: str | None = None
     source_platform: str | None = Field(default=None, max_length=100)
     raw_extraction_metadata: dict | None = None
+    raw_html: str | None = None
 
     @model_validator(mode="after")
     def require_capture_content(self) -> "CaptureJobRequest":
-        if not self.title and not self.source_url:
-            raise ValueError("Capture requires at least a title or source_url")
+        if not self.title and not self.source_url and not self.raw_html and not self.selected_text:
+            raise ValueError("Capture requires at least a title, source_url, raw_html, or selected_text")
         return self
 
 
@@ -58,7 +60,7 @@ def _response(job: Job, *, created: bool) -> CaptureJobResponse:
 def _bookmarklet_javascript(base_url: str, token: str) -> str:
     base_url_literal = repr(base_url.rstrip("/"))
     token_literal = repr(token)
-    return f"""javascript:(async()=>{{const base={base_url_literal};const token={token_literal};function text(x){{return(x||'').replace(/\\s+/g,' ').trim();}}function strip(x){{const d=document.createElement('div');d.innerHTML=x||'';return text(d.textContent||d.innerText||'');}}function findJobPosting(){{for(const s of document.querySelectorAll('script[type="application/ld+json"]')){{try{{const raw=JSON.parse(s.textContent||'null');const items=Array.isArray(raw)?raw:[raw];for(const item of items){{const graph=item&&item['@graph'];const candidates=Array.isArray(graph)?graph.concat(items):items;for(const c of candidates){{const type=c&&c['@type'];const types=Array.isArray(type)?type:[type];if(types.includes('JobPosting'))return c;}}}}catch(e){{}}}}return null;}}const job=findJobPosting()||{{}};const selected=String(window.getSelection?window.getSelection():'').trim();const body=text(document.body?document.body.innerText:'').slice(0,20000);const title=text(job.title)||text(document.querySelector('h1')&&document.querySelector('h1').innerText)||text(document.title)||location.href;const org=job.hiringOrganization||{{}};const company=text(org.name);const loc=job.jobLocation;const place=Array.isArray(loc)?loc[0]:loc;const address=place&&place.address;const locationText=text(typeof address==='string'?address:address&&[address.addressLocality,address.addressRegion,address.addressCountry].filter(Boolean).join(', '));const description=strip(job.description)||selected||body;const payload={{source_url:location.href,apply_url:location.href,title,company:company||null,location:locationText||null,description,selected_text:selected||null,source_platform:location.hostname,raw_extraction_metadata:{{extractor:'bookmarklet',page_title:document.title,body_text:body,json_ld_job_posting:Boolean(job.title),captured_at:new Date().toISOString()}}}};try{{const r=await fetch(base+'/api/capture/jobs',{{method:'POST',headers:{{'Authorization':'Bearer '+token,'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const data=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(data.detail||'Capture failed');alert((data.created?'Captured: ':'Updated existing job: ')+data.title);}}catch(e){{alert('Application Tracker capture failed: '+e.message);}}}})();"""
+    return f"""javascript:(async()=>{{const base={base_url_literal};const token={token_literal};function text(x){{return(x||'').replace(/\\s+/g,' ').trim();}}function findJobPosting(){{for(const s of document.querySelectorAll('script[type="application/ld+json"]')){{try{{const raw=JSON.parse(s.textContent||'null');const items=Array.isArray(raw)?raw:[raw];for(const item of items){{const graph=item&&item['@graph'];const candidates=Array.isArray(graph)?graph.concat(items):items;for(const c of candidates){{const type=c&&c['@type'];const types=Array.isArray(type)?type:[type];if(types.includes('JobPosting'))return c;}}}}catch(e){{}}}}return null;}}const job=findJobPosting()||{{}};const selected=String(window.getSelection?window.getSelection():'').trim();const body=text(document.body?document.body.innerText:'').slice(0,20000);const rawHtml=document.documentElement?document.documentElement.outerHTML.slice(0,200000):null;const title=text(job.title)||text(document.querySelector('h1')&&document.querySelector('h1').innerText)||text(document.title)||location.href;const payload={{source_url:location.href,apply_url:location.href,title,description:selected||body,selected_text:selected||null,source_platform:location.hostname,raw_html:rawHtml,raw_extraction_metadata:{{extractor:'bookmarklet',page_title:document.title,body_text:body,json_ld_job_posting:Boolean(job.title),captured_at:new Date().toISOString()}}}};try{{const r=await fetch(base+'/api/capture/jobs',{{method:'POST',headers:{{'Authorization':'Bearer '+token,'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const data=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(data.detail||'Capture failed');alert((data.created?'Captured: ':'Updated existing job: ')+data.title);}}catch(e){{alert('Application Tracker capture failed: '+e.message);}}}})();"""
 
 
 def render_bookmarklet_setup(request: Request, user: User) -> str:
@@ -247,7 +249,19 @@ def capture_job_route(
     db: DbSession,
     owner: Annotated[User, Depends(require_capture_jobs_api_token)],
 ) -> CaptureJobResponse:
-    title = (payload.title or payload.source_url or "").strip()
+    extracted = extract_job_capture(
+        source_url=payload.source_url,
+        apply_url=payload.apply_url,
+        title=payload.title,
+        company=payload.company,
+        location=payload.location,
+        description=payload.description,
+        selected_text=payload.selected_text,
+        source_platform=payload.source_platform,
+        raw_extraction_metadata=payload.raw_extraction_metadata,
+        raw_html=payload.raw_html,
+    )
+    title = (extracted.title or payload.source_url or "").strip()
     if not title:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job title is required")
 
@@ -255,14 +269,19 @@ def capture_job_route(
         db,
         owner,
         title=title,
-        company=payload.company,
+        company=extracted.company,
         source_url=payload.source_url,
-        apply_url=payload.apply_url,
-        location=payload.location,
-        description=payload.description,
-        selected_text=payload.selected_text,
-        source_platform=payload.source_platform,
-        raw_extraction_metadata=payload.raw_extraction_metadata,
+        apply_url=extracted.apply_url,
+        location=extracted.location,
+        description=extracted.description,
+        selected_text=extracted.selected_text,
+        source_platform=extracted.source_platform,
+        raw_extraction_metadata=extracted.raw_extraction_metadata,
+        raw_html=extracted.raw_html,
+        extraction={
+            "warnings": extracted.warnings,
+            "confidence": extracted.confidence,
+        },
     )
     db.commit()
     if not created:

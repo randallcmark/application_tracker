@@ -59,6 +59,11 @@ def test_capture_job_creates_owned_job_with_bearer_token(tmp_path: Path, monkeyp
             assert job.source == "example_jobs"
             assert job.description_raw == "Own the roadmap."
             assert job.structured_data["capture"]["selected_text"] == "Interesting role"
+            assert job.structured_data["capture"]["raw_html"] is None
+            assert job.structured_data["capture"]["extraction"] == {
+                "warnings": [],
+                "confidence": "low",
+            }
             assert job.structured_data["capture"]["raw_extraction_metadata"] == {
                 "selector": "json-ld"
             }
@@ -101,6 +106,69 @@ def test_capture_job_deduplicates_by_owner_and_source_url(tmp_path: Path, monkey
             jobs = db.scalars(select(Job)).all()
 
             assert len(jobs) == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_capture_job_extracts_jsonld_from_raw_html(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        token = create_capture_token(client, session_local)
+        raw_html = """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "JSON-LD Product Lead",
+                "hiringOrganization": {"name": "Structured Co"},
+                "jobLocation": {
+                  "@type": "Place",
+                  "address": {
+                    "addressLocality": "London",
+                    "addressCountry": "GB"
+                  }
+                },
+                "url": "/structured/apply",
+                "description": "<p>Lead structured capture.</p>"
+              }
+            </script>
+          </head>
+          <body>Fallback body.</body>
+        </html>
+        """
+
+        response = client.post(
+            "/api/capture/jobs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "source_url": "https://jobs.example.com/structured",
+                "raw_html": raw_html,
+                "raw_extraction_metadata": {"extractor": "test"},
+            },
+        )
+
+        assert response.status_code == 201
+        payload = response.json()
+        assert payload["title"] == "JSON-LD Product Lead"
+        assert payload["company"] == "Structured Co"
+        assert payload["apply_url"] == "https://jobs.example.com/structured/apply"
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == payload["uuid"]))
+
+            assert job is not None
+            assert job.location == "London, GB"
+            assert job.description_raw == "Lead structured capture."
+            assert job.structured_data["capture"]["raw_html"] == raw_html
+            assert job.structured_data["capture"]["extraction"] == {
+                "warnings": [],
+                "confidence": "medium",
+            }
+            assert job.structured_data["capture"]["raw_extraction_metadata"] == {
+                "extractor": "test"
+            }
     finally:
         app.dependency_overrides.clear()
 
@@ -150,6 +218,7 @@ def test_capture_bookmarklet_setup_renders_generator(tmp_path: Path, monkeypatch
         assert "/api/capture/jobs" in response.text
         assert "JobPosting" in response.text
         assert "PASTE_TOKEN_HERE" in response.text
+        assert "raw_html" in response.text
         assert "javascript:javascript:" not in response.text
     finally:
         app.dependency_overrides.clear()
