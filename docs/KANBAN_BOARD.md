@@ -23,7 +23,12 @@ anonymous users are sent to `/login`.
 - Uses a compact workflow dropdown rather than large workflow buttons.
 - Links to the manual add-job form at `/jobs/new`.
 - Links each card title to a job detail page at `/jobs/{job_uuid}`.
-- Groups cards into the selected workflow stages:
+- Shows focused list views for:
+  - `prospects`, with row actions to archive a job or mark it as interested.
+  - `outcomes`, with offer rows visually marked green and rejected rows visually marked red.
+  - `archived`, with archived jobs shown as a compact list.
+- Visually marks interested prospects so reviewed jobs remain easy to identify.
+- Groups cards into columns for active kanban workflow stages:
   - `saved`
   - `interested`
   - `preparing`
@@ -37,13 +42,14 @@ anonymous users are sent to `/login`.
   - `Follow-up due today`
   - `Follow-up overdue`
   - `Follow-up YYYY-MM-DD`
-- Provides a `Move to column` dropdown on each card.
+- Provides a `Move to column` dropdown on kanban cards.
 - Persists stage changes with `PATCH /api/jobs/{job_uuid}/board`.
-- Supports dragging cards within and across columns.
+- Supports dragging kanban cards within and across columns.
 - Persists drag-and-drop ordering with `PATCH /api/jobs/board`.
 - Records status changes in each job's timeline.
 
-The card dropdown remains available as the keyboard-friendly fallback to drag-and-drop.
+The card dropdown remains available as the keyboard-friendly fallback to drag-and-drop in kanban
+views. Focused list views use small row actions for quick triage.
 
 ## Browser Test
 
@@ -74,11 +80,20 @@ http://127.0.0.1:8000/login
 8. Return to the board and switch between `Prospects`, `In Progress`, `Outcomes`, `All Active`,
    and `Archived`.
 
-9. Confirm each card shows `In stage: X days`, and stale cards include `stale`.
+9. Confirm `Prospects`, `Outcomes`, and `Archived` render as row lists rather than columns.
 
-10. Drag the card to another stage, or use the `Move to column` dropdown.
+10. In `Prospects`, use `Interested` to keep a job in review and `Archive` to remove it from the
+    active board.
 
-11. Refresh the page and confirm the job remains in the new stage.
+11. Confirm interested prospects have a distinct visual indicator.
+
+12. Confirm outcome rows mark offers green and rejections red.
+
+13. Confirm each row or card shows `In stage: X days`, and stale items include `stale`.
+
+14. In kanban views, drag a card to another stage, or use the `Move to column` dropdown.
+
+15. Refresh the page and confirm the job remains in the new stage.
 
 ## Terminal Check
 

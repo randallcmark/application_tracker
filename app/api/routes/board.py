@@ -32,6 +32,8 @@ WORKFLOW_VIEWS = {
     "archived": ("archived",),
 }
 
+LIST_WORKFLOWS = {"prospects", "outcomes", "archived"}
+
 WORKFLOW_LABELS = {
     "prospects": "Prospects",
     "in_progress": "In Progress",
@@ -135,6 +137,92 @@ def _workflow_nav(current_workflow: str) -> str:
     """
 
 
+def _salary_range(job: Job) -> str:
+    if job.salary_min is None and job.salary_max is None:
+        return ""
+
+    currency = f"{job.salary_currency} " if job.salary_currency else ""
+    if job.salary_min is not None and job.salary_max is not None:
+        salary = f"{currency}{job.salary_min:g}-{job.salary_max:g}"
+    elif job.salary_min is not None:
+        salary = f"{currency}{job.salary_min:g}+"
+    else:
+        salary = f"Up to {currency}{job.salary_max:g}"
+    return f"<span>{escape(salary)}</span>"
+
+
+def _row_actions(job: Job, workflow: str) -> tuple[str, str]:
+    if workflow != "prospects":
+        return "", ""
+
+    archive = (
+        '<button class="row-status-action row-action archive" '
+        'type="button" data-status-target="archived" '
+        f'aria-label="Archive {escape(job.title, quote=True)}">Archive</button>'
+    )
+    if job.status == "interested":
+        interested = '<span class="row-state-marker reviewed">Interested</span>'
+    else:
+        interested = (
+            '<button class="row-status-action row-action interested" '
+            'type="button" data-status-target="interested" '
+            f'aria-label="Mark {escape(job.title, quote=True)} as interested">Interested</button>'
+        )
+    return archive, interested
+
+
+def _job_row(job: Job, workflow: str) -> str:
+    company = f"<span>{escape(job.company)}</span>" if job.company else ""
+    location = f"<span>{escape(job.location)}</span>" if job.location else ""
+    source = f"<span>{escape(job.source)}</span>" if job.source else ""
+    salary = _salary_range(job)
+    meta = "".join([company, location, salary, source])
+    if not meta:
+        meta = "<span>No extra details yet</span>"
+    status_label = BOARD_LABELS.get(job.status, job.status.title())
+    source_link = ""
+    if job.source_url:
+        source_link = (
+            f'<a href="{escape(job.source_url, quote=True)}" '
+            'target="_blank" rel="noreferrer">Source</a>'
+        )
+
+    left_action, right_action = _row_actions(job, workflow)
+    created_at = job.created_at.date().isoformat() if job.created_at else ""
+    added = f"<span>Added {escape(created_at)}</span>" if created_at else ""
+
+    return f"""
+    <article class="job-row status-{escape(job.status)}" data-job-uuid="{escape(job.uuid)}">
+      <div class="row-edge row-left">{left_action}</div>
+      <div class="row-main">
+        <div class="row-title-line">
+          <h3><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></h3>
+          <span class="status-pill">{escape(status_label)}</span>
+        </div>
+        <div class="row-meta">
+          {meta}
+          {added}
+          {source_link}
+        </div>
+        {_stage_age(job)}
+        {_follow_up_indicator(job)}
+      </div>
+      <div class="row-edge row-right">{right_action}</div>
+    </article>
+    """
+
+
+def _list_view(jobs: Iterable[Job], workflow: str) -> str:
+    rows = "\n".join(_job_row(job, workflow) for job in jobs)
+    empty = '<p class="empty">No jobs in this view.</p>' if not rows else ""
+    return f"""
+    <section class="list-view" aria-label="{escape(WORKFLOW_LABELS[workflow], quote=True)} jobs">
+      {rows}
+      {empty}
+    </section>
+    """
+
+
 def _job_card(job: Job, statuses: Iterable[str]) -> str:
     company = f"<p>{escape(job.company)}</p>" if job.company else ""
     location = f"<p>{escape(job.location)}</p>" if job.location else ""
@@ -190,13 +278,23 @@ def _column(status: str, jobs: Iterable[Job], statuses: Iterable[str]) -> str:
 def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") -> str:
     statuses = WORKFLOW_VIEWS[workflow]
     jobs_by_status = {status: [] for status in statuses}
+    visible_jobs = []
     for job in jobs:
         if job.status in jobs_by_status:
             jobs_by_status[job.status].append(job)
+            visible_jobs.append(job)
 
-    columns = "\n".join(_column(status, jobs_by_status[status], statuses) for status in statuses)
+    if workflow in LIST_WORKFLOWS:
+        board_content = _list_view(visible_jobs, workflow)
+        board_mode_class = " list-board"
+        column_count = 1
+    else:
+        board_content = "\n".join(
+            _column(status, jobs_by_status[status], statuses) for status in statuses
+        )
+        board_mode_class = ""
+        column_count = len(statuses)
     status_list = ",".join(statuses)
-    column_count = len(statuses)
     workflow_label = WORKFLOW_LABELS[workflow]
     return f"""<!doctype html>
 <html lang="en">
@@ -215,6 +313,10 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       --accent: #147a5c;
       --accent-strong: #0f5d47;
       --warn: #a43d2b;
+      --danger: #b42318;
+      --success: #16703f;
+      --interested: #0f766e;
+      --neutral: #6b7280;
     }}
 
     * {{
@@ -290,6 +392,17 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       padding-bottom: 16px;
     }}
 
+    .list-board {{
+      display: block;
+      max-width: 1120px;
+      overflow-x: visible;
+    }}
+
+    .list-view {{
+      display: grid;
+      gap: 10px;
+    }}
+
     .board-column {{
       background: #eef2f4;
       border: 1px solid var(--line);
@@ -326,6 +439,65 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       padding: 12px;
     }}
 
+    .job-row {{
+      align-items: stretch;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--neutral);
+      border-radius: 8px;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(82px, auto) 1fr minmax(98px, auto);
+      min-height: 88px;
+      padding: 12px;
+    }}
+
+    .job-row.status-interested {{
+      border-left-color: var(--interested);
+      box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.22);
+    }}
+
+    .job-row.status-offer {{
+      border-left-color: var(--success);
+      box-shadow: inset 0 0 0 1px rgba(22, 112, 63, 0.22);
+    }}
+
+    .job-row.status-rejected {{
+      border-left-color: var(--danger);
+      box-shadow: inset 0 0 0 1px rgba(180, 35, 24, 0.2);
+    }}
+
+    .job-row.status-archived {{
+      border-left-color: var(--neutral);
+      opacity: 0.9;
+    }}
+
+    .row-edge {{
+      align-items: center;
+      display: flex;
+    }}
+
+    .row-left {{
+      justify-content: flex-start;
+    }}
+
+    .row-right {{
+      justify-content: flex-end;
+    }}
+
+    .row-main {{
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }}
+
+    .row-title-line {{
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+    }}
+
     .job-card.dragging {{
       opacity: 0.55;
     }}
@@ -335,19 +507,28 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       box-shadow: inset 0 0 0 2px var(--accent);
     }}
 
-    .job-card h3 {{
+    .job-card h3,
+    .job-row h3 {{
       font-size: 1rem;
       line-height: 1.25;
       overflow-wrap: anywhere;
     }}
 
     .job-card p,
+    .job-row p,
+    .row-meta,
     .card-meta,
     .stage-age {{
       color: var(--muted);
       font-size: 0.88rem;
       line-height: 1.35;
       overflow-wrap: anywhere;
+    }}
+
+    .row-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
     }}
 
     .stage-age.stale {{
@@ -373,16 +554,35 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       justify-content: space-between;
     }}
 
-    .card-meta a {{
+    .card-meta a,
+    .row-meta a {{
       color: var(--accent-strong);
       font-weight: 700;
     }}
 
-    .job-card h3 a {{
+    .job-card h3 a,
+    .job-row h3 a {{
       color: var(--ink);
       text-decoration-color: var(--accent);
       text-decoration-thickness: 2px;
       text-underline-offset: 3px;
+    }}
+
+    .status-pill,
+    .row-state-marker {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      flex: 0 0 auto;
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1;
+      padding: 6px 8px;
+    }}
+
+    .row-state-marker.reviewed {{
+      border-color: rgba(15, 118, 110, 0.35);
+      color: var(--interested);
     }}
 
     .card-actions {{
@@ -425,6 +625,27 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       background: var(--accent-strong);
     }}
 
+    .row-action {{
+      min-height: 34px;
+      min-width: 82px;
+      padding: 0 10px;
+      width: auto;
+    }}
+
+    .row-action.archive {{
+      background: #ffffff;
+      color: var(--danger);
+    }}
+
+    .row-action.archive:hover {{
+      background: #fff1f0;
+    }}
+
+    .row-action.interested {{
+      background: var(--accent);
+      color: #ffffff;
+    }}
+
     button:disabled {{
       background: #9aa3ad;
       cursor: not-allowed;
@@ -462,6 +683,28 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       .board {{
         grid-template-columns: repeat({column_count}, minmax(240px, 82vw));
       }}
+
+      .list-board {{
+        display: block;
+      }}
+
+      .job-row {{
+        grid-template-columns: 1fr;
+      }}
+
+      .row-edge,
+      .row-left,
+      .row-right {{
+        justify-content: stretch;
+      }}
+
+      .row-action {{
+        width: 100%;
+      }}
+
+      .row-title-line {{
+        align-items: start;
+      }}
     }}
   </style>
 </head>
@@ -486,8 +729,8 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       {_workflow_nav(workflow)}
     </nav>
     <p class="notice" role="status" aria-live="polite"></p>
-    <div class="board" data-statuses="{escape(status_list)}">
-      {columns}
+    <div class="board{board_mode_class}" data-statuses="{escape(status_list)}">
+      {board_content}
     </div>
   </main>
   <script>
@@ -546,6 +789,28 @@ def render_board(user: User, jobs: list[Job], *, workflow: str = "in_progress") 
       notice.textContent = "";
       try {{
         await updateJob(card, event.target.value);
+        window.location.reload();
+      }} catch (error) {{
+        notice.textContent = error.message;
+        event.target.disabled = false;
+      }}
+    }});
+
+    document.addEventListener("click", async (event) => {{
+      if (!event.target.classList.contains("row-status-action")) {{
+        return;
+      }}
+
+      const row = event.target.closest(".job-row");
+      const status = event.target.dataset.statusTarget;
+      if (!row || !status) {{
+        return;
+      }}
+
+      event.target.disabled = true;
+      notice.textContent = "";
+      try {{
+        await updateJob(row, status);
         window.location.reload();
       }} catch (error) {{
         notice.textContent = error.message;
