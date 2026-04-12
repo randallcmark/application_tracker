@@ -80,6 +80,10 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert f'action="/jobs/{job_uuid}/archive"' in response.text
         assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert f'action="/jobs/{job_uuid}/edit"' in response.text
+        assert "Edit description" in response.text
+        assert "Edit job and status" in response.text
+        assert "Edit source and links" in response.text
+        assert "Edit location and salary" in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
     finally:
@@ -287,6 +291,49 @@ def test_job_detail_edit_form_rejects_blank_title(tmp_path: Path, monkeypatch) -
 
         assert response.status_code == 400
         assert response.json()["detail"] == "Job title is required"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_section_edit_preserves_unsubmitted_fields(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Section edit target",
+                company="Keep Co",
+                status="applied",
+                source_url="https://jobs.example.com/source",
+                location="Remote",
+                description_raw="Old description.",
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/edit",
+            data={"description_raw": "Only the description changed."},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.title == "Section edit target"
+            assert job.company == "Keep Co"
+            assert job.status == "applied"
+            assert job.source_url == "https://jobs.example.com/source"
+            assert job.location == "Remote"
+            assert job.description_raw == "Only the description changed."
     finally:
         app.dependency_overrides.clear()
 

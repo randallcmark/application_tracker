@@ -21,7 +21,7 @@ http://127.0.0.1:8000/jobs/new
   captured timestamp, source URL, and apply URL.
 - Shows the captured description.
 - Creates manual jobs from the browser.
-- Edits job details after capture or manual creation.
+- Edits job details after capture or manual creation through focused section editors.
 - Shows the job timeline, including `stage_change` events recorded from board movement.
 - Adds notes to the timeline, with an optional follow-up date.
 - Uploads, lists, and downloads job-level artefacts.
@@ -58,8 +58,9 @@ http://127.0.0.1:8000/board
 
 6. Use Add job from the board, create a manual job, and confirm it opens the new detail page.
 
-7. Edit the job title, company, URLs, salary, location, or description and confirm the corrected
-   values remain after reload.
+7. Open the relevant edit selector for a section, change only one field such as title, location, URL,
+   salary, or description, and confirm the corrected value remains after reload without clearing the
+   other fields.
 
 8. Upload a resume or cover letter artefact and confirm it appears in Artefacts with a download link.
 
