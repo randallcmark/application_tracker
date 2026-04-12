@@ -77,6 +77,21 @@ class CreateJobRequest(BaseModel):
     initial_note: str | None = None
 
 
+class UpdateJobRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    company: str | None = Field(default=None, max_length=300)
+    status: str | None = None
+    source: str | None = Field(default=None, max_length=100)
+    source_url: str | None = Field(default=None, max_length=2048)
+    apply_url: str | None = Field(default=None, max_length=2048)
+    location: str | None = Field(default=None, max_length=300)
+    remote_policy: str | None = Field(default=None, max_length=50)
+    salary_min: Decimal | None = None
+    salary_max: Decimal | None = None
+    salary_currency: str | None = Field(default=None, max_length=3)
+    description_raw: str | None = None
+
+
 class JobTimelineEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -181,6 +196,36 @@ def _clean_optional(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _apply_job_update(job: Job, payload: UpdateJobRequest) -> None:
+    fields = payload.model_fields_set
+
+    if "title" in fields:
+        title = (payload.title or "").strip()
+        if not title:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job title is required")
+        job.title = title
+
+    for field_name in (
+        "company",
+        "source",
+        "source_url",
+        "apply_url",
+        "location",
+        "remote_policy",
+        "salary_currency",
+    ):
+        if field_name in fields:
+            setattr(job, field_name, _clean_optional(getattr(payload, field_name)))
+
+    if "salary_min" in fields:
+        job.salary_min = payload.salary_min
+    if "salary_max" in fields:
+        job.salary_max = payload.salary_max
+    if "description_raw" in fields:
+        job.description_raw = _clean_optional(payload.description_raw)
+        job.description_clean = _clean_optional(payload.description_raw)
+
+
 @router.get("", response_model=list[JobResponse])
 def list_jobs(
     db: DbSession,
@@ -266,6 +311,32 @@ def get_job(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Job:
     return require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+
+
+@router.patch("/{job_uuid}", response_model=JobResponse)
+def update_job(
+    job_uuid: str,
+    payload: UpdateJobRequest,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Job:
+    if not payload.model_fields_set:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide at least one job field to update",
+        )
+
+    if "status" in payload.model_fields_set and payload.status is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job status is required")
+    _validate_status(payload.status)
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    _apply_job_update(job, payload)
+    if "status" in payload.model_fields_set:
+        update_job_board_state(job, status=payload.status)
+        record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    db.commit()
+    return job
 
 
 @router.get("/{job_uuid}/timeline", response_model=list[JobTimelineEventResponse])

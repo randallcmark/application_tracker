@@ -51,6 +51,32 @@ curl -s \
 
 Jobs are owner-scoped. Another user's job returns `404`.
 
+## Update Job
+
+```bash
+curl -s \
+  -X PATCH \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title":"Corrected role",
+    "company":"Example Co",
+    "status":"preparing",
+    "source_url":null,
+    "apply_url":"https://jobs.example.com/role/apply",
+    "location":"Remote",
+    "remote_policy":"remote",
+    "salary_min":"90000",
+    "salary_max":"110000",
+    "salary_currency":"GBP",
+    "description_raw":"Corrected role notes."
+  }' \
+  http://127.0.0.1:8000/api/jobs/job-uuid
+```
+
+Only fields provided in the JSON body are updated. `null` clears optional fields. Status changes
+use the same board-state logic as the board and create a `stage_change` timeline event.
+
 ## Create Job
 
 ```bash

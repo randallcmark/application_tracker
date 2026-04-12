@@ -24,6 +24,7 @@ As of 2026-04-11, the Stage 3 board workflow is browser-tested through:
 - Board workflow dropdown views for prospects, in progress, outcomes, all active, and archived jobs.
 - Drag/drop and `Move to column` dropdown stage movement.
 - Job detail notes, status-change timeline, mark applied, schedule interview, archive, and unarchive.
+- Job detail editing for core job fields.
 - Job-level artefact upload/download.
 - Stage-aging, stale-card, and follow-up due indicators on board cards.
 
@@ -33,9 +34,40 @@ Known next product focus:
 - UI polish for the board and job detail page now that the core workflow is usable.
 - Prospects may become a row-list triage view rather than kanban cards, with quick action to mark
   interesting jobs for a focused interested/progression workflow.
-- Job detail editing is needed; currently captured/manual fields can be viewed but not corrected
-  after creation.
+- Editing still needs to expand beyond core job fields into notes, applications, interviews, and
+  artefact metadata.
 - Future job detail overlay/modal instead of full navigation away from the board.
+
+---
+
+## Updated Product Direction
+
+The next public-release plan adds these workstreams to the original staged roadmap:
+
+- Containerized scheduler/worker service:
+  - trigger job searches/imports;
+  - perform follow-up notifications;
+  - run optional AI processing and recommendation tasks.
+- Guided AI provider setup:
+  - first version uses user-supplied API keys;
+  - prioritize OpenAI/ChatGPT and Anthropic/Claude;
+  - later support OpenAI-compatible local endpoints and other providers.
+- AI assistance:
+  - build a user profile from applications, notes, outcomes, and artefacts;
+  - review current jobs and recommend next actions;
+  - tailor future applications using job descriptions, past successes/failures, notes, and artefacts;
+  - generate editable cover letters, attestations, and application narratives.
+- Capture/import:
+  - use browser plugins for bot-blocked pages;
+  - preserve raw page dumps for extraction;
+  - prefer official feeds/APIs/search alerts for scheduled importers.
+- Packaging:
+  - web plus worker Docker Compose services;
+  - HTTPS-native deployment, starting with self-signed local certificates and supporting real certs;
+  - documented clone-to-running self-host flow.
+- Admin and agent operations:
+  - hidden admin UI for users, tokens, scheduler runs, backups, and system health;
+  - repo-native Codex/Claude skills or command docs for tests, migrations, admin, backups, and smoke checks.
 
 ---
 
@@ -228,7 +260,7 @@ Notes:
 
 1. User captures a job from the browser, URL form, or manual form.
 2. Job appears on the kanban board in `Saved` or `Interested`.
-3. User reviews the job, edits extracted fields, and attaches relevant artefacts.
+3. User reviews the job, edits core fields, and attaches relevant artefacts.
 4. User moves the card to `Preparing`.
 5. User creates an application record and uploads resume/cover letter versions.
 6. User moves the card to `Applied`.
@@ -378,6 +410,7 @@ Tasks:
 - Add first server-rendered board view. Done.
 - Add job detail pages with timeline visibility. Done.
 - Add browser manual job creation. Done from `/jobs/new`.
+- Add core job detail editing. Done for primary job fields; related records remain planned.
 - Implement drag-and-drop stage changes. Done.
 - Persist card order within each column. Done with `PATCH /api/jobs/board`.
 - Add optimistic UI updates with clear failure rollback.

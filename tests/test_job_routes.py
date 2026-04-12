@@ -155,6 +155,82 @@ def test_get_job_hides_cross_user_job_as_not_found(tmp_path: Path, monkeypatch) 
         app.dependency_overrides.clear()
 
 
+def test_update_job_edits_fields_and_journals_status_change(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(
+            f"/api/jobs/{job_uuid}",
+            json={
+                "title": "Corrected role",
+                "company": "Corrected Co",
+                "status": "preparing",
+                "source": "manual",
+                "source_url": None,
+                "apply_url": "https://jobs.example.com/apply",
+                "location": "Hybrid",
+                "remote_policy": "hybrid",
+                "salary_min": "95000",
+                "salary_max": "120000",
+                "salary_currency": "GBP",
+                "description_raw": "Corrected description.",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["title"] == "Corrected role"
+        assert response.json()["status"] == "preparing"
+        assert response.json()["source_url"] is None
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.company == "Corrected Co"
+            assert job.salary_min == 95000
+            assert job.description_clean == "Corrected description."
+            event = db.scalar(
+                select(Communication).where(
+                    Communication.job_id == job.id,
+                    Communication.event_type == "stage_change",
+                )
+            )
+            assert event is not None
+            assert event.subject == "Status changed from saved to preparing"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_job_rejects_blank_title(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        job_uuid = create_user_with_jobs(session_local, email="jobseeker@example.com")[0]
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(f"/api/jobs/{job_uuid}", json={"title": "   "})
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Job title is required"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_job_hides_cross_user_job(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        other_job_uuid = create_user_with_jobs(session_local, email="other@example.com")[0]
+        create_user_with_jobs(session_local, email="jobseeker@example.com")
+        login(client, "jobseeker@example.com")
+
+        response = client.patch(f"/api/jobs/{other_job_uuid}", json={"title": "Nope"})
+
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_update_job_board_persists_status_and_position(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:

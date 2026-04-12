@@ -21,6 +21,7 @@ http://127.0.0.1:8000/jobs/new
   captured timestamp, source URL, and apply URL.
 - Shows the captured description.
 - Creates manual jobs from the browser.
+- Edits job details after capture or manual creation.
 - Shows the job timeline, including `stage_change` events recorded from board movement.
 - Adds notes to the timeline, with an optional follow-up date.
 - Uploads, lists, and downloads job-level artefacts.
@@ -57,18 +58,21 @@ http://127.0.0.1:8000/board
 
 6. Use Add job from the board, create a manual job, and confirm it opens the new detail page.
 
-7. Upload a resume or cover letter artefact and confirm it appears in Artefacts with a download link.
+7. Edit the job title, company, URLs, salary, location, or description and confirm the corrected
+   values remain after reload.
 
-8. Add a note with a follow-up date and confirm it appears in the timeline.
+8. Upload a resume or cover letter artefact and confirm it appears in Artefacts with a download link.
 
-9. Use Mark Applied and confirm the page shows an application record and a timeline event.
+9. Add a note with a follow-up date and confirm it appears in the timeline.
 
-10. Schedule an interview and confirm the page shows an interview record and timeline event.
+10. Use Mark Applied and confirm the page shows an application record and a timeline event.
 
-11. Use Archive and confirm the job is archived with a timeline event.
+11. Schedule an interview and confirm the page shows an interview record and timeline event.
 
-12. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
+12. Use Archive and confirm the job is archived with a timeline event.
+
+13. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
    job returns to that status with a timeline event.
 
-13. Move another job to a different stage on the board, then open the detail page again and confirm the
+14. Move another job to a different stage on the board, then open the detail page again and confirm the
    new `stage_change` event appears in the timeline.

@@ -43,17 +43,21 @@ Job detail page notes live in:
 
 ## Current State
 
-This clean repo currently contains the minimal application skeleton:
+This clean repo now contains a usable authenticated tracker:
 
-- FastAPI app factory
-- `/health` endpoint
-- settings module
-- pytest health check
-- Dockerfile
-- Docker Compose file
-- public roadmap
+- local login/logout and first admin bootstrap command;
+- scoped API tokens for capture integrations;
+- owner-scoped jobs API and browser capture endpoint;
+- manual job creation and editable job detail pages;
+- workflow board views with drag/drop and a `Move to column` fallback;
+- status-change timeline, notes, follow-up dates, applications, interviews, archive/unarchive;
+- job-level artefact upload/download;
+- stage-aging, stale-card, and follow-up indicators;
+- Alembic migrations, Dockerfile, Docker Compose file, and pytest coverage.
 
-The next implementation slice should follow Stage 0 and Stage 1 of the roadmap: repository hygiene, baseline architecture, migrations, auth boundaries, and durable deployment assumptions.
+The next implementation work should follow the roadmap checkpoint: board filters, UI polish,
+editable related records, browser/plugin capture, scheduler/worker packaging, and optional AI
+provider setup.
 
 ## Local Development
 

@@ -21,6 +21,7 @@ from app.services.artefacts import get_user_job_artefact_by_uuid, store_job_arte
 from app.services.interviews import schedule_interview
 from app.services.jobs import (
     BOARD_STATUSES,
+    JOB_STATUSES,
     create_job_note,
     get_user_job_by_uuid,
     record_job_status_change,
@@ -54,6 +55,22 @@ def _status_options(current_status: str = "saved") -> str:
         f'{" selected" if job_status == current_status else ""}>{escape(job_status.title())}</option>'
         for job_status in BOARD_STATUSES
     )
+
+
+def _job_status_options(current_status: str = "saved") -> str:
+    return "\n".join(
+        f'<option value="{escape(job_status, quote=True)}"'
+        f'{" selected" if job_status == current_status else ""}>{escape(job_status.title())}</option>'
+        for job_status in JOB_STATUSES
+    )
+
+
+def _input_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, Decimal):
+        return str(value)
+    return str(value)
 
 
 def _field(label: str, value: object) -> str:
@@ -166,6 +183,66 @@ def _new_job_form() -> str:
         <textarea name="initial_note" rows="4" placeholder="Why this is worth tracking"></textarea>
       </label>
       <button type="submit">Create job</button>
+    </form>
+    """
+
+
+def _edit_job_form(job: Job) -> str:
+    return f"""
+    <form class="job-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/edit">
+      <label>
+        Title
+        <input name="title" value="{escape(_input_value(job.title), quote=True)}" maxlength="300" required>
+      </label>
+      <label>
+        Company
+        <input name="company" value="{escape(_input_value(job.company), quote=True)}" maxlength="300">
+      </label>
+      <label>
+        Status
+        <select name="job_status">
+          {_job_status_options(job.status)}
+        </select>
+      </label>
+      <label>
+        Source
+        <input name="source" value="{escape(_input_value(job.source), quote=True)}" maxlength="100">
+      </label>
+      <label>
+        Source URL
+        <input name="source_url" value="{escape(_input_value(job.source_url), quote=True)}" type="url" maxlength="2048">
+      </label>
+      <label>
+        Apply URL
+        <input name="apply_url" value="{escape(_input_value(job.apply_url), quote=True)}" type="url" maxlength="2048">
+      </label>
+      <label>
+        Location
+        <input name="location" value="{escape(_input_value(job.location), quote=True)}" maxlength="300">
+      </label>
+      <label>
+        Remote policy
+        <input name="remote_policy" value="{escape(_input_value(job.remote_policy), quote=True)}" maxlength="50">
+      </label>
+      <div class="inline-fields">
+        <label>
+          Salary min
+          <input name="salary_min" value="{escape(_input_value(job.salary_min), quote=True)}">
+        </label>
+        <label>
+          Salary max
+          <input name="salary_max" value="{escape(_input_value(job.salary_max), quote=True)}">
+        </label>
+        <label>
+          Currency
+          <input name="salary_currency" value="{escape(_input_value(job.salary_currency), quote=True)}" maxlength="3">
+        </label>
+      </div>
+      <label>
+        Description
+        <textarea name="description_raw" rows="8">{escape(_input_value(job.description_raw))}</textarea>
+      </label>
+      <button type="submit">Save changes</button>
     </form>
     """
 
@@ -354,6 +431,50 @@ def _parse_follow_up_date(value: str) -> datetime | None:
             detail="Follow-up date must be a valid date",
         ) from exc
     return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
+
+
+def _apply_job_form_update(
+    job: Job,
+    *,
+    title: str,
+    company: str,
+    job_status: str,
+    source: str,
+    source_url: str,
+    apply_url: str,
+    location: str,
+    remote_policy: str,
+    salary_min: str,
+    salary_max: str,
+    salary_currency: str,
+    description_raw: str,
+) -> tuple[str, str]:
+    job_title = title.strip()
+    if not job_title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job title is required")
+
+    target_status = job_status.strip() or "saved"
+    if target_status not in JOB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported job status",
+        )
+
+    old_status = job.status
+    job.title = job_title
+    job.company = _clean_optional(company)
+    job.source = _clean_optional(source)
+    job.source_url = _clean_optional(source_url)
+    job.apply_url = _clean_optional(apply_url)
+    job.location = _clean_optional(location)
+    job.remote_policy = _clean_optional(remote_policy)
+    job.salary_min = _parse_decimal(salary_min, field_name="Salary min")
+    job.salary_max = _parse_decimal(salary_max, field_name="Salary max")
+    job.salary_currency = _clean_optional(salary_currency)
+    job.description_raw = _clean_optional(description_raw)
+    job.description_clean = _clean_optional(description_raw)
+    update_job_board_state(job, status=target_status)
+    return old_status, job.status
 
 
 def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
@@ -774,6 +895,10 @@ def render_job_detail(job: Job) -> str:
           </dl>
         </section>
         <section>
+          <h2>Edit Job</h2>
+          {_edit_job_form(job)}
+        </section>
+        <section>
           <h2>Application</h2>
           {_applications(job.applications)}
         </section>
@@ -889,6 +1014,46 @@ def job_detail(
 ) -> HTMLResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     return HTMLResponse(render_job_detail(job))
+
+
+@router.post("/jobs/{job_uuid}/edit", include_in_schema=False)
+def edit_job_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    title: Annotated[str, Form()] = "",
+    company: Annotated[str, Form()] = "",
+    job_status: Annotated[str, Form()] = "saved",
+    source: Annotated[str, Form()] = "",
+    source_url: Annotated[str, Form()] = "",
+    apply_url: Annotated[str, Form()] = "",
+    location: Annotated[str, Form()] = "",
+    remote_policy: Annotated[str, Form()] = "",
+    salary_min: Annotated[str, Form()] = "",
+    salary_max: Annotated[str, Form()] = "",
+    salary_currency: Annotated[str, Form()] = "",
+    description_raw: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status, new_status = _apply_job_form_update(
+        job,
+        title=title,
+        company=company,
+        job_status=job_status,
+        source=source,
+        source_url=source_url,
+        apply_url=apply_url,
+        location=location,
+        remote_policy=remote_policy,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        salary_currency=salary_currency,
+        description_raw=description_raw,
+    )
+    record_job_status_change(db, job, old_status=old_status, new_status=new_status)
+    create_job_note(db, job, subject="Job edited", notes="Job details were updated.")
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/jobs/{job_uuid}/artefacts/{artefact_uuid}", include_in_schema=False)
