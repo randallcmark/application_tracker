@@ -308,6 +308,20 @@ def _unarchive_form(job: Job) -> str:
     """
 
 
+def _status_transition_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/status">
+      <label>
+        Move to status
+        <select name="target_status">
+          {_job_status_options(job.status)}
+        </select>
+      </label>
+      <button type="submit">Update status</button>
+    </form>
+    """
+
+
 def _schedule_interview_form(job: Job) -> str:
     return f"""
     <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/interviews">
@@ -992,6 +1006,10 @@ def render_job_detail(job: Job) -> str:
           </dl>
         </section>
         <section>
+          <h2>Workflow Status</h2>
+          {_status_transition_form(job)}
+        </section>
+        <section>
           <h2>Application</h2>
           {_applications(job.applications)}
         </section>
@@ -1305,6 +1323,25 @@ def create_job_note_form(
         notes=note_text,
         follow_up_at=_parse_follow_up_date(follow_up_at),
     )
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/status", include_in_schema=False)
+def update_job_status_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    target_status: Annotated[str, Form()] = "saved",
+) -> RedirectResponse:
+    new_status = target_status.strip() or "saved"
+    if new_status not in JOB_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported job status")
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    update_job_board_state(job, status=new_status)
+    record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
 

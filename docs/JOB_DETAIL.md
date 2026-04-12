@@ -24,6 +24,8 @@ http://127.0.0.1:8000/jobs/new
 - Edits job details after capture or manual creation by double-clicking displayed fields and saving
   inline changes through the jobs API.
 - Shows the collapsed job journal, including `stage_change` events recorded from board movement.
+- Changes workflow status explicitly from the detail page, including transitions between focused
+  workflow views such as prospects, in-progress, outcomes, and archived.
 - Adds notes to the timeline, with an optional follow-up date.
 - Uploads, lists, and downloads job-level artefacts.
 - Marks a job applied and creates or updates the application record.
@@ -69,12 +71,15 @@ http://127.0.0.1:8000/board
 
 10. Use Mark Applied and confirm the page shows an application record and a timeline event.
 
-11. Schedule an interview and confirm the page shows an interview record and timeline event.
+11. Use Workflow Status to move a job from a prospect state to an in-progress state, or from
+    in-progress to an outcome state, and confirm the Journal records the stage change.
 
-12. Use Archive and confirm the job is archived with a timeline event.
+12. Schedule an interview and confirm the page shows an interview record and timeline event.
 
-13. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
+13. Use Archive and confirm the job is archived with a timeline event.
+
+14. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
    job returns to that status with a timeline event.
 
-14. Move another job to a different stage on the board, then open the detail page again and expand
+15. Move another job to a different stage on the board, then open the detail page again and expand
    Journal to confirm the new `stage_change` event appears.
