@@ -6,6 +6,7 @@ from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.db.models.user_profile import UserProfile
 
 __all__ = [
     "ApiToken",
@@ -16,4 +17,5 @@ __all__ = [
     "InterviewEvent",
     "Job",
     "User",
+    "UserProfile",
 ]

@@ -1,0 +1,221 @@
+# Delivery Plan
+
+This plan turns Application Tracker from a board-centred tracker into a goal-aware job-search workspace. Phases are ordered so each one creates useful product value and prepares the next.
+
+## Phase 1: Intent/Profile Foundation
+
+Status: implemented for the first manual profile slice.
+
+Goal: give the app a model of what the user is trying to achieve.
+
+Implementation targets:
+
+- Add a user-owned profile/intent model for target roles, locations, remote preference, salary range, preferred industries, constraints, urgency, and positioning notes.
+- Add a simple settings/profile UI.
+- Add authenticated read/update API support for the current user's profile.
+- Keep the feature manual; no AI dependency.
+
+Acceptance criteria:
+
+- A logged-in user can create and edit their job-search profile.
+- Profile data is owner-scoped.
+- The app works if no profile exists.
+- Docs explain that the profile later drives Focus, Inbox, search, and AI recommendations.
+
+Test expectations:
+
+- Unit/API tests for owner scoping and profile create/update.
+- UI smoke test for the profile/settings page.
+- Migration test for any schema changes.
+
+## Phase 2: Focus Surface
+
+Status: implemented for the first no-new-schema Focus slice.
+
+Goal: make the default home page answer what the user should work on now.
+
+Implementation targets:
+
+- Add `/focus` as the default post-login destination.
+- Summarise due and overdue follow-ups, stale active jobs, recent captures needing review, interviews, active applications, and jobs without a clear next action.
+- Keep `/board` available from navigation.
+- Use existing data first; do not require scheduler or AI.
+
+Acceptance criteria:
+
+- Root path redirects authenticated users to `/focus`.
+- Focus items link to relevant job workspaces.
+- Empty states guide the user to add/capture jobs or complete their profile.
+- Existing board behaviour remains available.
+
+Test expectations:
+
+- UI smoke tests for focus with empty and populated data.
+- Regression tests for login redirects and board access.
+
+## Phase 3: Inbox And Intake Semantics
+
+Goal: separate unreviewed intake from intentional prospects.
+
+Implementation targets:
+
+- Add intake metadata for source type, confidence, and review state.
+- Add `/inbox` for unreviewed or low-confidence jobs.
+- Add an email-to-Inbox capture path for job-board or recruiter emails that catch the user's eye.
+- Route future system recommendations and low-confidence captures into Inbox.
+- Preserve manual Add Job as an intentional user entry path.
+
+Acceptance criteria:
+
+- User can accept, dismiss, or enrich an inbox item.
+- Accepted jobs move into the appropriate workflow state.
+- Dismissed jobs do not appear in active board views.
+- Existing capture flow continues to work.
+- Email-captured jobs preserve the original email subject/source context and land in Inbox before becoming Active Work.
+
+Test expectations:
+
+- Unit/API tests for intake transitions and owner scoping.
+- Unit/API tests for email intake parsing and provenance storage.
+- UI smoke tests for inbox accept/dismiss/enrich paths.
+- Capture regression tests.
+
+Implementation note:
+
+- Start with user-initiated capture, such as paste/forward/share-to-app, rather than background mailbox access. IMAP, Gmail, Microsoft 365, and notification-driven mailbox integrations can follow once Inbox semantics are stable.
+- Store email provenance separately from the extracted job fields: subject, sender/source, received date when known, original text/html when available, extracted links, and extraction confidence.
+- Treat one email as capable of producing zero, one, or many Inbox candidates, since job-board alert emails often contain several roles.
+
+## Phase 4: Job Workspace Refresh
+
+Goal: make job detail a working surface, not a record form.
+
+Implementation targets:
+
+- Reorganise job detail around role overview, current state, next action, application readiness, artefacts, notes, journal, external links, and timeline.
+- Keep focused inline editing for individual fields.
+- Keep journal collapsed by default.
+- Add explicit external workflow actions: open source, open apply link, mark application started, mark submitted, record blocker, and record return note.
+
+Acceptance criteria:
+
+- User can progress a job without returning to the board.
+- The page makes the next likely action obvious.
+- Large job descriptions remain readable.
+- Editing remains focused and unobtrusive.
+
+Test expectations:
+
+- UI smoke tests for status movement, external actions, inline editing, and journal collapse.
+- API tests for any new job action routes.
+
+## Phase 5: Artefact Library
+
+Goal: make files reusable assets rather than passive attachments.
+
+Implementation targets:
+
+- Add artefact metadata for type, purpose, version label, notes, associated jobs/applications, and outcome linkage where known.
+- Add an artefact library page.
+- Keep job-level upload while allowing existing artefacts to be associated with jobs.
+- Prepare for future text extraction without requiring it in this phase.
+
+Acceptance criteria:
+
+- User can see all artefacts outside an individual job.
+- User can associate an existing artefact with a job.
+- Existing job artefact downloads continue to work.
+- Docs explain artefact strategy for future AI tailoring.
+
+Test expectations:
+
+- Unit/API tests for artefact ownership, metadata, and associations.
+- UI smoke tests for library listing and job association.
+- Storage regression tests for existing downloads.
+
+## Phase 6: Embedded AI Readiness
+
+Goal: create stable places for AI outputs before enabling heavy AI features.
+
+Implementation targets:
+
+- Add visible records for recommendations, fit summaries, drafts, profile observations, and artefact suggestions.
+- Add provider settings placeholders for OpenAI, Anthropic, and OpenAI-compatible local endpoints.
+- Store AI outputs visibly and auditably.
+- Prevent AI from silently mutating jobs, profile, artefacts, or workflow state.
+
+Acceptance criteria:
+
+- AI can be disabled with no product degradation.
+- AI outputs are visible, editable or dismissible where appropriate, and tied to source context.
+- No external AI calls happen unless a provider is configured.
+
+Test expectations:
+
+- Unit/API tests for AI output ownership and visibility.
+- Settings tests proving disabled AI makes no external calls.
+- UI smoke tests for visible recommendations/drafts once records exist.
+
+## Phase 7: Scheduler And Worker
+
+Goal: support recurring search, reminders, notifications, and AI processing.
+
+Implementation targets:
+
+- Add a worker service to Docker Compose.
+- Add scheduler run records and admin visibility.
+- Support scheduled tasks for job search/import, optional mailbox or email-rule ingestion, stale job detection, follow-up notification generation, and AI review/recommendation generation.
+- Feed results into Focus and Inbox.
+
+Acceptance criteria:
+
+- Scheduler can be disabled.
+- Admin can see recent runs and failures.
+- Failed worker jobs do not break the web app.
+- Docker docs explain app plus worker deployment.
+
+Test expectations:
+
+- Unit tests for scheduler run recording.
+- Admin UI smoke tests for run history.
+- Docker smoke test for worker-disabled startup.
+
+## Phase 8: Admin, Restore, And Operations
+
+Goal: round out self-hosted manageability.
+
+Implementation targets:
+
+- Add admin object management pages for users, jobs, and API tokens.
+- Add backup restore with dry-run validation.
+- Add password reset groundwork using one-time reset tokens.
+- Improve HTTPS and reverse-proxy guidance.
+- Add repo-native command docs or Codex/Claude skill docs for common admin, test, migration, backup, and smoke tasks.
+
+Acceptance criteria:
+
+- Admin dashboard counts link to object lists.
+- Restore validates archive shape before replacing data.
+- Deployment docs cover migration, first admin, backup, restore, and upgrade flow.
+- Public repo remains safe from runtime databases and private artefacts.
+
+Test expectations:
+
+- Admin route authorization tests.
+- Restore validation tests.
+- Docker deployment smoke test covering migration, first-run setup, login, backup, and worker-disabled startup.
+
+## Interface Additions
+
+Planned public additions:
+
+- User profile/intent API for authenticated read/update.
+- Server-rendered `/focus`.
+- Server-rendered `/inbox`.
+- Intake metadata for source, confidence, and review state.
+- Job workspace actions for external application workflow.
+- Artefact library and association flows.
+- Visible AI output records.
+- Scheduler run records and admin views.
+
+Existing board, capture, auth, job APIs, and Docker setup should remain backward compatible unless a migration explicitly documents otherwise.

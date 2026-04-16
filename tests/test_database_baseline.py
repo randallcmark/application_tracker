@@ -13,6 +13,7 @@ from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.db.models.user_profile import UserProfile
 
 
 def run_migrations(database_url: str) -> None:
@@ -42,11 +43,28 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
         "communications",
         "interview_events",
         "jobs",
+        "user_profiles",
         "users",
     }.issubset(tables)
 
     communication_columns = {column["name"] for column in inspector.get_columns("communications")}
     assert "follow_up_at" in communication_columns
+
+    profile_columns = {column["name"] for column in inspector.get_columns("user_profiles")}
+    assert {
+        "owner_user_id",
+        "target_roles",
+        "target_locations",
+        "remote_preference",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "preferred_industries",
+        "excluded_industries",
+        "constraints",
+        "urgency",
+        "positioning_notes",
+    }.issubset(profile_columns)
 
 
 def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) -> None:
@@ -58,6 +76,17 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
     with Session(engine) as session:
         user = User(email="jobseeker@example.com", display_name="Job Seeker")
         session.add(user)
+        session.flush()
+
+        profile = UserProfile(
+            owner_user_id=user.id,
+            target_roles="Engineering Manager\nProduct Engineering Lead",
+            target_locations="London\nRemote",
+            remote_preference="hybrid",
+            salary_currency="GBP",
+            urgency="actively searching",
+        )
+        session.add(profile)
         session.flush()
 
         job = Job(
@@ -112,6 +141,8 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
 
         assert stored_job is not None
         assert stored_job.owner.email == "jobseeker@example.com"
+        assert stored_job.owner.profile is not None
+        assert stored_job.owner.profile.remote_preference == "hybrid"
         assert stored_job.applications[0].channel == "company_site"
         assert stored_job.interviews[0].stage == "screen"
         assert stored_job.communications[0].event_type == "note"

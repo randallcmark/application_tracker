@@ -1,6 +1,6 @@
 # Application Tracker
 
-Application Tracker is a self-hosted job-search workspace for capturing roles, managing applications through a kanban lifecycle, storing application artefacts, and learning what works during a job search.
+Application Tracker is a self-hosted, goal-aware job-search workspace for capturing roles, deciding what deserves attention, preparing applications, managing artefacts, and learning what works during a job search.
 
 This repository is a clean rebuild of the original personal MVP. The previous implementation has been preserved locally at:
 
@@ -15,15 +15,19 @@ The target product is:
 - container-first and easy to self-host;
 - local-first, with SQLite and local storage defaults;
 - optionally multi-user inside one contained deployment;
-- kanban-first for daily stage management;
+- organised around Focus, Inbox, Active Work, Job Workspace, Artefacts, Capture, and Admin surfaces;
+- workflow-board friendly for stage management without making kanban the product centre;
 - browser-capture friendly for importing jobs from job pages;
 - profile-aware over time, with optional matching and writing assistance;
 - private by default, with no required external services.
 
+The board remains an important workflow view, especially for active applications, but the planned product direction is a focus-led workspace: the app should help the user understand what matters today, triage new opportunities, prepare strong applications, preserve context across external systems, and reuse artefacts intelligently.
+
 The detailed staged roadmap lives in:
 
 - `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
-- `ROADMAP.md`
+- `docs/PRODUCT_VISION.md`
+- `docs/DELIVERY_PLAN.md`
 
 API token and browser capture examples live in:
 
@@ -34,7 +38,15 @@ Jobs API examples live in:
 
 - `docs/JOBS_API.md`
 
-Kanban board notes live in:
+User profile and intent notes live in:
+
+- `docs/USER_PROFILE.md`
+
+Focus surface notes live in:
+
+- `docs/FOCUS.md`
+
+Workflow board notes live in:
 
 - `docs/KANBAN_BOARD.md`
 
@@ -49,6 +61,7 @@ This clean repo now contains a usable authenticated tracker:
 - local login/logout and first admin bootstrap command;
 - scoped API tokens for capture integrations;
 - owner-scoped jobs API and browser capture endpoint;
+- Focus home surface for due follow-ups, stale work, upcoming interviews, and recent prospects;
 - manual job creation and editable job detail pages;
 - workflow board views with drag/drop and a `Move to column` fallback;
 - status-change timeline, notes, follow-up dates, applications, interviews, archive/unarchive;
@@ -56,9 +69,9 @@ This clean repo now contains a usable authenticated tracker:
 - stage-aging, stale-card, and follow-up indicators;
 - Alembic migrations, Dockerfile, Docker Compose file, and pytest coverage.
 
-The next implementation work should follow the roadmap checkpoint: board filters, UI polish,
-editable related records, browser/plugin capture, scheduler/worker packaging, and optional AI
-provider setup.
+The next implementation work should follow the refreshed delivery plan: Intent/Profile foundation,
+Focus surface, Inbox semantics, Job Workspace refresh, Artefact Library, embedded AI readiness,
+scheduler/worker support, and self-hosted operations.
 
 ## Local Development
 

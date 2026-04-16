@@ -11,7 +11,37 @@ Status key:
 - Planned: not started or needs a substantial rebuild.
 - Deferred: intentionally out of scope until the core product is stable.
 
-Last planning update: 2026-04-12
+Last planning update: 2026-04-15
+
+---
+
+## Strategic Product Direction
+
+Application Tracker is now planned as a private, goal-aware job-search workspace rather than a board-centred tracker with added features. The board remains supported, including classic and refined modes, but it is one workflow lens over Active Work rather than the product centre.
+
+Primary surfaces:
+
+- Focus: the default command surface for what needs attention now.
+- Inbox: the intake and judgement surface for recommended, email-captured, imported, low-confidence, or partially enriched opportunities.
+- Active Work: the workflow surface for jobs already worth effort, including board, lane, and list views.
+- Job Workspace: the execution surface for one opportunity, including role overview, next action, artefacts, notes, journal, and external application links.
+- Artefacts: reusable working assets connected to jobs, applications, and outcomes.
+- Capture: manual, browser extension, API, email capture, and future scheduled import paths.
+- Admin: self-hosted operations for users, tokens, backups, restore, scheduler runs, and health.
+
+Design principles:
+
+- User goal first.
+- Next action over raw status.
+- Artefacts as working assets.
+- External systems are part of the workflow.
+- AI guidance is embedded where work happens and remains optional, visible, and inspectable.
+- UI should be calm, precise, low-friction, and supportive of focused reading and fast triage.
+
+Canonical product docs:
+
+- `docs/PRODUCT_VISION.md`
+- `docs/DELIVERY_PLAN.md`
 
 ---
 
@@ -37,27 +67,18 @@ As of 2026-04-12, the Stage 3 board workflow is browser-tested through:
 - First-run browser setup wizard for creating the initial local admin.
 - Admin dashboard with system counts, capture token management, backup download, capture setup,
   health, and API docs links.
+- Manual user profile/intent foundation with settings UI and `/api/profile`.
+- Focus v0 as the default logged-in home at `/focus`, showing profile prompt, due follow-ups,
+  stale jobs, upcoming interviews, and recent prospects from existing data.
 
 Known next product focus:
 
-- Board filter controls for company, source, remote policy, keywords, and date added.
-- UI polish for the board and job detail page now that the core workflow is usable.
-- Editing still needs to expand beyond core job fields into notes, applications, interviews, and
-  artefact metadata.
-- Admin object management:
-  - make dashboard counts clickable into object lists for users, jobs, and API tokens;
-  - provide contextual actions such as add/remove user, revoke token, inspect jobs, and ownership
-    checks;
-  - add a password reset workflow, likely using one-time reset tokens and email delivery once mail
-    settings exist.
-- Backup restore workflow:
-  - validate uploaded backup ZIPs;
-  - support restoring SQLite plus local artefacts safely;
-  - include dry-run/verification steps before replacing active data.
-- Admin UI expansion for scheduler runs and richer system health.
-- Deployment quality-of-life for HTTPS/reverse-proxy guidance, backups, health checks, and packaged
-  upgrade commands.
-- Future job detail overlay/modal instead of full navigation away from the board.
+- Phase 3: Inbox and intake semantics.
+- Phase 4: Job Workspace refresh.
+- Phase 5: Artefact Library.
+- Phase 6: embedded AI readiness.
+- Phase 7: scheduler and worker support.
+- Phase 8: admin, restore, and self-hosted operations.
 
 Known bugs:
 
@@ -66,34 +87,34 @@ Known bugs:
 
 ---
 
-## Updated Product Direction
+## Delivery Sequence
 
-The next public-release plan adds these workstreams to the original staged roadmap:
+The next public-release plan proceeds in phases. Detailed acceptance criteria and test expectations live in `docs/DELIVERY_PLAN.md`.
 
-- Containerized scheduler/worker service:
-  - trigger job searches/imports;
-  - perform follow-up notifications;
-  - run optional AI processing and recommendation tasks.
-- Guided AI provider setup:
-  - first version uses user-supplied API keys;
-  - prioritize OpenAI/ChatGPT and Anthropic/Claude;
-  - later support OpenAI-compatible local endpoints and other providers.
-- AI assistance:
-  - build a user profile from applications, notes, outcomes, and artefacts;
-  - review current jobs and recommend next actions;
-  - tailor future applications using job descriptions, past successes/failures, notes, and artefacts;
-  - generate editable cover letters, attestations, and application narratives.
-- Capture/import:
-  - use browser plugins for bot-blocked pages;
-  - preserve raw page dumps for extraction;
-  - prefer official feeds/APIs/search alerts for scheduled importers.
-- Packaging:
-  - web plus worker Docker Compose services;
-  - HTTPS-native deployment, starting with self-signed local certificates and supporting real certs;
-  - documented clone-to-running self-host flow.
-- Admin and agent operations:
-  - hidden admin UI for users, tokens, scheduler runs, backups, and system health;
-  - repo-native Codex/Claude skills or command docs for tests, migrations, admin, backups, and smoke checks.
+1. Intent/Profile foundation.
+   Add owner-scoped job-search profile data and settings/API support so the app can understand target roles, locations, preferences, constraints, urgency, and positioning notes.
+
+2. Focus surface.
+   Add `/focus` as the default post-login home for due follow-ups, stale jobs, recent captures, interviews, active applications, and work without a next action.
+
+3. Inbox and intake semantics.
+   Add source, confidence, and review-state metadata so system-recommended, email-captured, and low-confidence jobs enter an Inbox before consuming active application effort.
+   Start email intake with a user-initiated paste/forward/share-to-app flow that preserves subject, sender/source, received date when known, original text/html when available, extracted links, and extraction confidence. Defer IMAP, Gmail, Microsoft 365, and background mailbox polling until Inbox semantics are stable.
+
+4. Job Workspace refresh.
+   Rework job detail from record display into an execution surface for overview, next action, readiness, artefacts, notes, journal, and external application flow.
+
+5. Artefact Library.
+   Make resumes, cover letters, attestations, narratives, portfolios, and writing samples reusable working assets with metadata and job/application associations.
+
+6. Embedded AI readiness.
+   Add visible records for recommendations, fit summaries, drafts, profile observations, and artefact suggestions before enabling provider-backed AI execution.
+
+7. Scheduler and worker.
+   Add containerized background support for imports, optional mailbox ingestion, notifications, stale detection, and optional AI processing, feeding results into Focus and Inbox.
+
+8. Admin, restore, and operations.
+   Expand self-hosted management with object lists, restore validation, password reset groundwork, HTTPS guidance, and repo-native operational command docs.
 
 ---
 
@@ -103,8 +124,10 @@ Application Tracker began as a personal ATS used during an active job search. Th
 
 - A container-based, self-hosted job application tracker.
 - Potentially multi-user within one contained deployment, for households, coaches, small peer groups, or local teams.
-- A kanban-first workflow for smooth stage management.
+- A focus-led workspace for deciding what matters and doing the work of applications.
+- Board, lane, and list workflow views for smooth stage management.
 - Browser-assisted job capture with low-friction import from job pages.
+- Email-assisted capture for interesting jobs found in job-board alerts, recruiter emails, and forwarded opportunities.
 - Automatic sourcing and profile-aware matching over time.
 - Private storage for resumes, cover letters, interview notes, communications, and outcomes.
 
@@ -114,7 +137,7 @@ The product should remain local-first and self-hostable. It can support optional
 
 ## 2. Product North Star
 
-A jobseeker should be able to run one command, open the app, capture jobs from the web, move them through a visual pipeline, manage every artefact and communication in context, and keep a private record of what worked until they find work.
+A jobseeker should be able to run one command, open the app, state what they are trying to achieve, capture jobs from the web, see what needs attention now, prepare applications with the right artefacts and context, and keep a private record of what worked until they find work.
 
 The first public version should feel like a focused job-search workspace, not a generic CRUD admin tool.
 
@@ -200,17 +223,20 @@ Use these principles when choosing between implementation options.
 3. Privacy over convenience.
    Resumes, salary notes, and interview history are sensitive. Avoid external calls unless explicitly configured.
 
-4. Kanban is the primary workflow.
-   Stage movement should be drag-and-drop first, form editing second.
+4. Focus-led workspace.
+   The product should first show what deserves attention and what the next useful action is. Board, lane, and list views remain available workflow lenses, but kanban is no longer the strategic centre.
 
 5. Capture should be frictionless.
    The user should be able to save a job from a browser page faster than copying details into a spreadsheet.
 
-6. AI is optional and inspectable.
-   LLM outputs should be stored as visible recommendations or drafts, never hidden state that silently changes the workflow.
+6. AI is optional, embedded, and inspectable.
+   LLM outputs should be stored as visible recommendations, summaries, suggestions, or drafts in the surfaces where work happens, never hidden state that silently changes the workflow.
 
 7. Export and backup are core features.
    A job search archive should be portable and recoverable.
+
+8. Artefacts are working assets.
+   Resumes, cover letters, attestations, portfolios, narratives, and writing samples should be reusable, attributable, and connected to application outcomes.
 
 ---
 
@@ -296,7 +322,9 @@ Notes:
 
 ---
 
-## 8. Stage Plan
+## 8. Historical Staged Backlog
+
+The stages below record the original rebuild plan and completed implementation history. Use the delivery sequence above and `docs/DELIVERY_PLAN.md` for current product planning. Historical stage tasks can still be useful when they support the current phase, but they no longer define priority order.
 
 ## Stage 0: Repository Hygiene And Baseline
 
@@ -315,7 +343,7 @@ Tasks:
 - Decide whether extension build targets are tracked release artefacts or generated files.
 - Add a short `CONTRIBUTING.md` with local setup and test commands.
 - Add a `SECURITY.md` explaining supported deployment assumptions and where to report issues.
-- Add a public-facing `ROADMAP.md` or link this file from `README.md`.
+- Keep the public roadmap discoverable from `README.md` and the canonical product docs.
 - Run the existing test suite in a clean environment.
 - Record any failing tests with exact commands and errors.
 
@@ -327,7 +355,7 @@ Acceptance criteria:
 
 Resume prompts:
 
-- "Continue Stage 0 from `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`."
+- "Use the Stage 0 backlog only if repository hygiene blocks the current delivery-plan phase."
 - "Audit git-tracked runtime artefacts and update ignore rules."
 
 ---
@@ -478,8 +506,8 @@ Acceptance criteria:
 
 Resume prompts:
 
-- "Continue Stage 3 by adding drag-and-drop persistence to the kanban board."
-- "Continue Stage 3 by adding board filters and archived visibility."
+- "Continue the refreshed delivery plan with Phase 1: Intent/Profile foundation."
+- "Use Stage 3 board notes only when maintaining existing workflow-board behaviour."
 
 ---
 
@@ -965,8 +993,8 @@ When resuming work:
 
 1. Read this file.
 2. Run `git status --short` and identify pre-existing user changes.
-3. Read `PLAN.md`, `project_tracker/STATUS.md`, and relevant code before editing.
-4. Pick exactly one stage slice.
+3. Read `docs/PRODUCT_VISION.md`, `docs/DELIVERY_PLAN.md`, and relevant code before editing.
+4. Pick exactly one delivery-plan phase slice.
 5. Update this document if scope or status changes.
 6. Run focused tests.
 7. Record commands run and unresolved risks in the final response or a tracking file.
@@ -974,5 +1002,5 @@ When resuming work:
 Suggested first prompt:
 
 ```text
-Read project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md, inspect the current repo state, and continue the next unchecked Stage 0/1 task without touching unrelated files.
+Read project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md and docs/DELIVERY_PLAN.md, inspect the current repo state, and continue Phase 1: Intent/Profile foundation without touching unrelated files.
 ```

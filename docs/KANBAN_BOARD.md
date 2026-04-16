@@ -6,7 +6,7 @@ The first board surface is available at:
 http://127.0.0.1:8000/board
 ```
 
-It requires a logged-in browser session. The root path redirects logged-in users to `/board`;
+It requires a logged-in browser session. The root path redirects logged-in users to `/focus`;
 anonymous users are sent to `/login`.
 
 ## Current Behavior

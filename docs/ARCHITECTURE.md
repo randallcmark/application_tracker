@@ -31,5 +31,7 @@ Optional later deployment:
 - S3-compatible artefact storage.
 - Reverse proxy auth or local session auth.
 
-The detailed staged plan is in `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
+The current product vision is in `docs/PRODUCT_VISION.md`.
+The current delivery plan is in `docs/DELIVERY_PLAN.md`.
+The resumable roadmap and historical staged backlog are in `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
 The detailed authentication plan is in `docs/AUTHENTICATION.md`.

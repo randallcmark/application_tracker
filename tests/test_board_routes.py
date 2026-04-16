@@ -328,7 +328,7 @@ def test_board_shows_follow_up_indicators(tmp_path: Path, monkeypatch) -> None:
         app.dependency_overrides.clear()
 
 
-def test_root_redirects_logged_in_user_to_board(tmp_path: Path, monkeypatch) -> None:
+def test_root_redirects_logged_in_user_to_focus(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:
         with session_local() as db:
@@ -344,6 +344,6 @@ def test_root_redirects_logged_in_user_to_board(tmp_path: Path, monkeypatch) -> 
         response = client.get("/", follow_redirects=False)
 
         assert response.status_code == 307
-        assert response.headers["location"] == "/board"
+        assert response.headers["location"] == "/focus"
     finally:
         app.dependency_overrides.clear()

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -27,6 +28,8 @@ from app.core.config import settings
 from app.db.models.api_token import ApiToken
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.db.models.user_profile import UserProfile
+from app.services.profiles import get_or_create_user_profile, get_user_profile
 
 router = APIRouter(tags=["session-ui"])
 
@@ -36,6 +39,12 @@ def _value(value: object) -> str:
         return "Not set"
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M")
+    return str(value)
+
+
+def _form_value(value: object) -> str:
+    if value is None:
+        return ""
     return str(value)
 
 
@@ -342,7 +351,13 @@ def _admin_api_token_row(api_token: ApiToken) -> str:
     """
 
 
-def settings_page(user: User, api_tokens: list[ApiToken], *, new_token: str | None = None) -> HTMLResponse:
+def settings_page(
+    user: User,
+    api_tokens: list[ApiToken],
+    *,
+    profile: UserProfile | None = None,
+    new_token: str | None = None,
+) -> HTMLResponse:
     token_rows = "\n".join(_api_token_row(api_token) for api_token in api_tokens)
     if not token_rows:
         token_rows = '<tr><td colspan="6" class="muted">No API tokens yet.</td></tr>'
@@ -358,6 +373,19 @@ def settings_page(user: User, api_tokens: list[ApiToken], *, new_token: str | No
         if new_token
         else ""
     )
+    profile_values = {
+        "target_roles": escape(_form_value(profile.target_roles if profile else None)),
+        "target_locations": escape(_form_value(profile.target_locations if profile else None)),
+        "remote_preference": escape(_form_value(profile.remote_preference if profile else None)),
+        "salary_min": escape(_form_value(profile.salary_min if profile else None)),
+        "salary_max": escape(_form_value(profile.salary_max if profile else None)),
+        "salary_currency": escape(_form_value(profile.salary_currency if profile else None)),
+        "preferred_industries": escape(_form_value(profile.preferred_industries if profile else None)),
+        "excluded_industries": escape(_form_value(profile.excluded_industries if profile else None)),
+        "constraints": escape(_form_value(profile.constraints if profile else None)),
+        "urgency": escape(_form_value(profile.urgency if profile else None)),
+        "positioning_notes": escape(_form_value(profile.positioning_notes if profile else None)),
+    }
     return HTMLResponse(
         f"""<!doctype html>
 <html lang="en">
@@ -443,12 +471,24 @@ def settings_page(user: User, api_tokens: list[ApiToken], *, new_token: str | No
       gap: 6px;
     }}
 
-    input {{
+    input,
+    textarea {{
       border: 1px solid var(--line);
       border-radius: 8px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
+    }}
+
+    textarea {{
+      min-height: 96px;
+      resize: vertical;
+    }}
+
+    .field-grid {{
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }}
 
     button {{
@@ -505,7 +545,8 @@ def settings_page(user: User, api_tokens: list[ApiToken], *, new_token: str | No
         padding: 16px;
       }}
 
-      .topbar {{
+      .topbar,
+      .field-grid {{
         align-items: start;
         display: grid;
       }}
@@ -526,11 +567,66 @@ def settings_page(user: User, api_tokens: list[ApiToken], *, new_token: str | No
       </div>
       <nav>
         {'<a href="/admin">Admin</a>' if user.is_admin else ""}
+        <a href="/focus">Focus</a>
         <a href="/board">Board</a>
       </nav>
     </header>
 
     {new_token_block}
+
+    <section id="profile">
+      <h2>Job-search profile</h2>
+      <p>This manual profile gives future Focus, Inbox, search, and AI guidance a stable record of what you are trying to achieve.</p>
+      <form method="post" action="/settings/profile">
+        <div class="field-grid">
+          <label>
+            Target roles
+            <textarea name="target_roles" placeholder="One role or theme per line">{profile_values["target_roles"]}</textarea>
+          </label>
+          <label>
+            Target locations
+            <textarea name="target_locations" placeholder="Cities, countries, remote regions">{profile_values["target_locations"]}</textarea>
+          </label>
+          <label>
+            Remote preference
+            <input name="remote_preference" value="{profile_values["remote_preference"]}" maxlength="100" placeholder="remote, hybrid, onsite, flexible">
+          </label>
+          <label>
+            Urgency
+            <input name="urgency" value="{profile_values["urgency"]}" maxlength="100" placeholder="actively searching, open, exploratory">
+          </label>
+          <label>
+            Salary minimum
+            <input name="salary_min" value="{profile_values["salary_min"]}" inputmode="decimal" placeholder="90000">
+          </label>
+          <label>
+            Salary maximum
+            <input name="salary_max" value="{profile_values["salary_max"]}" inputmode="decimal" placeholder="120000">
+          </label>
+          <label>
+            Salary currency
+            <input name="salary_currency" value="{profile_values["salary_currency"]}" maxlength="3" placeholder="GBP">
+          </label>
+        </div>
+        <label>
+          Preferred industries
+          <textarea name="preferred_industries" placeholder="Industries, sectors, company types">{profile_values["preferred_industries"]}</textarea>
+        </label>
+        <label>
+          Industries to avoid
+          <textarea name="excluded_industries" placeholder="Industries, sectors, company types to de-prioritise">{profile_values["excluded_industries"]}</textarea>
+        </label>
+        <label>
+          Constraints
+          <textarea name="constraints" placeholder="Travel, notice period, working hours, sponsorship, deal breakers">{profile_values["constraints"]}</textarea>
+        </label>
+        <label>
+          Positioning notes
+          <textarea name="positioning_notes" placeholder="Strengths, preferred narrative, differentiators, reusable application themes">{profile_values["positioning_notes"]}</textarea>
+        </label>
+        <button type="submit">Save profile</button>
+      </form>
+    </section>
 
     <section>
       <h2>Create API token</h2>
@@ -796,6 +892,7 @@ def admin_page(
         <p>{escape(user.email)}</p>
       </div>
       <nav>
+        <a href="/focus">Focus</a>
         <a href="/board">Board</a>
         <a href="/settings">Settings</a>
         <a href="/docs">API docs</a>
@@ -991,7 +1088,7 @@ def setup_form_submit(
     except UserAlreadyExists:
         return setup_page(error="A user already exists")
 
-    response = RedirectResponse(url="/board", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(url="/focus", status_code=status.HTTP_303_SEE_OTHER)
     create_login_session(db, user, request=request, response=response)
     return response
 
@@ -1001,7 +1098,11 @@ def settings_form(
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> HTMLResponse:
-    return settings_page(current_user, _list_user_api_tokens(db, current_user))
+    return settings_page(
+        current_user,
+        _list_user_api_tokens(db, current_user),
+        profile=get_user_profile(db, current_user),
+    )
 
 
 @router.get("/admin", response_class=HTMLResponse, include_in_schema=False)
@@ -1106,7 +1207,60 @@ def settings_create_api_token(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     db.commit()
-    return settings_page(current_user, _list_user_api_tokens(db, current_user), new_token=raw_token)
+    return settings_page(
+        current_user,
+        _list_user_api_tokens(db, current_user),
+        profile=get_user_profile(db, current_user),
+        new_token=raw_token,
+    )
+
+
+@router.post("/settings/profile", include_in_schema=False)
+def settings_update_profile(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    target_roles: Annotated[str, Form()] = "",
+    target_locations: Annotated[str, Form()] = "",
+    remote_preference: Annotated[str, Form()] = "",
+    salary_min: Annotated[str, Form()] = "",
+    salary_max: Annotated[str, Form()] = "",
+    salary_currency: Annotated[str, Form()] = "",
+    preferred_industries: Annotated[str, Form()] = "",
+    excluded_industries: Annotated[str, Form()] = "",
+    constraints: Annotated[str, Form()] = "",
+    urgency: Annotated[str, Form()] = "",
+    positioning_notes: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    def clean(value: str) -> str | None:
+        stripped = value.strip()
+        return stripped or None
+
+    def clean_decimal(value: str) -> Decimal | None:
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return Decimal(stripped)
+        except InvalidOperation as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Salary values must be valid numbers",
+            ) from exc
+
+    profile = get_or_create_user_profile(db, current_user)
+    profile.target_roles = clean(target_roles)
+    profile.target_locations = clean(target_locations)
+    profile.remote_preference = clean(remote_preference)
+    profile.salary_min = clean_decimal(salary_min)
+    profile.salary_max = clean_decimal(salary_max)
+    profile.salary_currency = clean(salary_currency.upper())
+    profile.preferred_industries = clean(preferred_industries)
+    profile.excluded_industries = clean(excluded_industries)
+    profile.constraints = clean(constraints)
+    profile.urgency = clean(urgency)
+    profile.positioning_notes = clean(positioning_notes)
+    db.commit()
+    return RedirectResponse(url="/settings#profile", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/settings/api-tokens/{token_uuid}/revoke", include_in_schema=False)
@@ -1139,7 +1293,7 @@ def login_form_submit(
     except HTTPException:
         return login_page(error="Invalid email or password")
 
-    response = RedirectResponse(url="/board", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(url="/focus", status_code=status.HTTP_303_SEE_OTHER)
     create_login_session(db, user, request=request, response=response)
     return response
 

@@ -58,7 +58,7 @@ def test_setup_form_creates_first_admin_and_logs_in(tmp_path: Path, monkeypatch)
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/board"
+        assert response.headers["location"] == "/focus"
         assert settings.session_cookie_name in client.cookies
 
         with session_local() as db:
@@ -108,7 +108,7 @@ def test_setup_redirects_after_user_exists(tmp_path: Path, monkeypatch) -> None:
         app.dependency_overrides.clear()
 
 
-def test_login_form_sets_cookie_and_redirects_to_board(tmp_path: Path, monkeypatch) -> None:
+def test_login_form_sets_cookie_and_redirects_to_focus(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:
         with session_local() as db:
@@ -122,7 +122,7 @@ def test_login_form_sets_cookie_and_redirects_to_board(tmp_path: Path, monkeypat
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/board"
+        assert response.headers["location"] == "/focus"
         assert settings.session_cookie_name in client.cookies
     finally:
         app.dependency_overrides.clear()

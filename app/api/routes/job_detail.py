@@ -987,7 +987,9 @@ def render_job_detail(job: Job) -> str:
         <p class="subhead">{escape(job.company or "Company not set")} · {escape(job.status)}</p>
       </div>
       <nav>
+        <a href="/focus">Focus</a>
         <a href="/board">Board</a>
+        <a href="/settings#profile">Profile</a>
         <form method="post" action="/logout">
           <button type="submit">Sign out</button>
         </form>
