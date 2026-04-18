@@ -17,9 +17,16 @@ http://127.0.0.1:8000/jobs/new
 
 ## Current Behavior
 
-- Shows the captured job title, company, status, board position, source, location, salary,
-  captured timestamp, source URL, and apply URL.
-- Shows the captured description.
+- Presents the job as a workspace rather than a record form:
+  - workspace header with title, company, location, salary, and stage pill;
+  - next-action panel;
+  - role overview;
+  - readable job description;
+  - application readiness checklist;
+  - application and interview activity;
+  - contextual aside for external links, state movement, artefacts, notes, and workflow actions.
+- Shows captured provenance, including email capture details when available, in a collapsed
+  details panel.
 - Creates manual jobs from the browser.
 - Edits job details after capture or manual creation by double-clicking displayed fields and saving
   inline changes through the jobs API.
@@ -30,11 +37,12 @@ http://127.0.0.1:8000/jobs/new
   workflow views such as prospects, in-progress, outcomes, and archived.
 - Adds notes to the timeline, with an optional follow-up date.
 - Uploads, lists, and downloads job-level artefacts.
+- Links to the Artefact Library at `/artefacts` for a cross-job file view.
 - Marks a job applied and creates or updates the application record.
 - Schedules interviews and shows scheduled interview records.
 - Archives a job with an optional timeline note.
 - Restores an archived job to an active board status with an optional timeline note.
-- Links back to `/board`.
+- Links back to Focus, Inbox, and Board.
 
 ## Browser Test
 
@@ -59,7 +67,8 @@ http://127.0.0.1:8000/board
 
 4. Click a card title.
 
-5. Confirm the detail page shows the job fields and timeline.
+5. Confirm the detail page shows the workspace header, next action, role overview, description,
+   readiness checklist, contextual aside, and collapsed journal.
 
 6. Use Add job from the board, create a manual job, and confirm it opens the new detail page.
 
@@ -73,7 +82,7 @@ http://127.0.0.1:8000/board
 
 10. Use Mark Applied and confirm the page shows an application record and a timeline event.
 
-11. Use Workflow Status to move a job from a prospect state to an in-progress state, or from
+11. Use Move status to move a job from a prospect state to an in-progress state, or from
     in-progress to an outcome state, and confirm the Journal records the stage change.
 
 12. Schedule an interview and confirm the page shows an interview record and timeline event.

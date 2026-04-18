@@ -36,12 +36,13 @@ Design principles:
 - Artefacts as working assets.
 - External systems are part of the workflow.
 - AI guidance is embedded where work happens and remains optional, visible, and inspectable.
-- UI should be calm, precise, low-friction, and supportive of focused reading and fast triage.
+- UI should follow the calm-precision design language in `docs/design/DESIGN_SYSTEM.md` and remain low-friction, supportive of focused reading, and fast to triage.
 
 Canonical product docs:
 
 - `docs/PRODUCT_VISION.md`
 - `docs/DELIVERY_PLAN.md`
+- `docs/design/DESIGN_SYSTEM.md`
 
 ---
 
@@ -70,12 +71,21 @@ As of 2026-04-12, the Stage 3 board workflow is browser-tested through:
 - Manual user profile/intent foundation with settings UI and `/api/profile`.
 - Focus v0 as the default logged-in home at `/focus`, showing profile prompt, due follow-ups,
   stale jobs, upcoming interviews, and recent prospects from existing data.
+- Inbox v0 with job intake metadata, `/inbox`, accept/dismiss actions, and browser/API captures
+  routed to review before they appear in active workflow views.
+- Manual paste email-to-Inbox foundation with email provenance records, deterministic URL
+  extraction, dedupe by source URL, and `/inbox/email/new`.
+- Job Workspace first refresh: job detail is now organised around a workspace header, next action,
+  role overview, readable description, readiness, activity, contextual actions, collapsed
+  provenance, and collapsed journal.
+- Artefact Library first slice at `/artefacts`, listing owned files outside individual job
+  workspaces with linked job context and owner-scoped downloads.
 
 Known next product focus:
 
-- Phase 3: Inbox and intake semantics.
-- Phase 4: Job Workspace refresh.
-- Phase 5: Artefact Library.
+- Phase 3 follow-up: provider-backed email ingestion and richer enrich/review handling.
+- Phase 4 follow-up: richer external workflow actions on the Job Workspace.
+- Phase 5 follow-up: artefact metadata, reuse, and association flows.
 - Phase 6: embedded AI readiness.
 - Phase 7: scheduler and worker support.
 - Phase 8: admin, restore, and self-hosted operations.

@@ -7,6 +7,13 @@ from app.db.models.job import Job
 from app.db.models.user import User
 
 
+def _capture_intake_source(raw_extraction_metadata: dict | None) -> str:
+    extractor = str((raw_extraction_metadata or {}).get("extractor", "")).lower()
+    if extractor in {"bookmarklet", "firefox_extension", "chrome_extension"}:
+        return "browser_capture"
+    return "api_capture"
+
+
 def capture_job(
     db: Session,
     owner: User,
@@ -49,6 +56,10 @@ def capture_job(
         existing_job.description_raw = description
         existing_job.description_clean = description
         existing_job.source = source_platform or existing_job.source
+        existing_job.intake_source = existing_job.intake_source or _capture_intake_source(
+            raw_extraction_metadata
+        )
+        existing_job.intake_confidence = existing_job.intake_confidence or "medium"
         existing_job.structured_data = structured_data
         existing_job.captured_at = datetime.now(UTC)
         db.flush()
@@ -60,6 +71,9 @@ def capture_job(
         company=company,
         status="saved",
         source=source_platform or "browser_capture",
+        intake_source=_capture_intake_source(raw_extraction_metadata),
+        intake_confidence="medium",
+        intake_state="needs_review",
         source_url=source_url,
         apply_url=apply_url,
         location=location,

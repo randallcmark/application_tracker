@@ -85,6 +85,7 @@ def _list_recent_jobs(db: DbSession, user: User) -> list[Job]:
             select(Job)
             .where(
                 Job.owner_user_id == user.id,
+                Job.intake_state != "needs_review",
                 Job.status.in_(("saved", "interested")),
             )
             .order_by(Job.created_at.desc())
@@ -366,6 +367,8 @@ def render_focus(
       </div>
       <nav>
         <a href="/board">Board</a>
+        <a href="/inbox">Inbox</a>
+        <a href="/artefacts">Artefacts</a>
         <a href="/jobs/new">Add job</a>
         <a href="/api/capture/bookmarklet">Capture</a>
         <a href="/settings#profile">Profile</a>

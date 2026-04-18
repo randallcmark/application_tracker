@@ -7,11 +7,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
 
+from app.api.routes.artefacts import router as artefacts_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.board import router as board_router
 from app.api.routes.capture import router as capture_router
 from app.api.routes.focus import router as focus_router
 from app.api.routes.health import router as health_router
+from app.api.routes.inbox import router as inbox_router
 from app.api.routes.job_detail import router as job_detail_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.profile import router as profile_router
@@ -46,11 +48,13 @@ def create_app() -> FastAPI:
             return RedirectResponse(url="/focus")
         return RedirectResponse(url="/login")
 
+    app.include_router(artefacts_router)
     app.include_router(auth_router)
     app.include_router(board_router)
     app.include_router(capture_router)
     app.include_router(focus_router)
     app.include_router(health_router)
+    app.include_router(inbox_router)
     app.include_router(job_detail_router)
     app.include_router(jobs_router)
     app.include_router(profile_router)

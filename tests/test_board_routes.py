@@ -206,6 +206,14 @@ def test_board_archived_workflow_shows_archived_jobs(tmp_path: Path, monkeypatch
                 [
                     Job(owner_user_id=user.id, title="Active role", status="saved"),
                     Job(owner_user_id=user.id, title="Archived role", status="archived"),
+                    Job(
+                        owner_user_id=user.id,
+                        title="Dismissed inbox role",
+                        status="archived",
+                        intake_source="browser_capture",
+                        intake_confidence="medium",
+                        intake_state="dismissed",
+                    ),
                 ]
             )
             db.commit()
@@ -220,6 +228,7 @@ def test_board_archived_workflow_shows_archived_jobs(tmp_path: Path, monkeypatch
 
         assert response.status_code == 200
         assert "Archived role" in response.text
+        assert "Dismissed inbox role" in response.text
         assert "Active role" not in response.text
         assert 'class="refined-list"' in response.text
         assert 'class="refined-item status-archived"' in response.text

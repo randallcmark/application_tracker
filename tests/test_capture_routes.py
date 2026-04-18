@@ -57,6 +57,9 @@ def test_capture_job_creates_owned_job_with_bearer_token(tmp_path: Path, monkeyp
             assert job.owner.email == "jobseeker@example.com"
             assert job.status == "saved"
             assert job.source == "example_jobs"
+            assert job.intake_source == "api_capture"
+            assert job.intake_confidence == "medium"
+            assert job.intake_state == "needs_review"
             assert job.description_raw == "Own the roadmap."
             assert job.structured_data["capture"]["selected_text"] == "Interesting role"
             assert job.structured_data["capture"]["raw_html"] is None

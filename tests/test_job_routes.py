@@ -120,6 +120,9 @@ def test_create_job_adds_manual_job_for_current_user(tmp_path: Path, monkeypatch
             assert job is not None
             assert job.owner.email == "jobseeker@example.com"
             assert job.source == "manual"
+            assert job.intake_source == "manual"
+            assert job.intake_confidence == "high"
+            assert job.intake_state == "accepted"
             assert job.company == "Manual Co"
             assert job.description_raw == "Build useful systems."
             assert job.communications[0].subject == "Created manually"

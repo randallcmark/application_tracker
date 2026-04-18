@@ -22,3 +22,4 @@ class User(IdMixin, TimestampMixin, Base):
     api_tokens = relationship("ApiToken", back_populates="owner")
     auth_sessions = relationship("AuthSession", back_populates="user")
     profile = relationship("UserProfile", back_populates="owner", uselist=False)
+    email_intakes = relationship("EmailIntake", back_populates="owner")

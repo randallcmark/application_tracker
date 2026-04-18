@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
+from app.db.models.email_intake import EmailIntake
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.main import app
@@ -80,7 +81,11 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert f'action="/jobs/{job_uuid}/archive"' in response.text
         assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
-        assert "Workflow Status" in response.text
+        assert "Next action" in response.text
+        assert "Role overview" in response.text
+        assert "Application readiness" in response.text
+        assert "External workflow" in response.text
+        assert "Move status" in response.text
         assert 'data-field="title"' in response.text
         assert 'data-field="description_raw"' in response.text
         assert 'data-field="status"' in response.text
@@ -146,6 +151,52 @@ def test_new_job_form_creates_job_and_redirects(tmp_path: Path, monkeypatch) -> 
         assert detail_response.status_code == 200
         assert "Manual UI role" in detail_response.text
         assert "Own the UI." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_shows_collapsed_email_provenance(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            email = EmailIntake(
+                owner_user_id=user.id,
+                subject="Interesting role",
+                sender="jobs@example.com",
+                body_text="Role from email https://jobs.example.com/email",
+            )
+            db.add(email)
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                email_intake_id=email.id,
+                title="Email role",
+                status="saved",
+                source_url="https://jobs.example.com/email",
+                intake_source="email_capture",
+                intake_confidence="unknown",
+                intake_state="needs_review",
+                structured_data={
+                    "email_capture": {
+                        "extracted_urls": ["https://jobs.example.com/email"],
+                    }
+                },
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{job_uuid}")
+
+        assert response.status_code == 200
+        assert "<summary>Capture provenance</summary>" in response.text
+        assert "Interesting role" in response.text
+        assert "jobs@example.com" in response.text
+        assert "https://jobs.example.com/email" in response.text
     finally:
         app.dependency_overrides.clear()
 

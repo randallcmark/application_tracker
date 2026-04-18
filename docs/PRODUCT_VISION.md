@@ -42,6 +42,8 @@ Admin supports self-hosted operation: users, API tokens, backups, restore, sched
 
 ## Design Principles
 
+The canonical visual system is `docs/design/DESIGN_SYSTEM.md`. New UI work should use that document for colour, typography, spacing, component, AI guidance, and external-transition decisions.
+
 - User goal first: product surfaces should be organised around what the user is trying to achieve.
 - Next action over raw status: status matters, but the app should make the next useful step visible.
 - Calm and precise: avoid noisy, gamified, or oversized controls; emphasise role quality, metadata, and readiness.

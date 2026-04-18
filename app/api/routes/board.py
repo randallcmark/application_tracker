@@ -833,6 +833,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         <nav class="top-actions">
           <a class="nav-link primary" href="/jobs/new">Add job</a>
           <a class="nav-link" href="/focus">Focus</a>
+          <a class="nav-link" href="/inbox">Inbox</a>
           <a class="nav-link" href="/api/capture/bookmarklet">Capture</a>
           <a class="nav-link" href="/settings#profile">Profile</a>
           <a class="nav-link" href="/settings">Settings</a>
@@ -1424,6 +1425,7 @@ def render_classic_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       <nav>
         <a class="docs-link" href="/jobs/new">Add job</a>
         <a class="docs-link" href="/focus">Focus</a>
+        <a class="docs-link" href="/inbox">Inbox</a>
         <a class="docs-link" href="/api/capture/bookmarklet">Capture setup</a>
         <a class="docs-link" href="/settings#profile">Profile</a>
         <a class="docs-link" href="/settings">Settings</a>

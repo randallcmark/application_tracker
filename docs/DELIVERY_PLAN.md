@@ -2,6 +2,8 @@
 
 This plan turns Application Tracker from a board-centred tracker into a goal-aware job-search workspace. Phases are ordered so each one creates useful product value and prepares the next.
 
+All new UI work should reference `docs/design/DESIGN_SYSTEM.md` for the intended visual language, design tokens, component states, AI guidance treatment, and external-transition patterns.
+
 ## Phase 1: Intent/Profile Foundation
 
 Status: implemented for the first manual profile slice.
@@ -55,6 +57,8 @@ Test expectations:
 
 ## Phase 3: Inbox And Intake Semantics
 
+Status: implemented for browser/API capture and the first manual paste email-to-Inbox slice. Provider-backed email ingestion and system recommendations remain planned follow-ons.
+
 Goal: separate unreviewed intake from intentional prospects.
 
 Implementation targets:
@@ -90,6 +94,12 @@ Implementation note:
 
 Goal: make job detail a working surface, not a record form.
 
+Status: first workspace refresh implemented. Job detail now has a workspace header, next-action
+panel, role overview, readable description, readiness checklist, activity section, contextual aside,
+collapsed journal, collapsed provenance, and existing inline editing/actions. Remaining follow-on
+work is to add richer external workflow actions such as blockers, return notes, and application
+started.
+
 Implementation targets:
 
 - Reorganise job detail around role overview, current state, next action, application readiness, artefacts, notes, journal, external links, and timeline.
@@ -112,6 +122,10 @@ Test expectations:
 ## Phase 5: Artefact Library
 
 Goal: make files reusable assets rather than passive attachments.
+
+Status: first library slice implemented. Users can now view all owned artefacts outside an
+individual job, open the linked job workspace, and download owned artefacts from an owner-scoped
+library route. Reuse/association metadata remains planned follow-on work.
 
 Implementation targets:
 

@@ -41,6 +41,9 @@ class JobResponse(BaseModel):
     status: str
     board_position: int
     source: str | None
+    intake_source: str
+    intake_confidence: str
+    intake_state: str
     source_url: str | None
     apply_url: str | None
     location: str | None
@@ -316,6 +319,9 @@ def create_job(
         status=job_status,
         board_position=next_position,
         source="manual",
+        intake_source="manual",
+        intake_confidence="high",
+        intake_state="accepted",
         source_url=_clean_optional(payload.source_url),
         apply_url=_clean_optional(payload.apply_url),
         location=_clean_optional(payload.location),

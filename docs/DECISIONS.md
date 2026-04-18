@@ -94,3 +94,13 @@ Rationale:
 - Inbox preserves the lightweight judgement step before the job enters Active Work.
 - The first implementation should be user-initiated, such as paste/forward/share-to-app, before adding mailbox polling or provider-specific integrations.
 - Email capture should preserve provenance, including subject, sender/source where available, received date where available, extracted links, and raw text for later review or enrichment.
+
+## 2026-04-17: Use The Design System For New UI Work
+
+New UI work should reference `docs/design/DESIGN_SYSTEM.md` before implementation.
+
+Rationale:
+
+- The product needs a consistent visual language as it moves from functional bootstrap screens to Focus, Inbox, Job Workspace, and Artefact Library surfaces.
+- The design system defines the intended calm-precision personality, semantic colour use, type scale, spacing, component states, fit/confidence treatment, contextual AI blocks, and external-transition convention.
+- Existing screens can migrate incrementally; new surfaces should not introduce another visual style.

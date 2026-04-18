@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
+from app.db.models.email_intake import EmailIntake
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
@@ -41,6 +42,7 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
         "artefacts",
         "auth_sessions",
         "communications",
+        "email_intakes",
         "interview_events",
         "jobs",
         "user_profiles",
@@ -49,6 +51,22 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
 
     communication_columns = {column["name"] for column in inspector.get_columns("communications")}
     assert "follow_up_at" in communication_columns
+
+    job_columns = {column["name"] for column in inspector.get_columns("jobs")}
+    assert {"email_intake_id", "intake_source", "intake_confidence", "intake_state"}.issubset(
+        job_columns
+    )
+
+    email_intake_columns = {column["name"] for column in inspector.get_columns("email_intakes")}
+    assert {
+        "owner_user_id",
+        "subject",
+        "sender",
+        "received_at",
+        "body_text",
+        "body_html",
+        "source_provider",
+    }.issubset(email_intake_columns)
 
     profile_columns = {column["name"] for column in inspector.get_columns("user_profiles")}
     assert {
@@ -89,11 +107,25 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         session.add(profile)
         session.flush()
 
+        email_intake = EmailIntake(
+            owner_user_id=user.id,
+            subject="Interesting role",
+            sender="alerts@example.com",
+            body_text="See https://jobs.example.com/role",
+            source_provider="manual_paste",
+        )
+        session.add(email_intake)
+        session.flush()
+
         job = Job(
             owner_user_id=user.id,
+            email_intake_id=email_intake.id,
             title="Senior Product Manager",
             company="Example Co",
             status="saved",
+            intake_source="manual",
+            intake_confidence="high",
+            intake_state="accepted",
         )
         session.add(job)
         session.flush()
@@ -143,6 +175,8 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         assert stored_job.owner.email == "jobseeker@example.com"
         assert stored_job.owner.profile is not None
         assert stored_job.owner.profile.remote_preference == "hybrid"
+        assert stored_job.email_intake is not None
+        assert stored_job.email_intake.subject == "Interesting role"
         assert stored_job.applications[0].channel == "company_site"
         assert stored_job.interviews[0].stage == "screen"
         assert stored_job.communications[0].event_type == "note"

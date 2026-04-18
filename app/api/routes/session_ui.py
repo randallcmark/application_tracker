@@ -568,6 +568,7 @@ def settings_page(
       <nav>
         {'<a href="/admin">Admin</a>' if user.is_admin else ""}
         <a href="/focus">Focus</a>
+        <a href="/inbox">Inbox</a>
         <a href="/board">Board</a>
       </nav>
     </header>
@@ -893,6 +894,7 @@ def admin_page(
       </div>
       <nav>
         <a href="/focus">Focus</a>
+        <a href="/inbox">Inbox</a>
         <a href="/board">Board</a>
         <a href="/settings">Settings</a>
         <a href="/docs">API docs</a>

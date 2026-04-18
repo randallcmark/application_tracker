@@ -46,6 +46,14 @@ Focus surface notes live in:
 
 - `docs/FOCUS.md`
 
+Inbox notes live in:
+
+- `docs/INBOX.md`
+
+The visual design system lives in:
+
+- `docs/design/DESIGN_SYSTEM.md`
+
 Workflow board notes live in:
 
 - `docs/KANBAN_BOARD.md`
@@ -62,6 +70,7 @@ This clean repo now contains a usable authenticated tracker:
 - scoped API tokens for capture integrations;
 - owner-scoped jobs API and browser capture endpoint;
 - Focus home surface for due follow-ups, stale work, upcoming interviews, and recent prospects;
+- Inbox review surface for captured jobs that need acceptance before active workflow views;
 - manual job creation and editable job detail pages;
 - workflow board views with drag/drop and a `Move to column` fallback;
 - status-change timeline, notes, follow-up dates, applications, interviews, archive/unarchive;

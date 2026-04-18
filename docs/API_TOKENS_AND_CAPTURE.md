@@ -218,7 +218,8 @@ TOKEN=$(
 )
 ```
 
-Capture a job and store its UUID:
+Capture a job and store its UUID. Newly captured jobs now land in Inbox for review before they
+appear in active workflow board views:
 
 ```bash
 JOB_RESPONSE=$(
@@ -261,12 +262,22 @@ curl -s -i \
   "$BASE_URL/api/capture/jobs"
 ```
 
-List visible jobs with the browser session cookie:
+List active jobs with the browser session cookie. The captured job should not appear yet because it
+is still waiting in Inbox:
 
 ```bash
 curl -s \
   -b cookies.txt \
   "$BASE_URL/api/jobs"
+```
+
+Accept the captured job from Inbox:
+
+```bash
+curl -s -i \
+  -X POST \
+  -b cookies.txt \
+  "$BASE_URL/inbox/$JOB_UUID/accept"
 ```
 
 Move the captured job to `interviewing` at board position `4`:

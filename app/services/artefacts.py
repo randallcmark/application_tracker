@@ -27,6 +27,15 @@ def get_user_job_artefact_by_uuid(
     )
 
 
+def get_user_artefact_by_uuid(db: Session, user: User, artefact_uuid: str) -> Artefact | None:
+    return db.scalar(
+        select(Artefact).where(
+            Artefact.uuid == artefact_uuid,
+            Artefact.owner_user_id == user.id,
+        )
+    )
+
+
 def store_job_artefact(
     db: Session,
     job: Job,

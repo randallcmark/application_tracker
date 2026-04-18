@@ -435,6 +435,218 @@ def _artefacts(artefacts: list[Artefact]) -> str:
     return f"<ol>{items}</ol>"
 
 
+def _salary_range(job: Job) -> str:
+    if job.salary_min is None and job.salary_max is None:
+        return "Not set"
+    currency = f"{job.salary_currency} " if job.salary_currency else ""
+    if job.salary_min is not None and job.salary_max is not None:
+        return f"{currency}{job.salary_min:,.0f} - {job.salary_max:,.0f}"
+    if job.salary_min is not None:
+        return f"{currency}{job.salary_min:,.0f}+"
+    return f"Up to {currency}{job.salary_max:,.0f}"
+
+
+def _status_class(status_value: str) -> str:
+    if status_value == "interviewing" or status_value == "offer":
+        return "success"
+    if status_value in {"interested", "preparing", "applied"}:
+        return "active"
+    if status_value in {"rejected", "archived"}:
+        return "closed"
+    return "inbox"
+
+
+def _stage_pill(status_value: str) -> str:
+    return f'<span class="stage-pill {escape(_status_class(status_value), quote=True)}">{escape(status_value)}</span>'
+
+
+def _compact_status_form(job: Job, target_status: str, label: str, *, variant: str = "primary") -> str:
+    return f"""
+    <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/status">
+      <input type="hidden" name="target_status" value="{escape(target_status, quote=True)}">
+      <button class="{escape(variant, quote=True)}" type="submit">{escape(label)}</button>
+    </form>
+    """
+
+
+def _button_link(label: str, url: str | None, *, primary: bool = False) -> str:
+    if not url:
+        return ""
+    variant = "button-link primary" if primary else "button-link"
+    return (
+        f'<a class="{variant}" href="{escape(url, quote=True)}" target="_blank" '
+        f'rel="noreferrer">{escape(label)} ↗</a>'
+    )
+
+
+def _next_action(job: Job) -> str:
+    if job.status == "archived":
+        title = "Restore or leave archived"
+        body = "This job is off the active board. Restore it only if it needs work again."
+        action = ""
+    elif job.intake_state == "needs_review":
+        title = "Review this opportunity"
+        body = "Decide whether this intake belongs in active work before preparing an application."
+        action = _compact_status_form(job, "interested", "Keep as interested")
+    elif job.status == "saved":
+        title = "Make the first decision"
+        body = "This is still a prospect. Mark it interested when it is worth spending attention on."
+        action = _compact_status_form(job, "interested", "Mark interested")
+    elif job.status in {"interested", "preparing"}:
+        title = "Prepare the application"
+        body = "Check the description, source link, and artefacts before submitting externally."
+        action = _button_link("Open apply link", job.apply_url or job.source_url, primary=True)
+    elif job.status == "applied":
+        title = "Track the response"
+        body = "Record follow-ups, recruiter updates, and interview scheduling as they arrive."
+        action = _compact_status_form(job, "interviewing", "Move to interviewing")
+    elif job.status == "interviewing":
+        title = "Prepare for the interview"
+        body = "Keep interview notes, participants, and follow-up actions attached to this job."
+        action = _compact_status_form(job, "offer", "Record offer", variant="outline")
+    elif job.status == "offer":
+        title = "Decide on the offer"
+        body = "Record decision notes and archive when the outcome is complete."
+        action = _compact_status_form(job, "archived", "Archive when complete", variant="outline")
+    elif job.status == "rejected":
+        title = "Capture the learning"
+        body = "Add any useful rejection notes, then archive when this no longer needs attention."
+        action = _compact_status_form(job, "archived", "Archive", variant="outline")
+    else:
+        title = "Choose the next action"
+        body = "Use the workflow controls to move this job to the right state."
+        action = ""
+    return f"""
+    <section class="workspace-panel next-action">
+      <div>
+        <p class="eyebrow">Next action</p>
+        <h2>{escape(title)}</h2>
+        <p>{escape(body)}</p>
+      </div>
+      <div class="next-action-controls">
+        {action}
+      </div>
+    </section>
+    """
+
+
+def _readiness_item(label: str, ready: bool, detail: str) -> str:
+    state = "done" if ready else "todo"
+    return f"""
+    <li class="readiness-item {state}">
+      <span>{escape(label)}</span>
+      <p>{escape(detail)}</p>
+    </li>
+    """
+
+
+def _readiness(job: Job) -> str:
+    items = [
+        _readiness_item(
+            "Role captured",
+            bool(job.title and job.description_raw),
+            "Title and description are available." if job.description_raw else "Add or import the job description.",
+        ),
+        _readiness_item(
+            "Application link",
+            bool(job.apply_url or job.source_url),
+            "External route is ready." if job.apply_url or job.source_url else "Add a source or apply URL.",
+        ),
+        _readiness_item(
+            "Artefacts",
+            bool(job.artefacts),
+            "Reusable files are attached." if job.artefacts else "Upload a resume, cover letter, or prep file.",
+        ),
+        _readiness_item(
+            "Application record",
+            bool(job.applications),
+            "Submission history exists." if job.applications else "Mark applied once submitted.",
+        ),
+    ]
+    return f"""
+    <section class="workspace-panel">
+      <div class="section-heading">
+        <p class="eyebrow">Readiness</p>
+        <h2>Application readiness</h2>
+      </div>
+      <ol class="readiness-list">
+        {"".join(items)}
+      </ol>
+    </section>
+    """
+
+
+def _external_links(job: Job) -> str:
+    actions = "\n".join(
+        action
+        for action in [
+            _button_link("Open apply link", job.apply_url, primary=True),
+            _button_link("Open source", job.source_url),
+        ]
+        if action
+    )
+    if not actions:
+        actions = '<p class="empty">No external links set yet.</p>'
+    return f"""
+    <section class="workspace-panel">
+      <div class="section-heading">
+        <p class="eyebrow">External workflow</p>
+        <h2>Leave and return</h2>
+      </div>
+      <div class="action-stack">
+        {actions}
+      </div>
+    </section>
+    """
+
+
+def _provenance(job: Job) -> str:
+    data = job.structured_data or {}
+    email_data = data.get("email_capture") if isinstance(data, dict) else None
+    email = job.email_intake
+    if not email and not email_data and not job.intake_source:
+        return ""
+
+    email_rows = ""
+    if email:
+        email_rows = f"""
+        {_field("Email subject", email.subject)}
+        {_field("Sender", email.sender)}
+        {_field("Received", email.received_at)}
+        {_field("Provider", email.source_provider)}
+        """
+
+    extracted_urls = ""
+    if isinstance(email_data, dict):
+        urls = email_data.get("extracted_urls") or []
+        if urls:
+            links = "\n".join(
+                f'<li><a href="{escape(str(url), quote=True)}" target="_blank" rel="noreferrer">{escape(str(url))}</a></li>'
+                for url in urls
+            )
+            extracted_urls = f"<h3>Extracted links</h3><ol class=\"provenance-links\">{links}</ol>"
+
+    email_body = ""
+    if email and email.body_text:
+        email_body = f"<h3>Email body</h3><pre>{escape(email.body_text)}</pre>"
+
+    return f"""
+    <section class="workspace-panel">
+      <details class="timeline-panel provenance-panel">
+        <summary>Capture provenance</summary>
+        <dl>
+          {_field("Intake source", job.intake_source)}
+          {_field("Intake confidence", job.intake_confidence)}
+          {_field("Intake state", job.intake_state)}
+          {email_rows}
+        </dl>
+        {extracted_urls}
+        {email_body}
+      </details>
+    </section>
+    """
+
+
 def _clean_optional(value: str) -> str | None:
     cleaned = value.strip()
     return cleaned or None
@@ -551,13 +763,13 @@ def render_new_job() -> str:
   <style>
     :root {{
       color-scheme: light;
-      --page: #f6f7f9;
+      --page: #f9f9f7;
       --panel: #ffffff;
-      --ink: #1d1f24;
-      --muted: #626b76;
-      --line: #d7dce2;
-      --accent: #147a5c;
-      --accent-strong: #0f5d47;
+      --ink: #111111;
+      --muted: #5f5e5a;
+      --line: rgba(0, 0, 0, 0.10);
+      --accent: #4f67e4;
+      --accent-strong: #2d3a9a;
     }}
 
     * {{
@@ -597,7 +809,7 @@ def render_new_job() -> str:
 
     a {{
       color: var(--accent-strong);
-      font-weight: 700;
+      font-weight: 500;
     }}
 
     section {{
@@ -645,7 +857,7 @@ def render_new_job() -> str:
       color: #ffffff;
       cursor: pointer;
       font: inherit;
-      font-weight: 700;
+      font-weight: 500;
       min-height: 38px;
       padding: 0 14px;
     }}
@@ -696,13 +908,13 @@ def render_job_detail(job: Job) -> str:
   <style>
     :root {{
       color-scheme: light;
-      --page: #f6f7f9;
+      --page: #f9f9f7;
       --panel: #ffffff;
-      --ink: #1d1f24;
-      --muted: #626b76;
-      --line: #d7dce2;
-      --accent: #147a5c;
-      --accent-strong: #0f5d47;
+      --ink: #111111;
+      --muted: #5f5e5a;
+      --line: rgba(0, 0, 0, 0.10);
+      --accent: #4f67e4;
+      --accent-strong: #2d3a9a;
     }}
 
     * {{
@@ -754,7 +966,7 @@ def render_job_detail(job: Job) -> str:
 
     a {{
       color: var(--accent-strong);
-      font-weight: 700;
+      font-weight: 500;
     }}
 
     button {{
@@ -764,7 +976,7 @@ def render_job_detail(job: Job) -> str:
       color: #ffffff;
       cursor: pointer;
       font: inherit;
-      font-weight: 700;
+      font-weight: 500;
       min-height: 38px;
       padding: 0 14px;
     }}
@@ -785,7 +997,7 @@ def render_job_detail(job: Job) -> str:
 
     label {{
       display: grid;
-      font-weight: 700;
+      font-weight: 500;
       gap: 6px;
     }}
 
@@ -811,10 +1023,42 @@ def render_job_detail(job: Job) -> str:
       margin-top: 6px;
     }}
 
+    .workspace-hero {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      display: grid;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding: 22px;
+    }}
+
+    .hero-meta,
+    .meta-row {{
+      align-items: center;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+
+    .hero-meta span:not(:last-child)::after,
+    .meta-row span:not(:last-child)::after {{
+      content: "·";
+      margin-left: 8px;
+    }}
+
     .layout {{
       display: grid;
       gap: 18px;
       grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    }}
+
+    .workspace-main,
+    .workspace-aside {{
+      align-content: start;
+      display: grid;
+      gap: 18px;
     }}
 
     section {{
@@ -822,6 +1066,186 @@ def render_job_detail(job: Job) -> str:
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 18px;
+    }}
+
+    .workspace-panel {{
+      border-radius: 14px;
+      padding: 20px;
+    }}
+
+    .section-heading {{
+      margin-bottom: 14px;
+    }}
+
+    .eyebrow {{
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }}
+
+    .stage-pill {{
+      border-radius: 999px;
+      display: inline-flex;
+      font-size: 0.82rem;
+      line-height: 1;
+      padding: 6px 10px;
+    }}
+
+    .stage-pill.inbox {{
+      background: #e8ebf8;
+      color: #2d3a9a;
+    }}
+
+    .stage-pill.active {{
+      background: #fdf3e6;
+      color: #8c4a00;
+    }}
+
+    .stage-pill.success {{
+      background: #eaf4ee;
+      color: #1a5c38;
+    }}
+
+    .stage-pill.closed {{
+      background: #f1f0ed;
+      color: #5f5e5a;
+    }}
+
+    .next-action {{
+      align-items: start;
+      display: grid;
+      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }}
+
+    .next-action h2 {{
+      margin-bottom: 6px;
+    }}
+
+    .next-action p:not(.eyebrow) {{
+      color: var(--muted);
+    }}
+
+    .next-action-controls {{
+      align-items: center;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }}
+
+    .inline-action-form {{
+      margin: 0;
+    }}
+
+    .action-stack {{
+      display: grid;
+      gap: 8px;
+    }}
+
+    .button-link {{
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      display: inline-flex;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 14px;
+      text-decoration: none;
+    }}
+
+    .button-link.primary {{
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }}
+
+    button.outline {{
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink);
+    }}
+
+    button.outline:hover,
+    .button-link:hover {{
+      background: #f1f0ed;
+    }}
+
+    .button-link.primary:hover {{
+      background: var(--accent-strong);
+      color: #ffffff;
+    }}
+
+    .overview-grid {{
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin: 0;
+    }}
+
+    .readiness-list {{
+      display: grid;
+      gap: 0;
+    }}
+
+    .readiness-item {{
+      border-left: 0;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 3px;
+      padding: 12px 0 12px 26px;
+      position: relative;
+    }}
+
+    .readiness-item:first-child {{
+      border-top: 0;
+    }}
+
+    .readiness-item::before {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      content: "";
+      height: 12px;
+      left: 0;
+      position: absolute;
+      top: 16px;
+      width: 12px;
+    }}
+
+    .readiness-item.done::before {{
+      background: #2a8a58;
+      border-color: #2a8a58;
+    }}
+
+    .readiness-item span {{
+      font-weight: 500;
+    }}
+
+    .readiness-item p {{
+      color: var(--muted);
+    }}
+
+    .activity-grid {{
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }}
+
+    .provenance-panel dl {{
+      margin-top: 14px;
+    }}
+
+    .provenance-panel h3 {{
+      font-size: 0.95rem;
+      margin: 18px 0 8px;
+    }}
+
+    .provenance-links li {{
+      border-left: 0;
+      padding-left: 0;
+      overflow-wrap: anywhere;
     }}
 
     dl {{
@@ -838,7 +1262,7 @@ def render_job_detail(job: Job) -> str:
     dt {{
       color: var(--muted);
       font-size: 0.82rem;
-      font-weight: 700;
+      font-weight: 500;
       margin-bottom: 4px;
       text-transform: uppercase;
     }}
@@ -884,7 +1308,7 @@ def render_job_detail(job: Job) -> str:
 
     .editable-heading .editable-control {{
       font-size: 2rem;
-      font-weight: 700;
+      font-weight: 500;
       line-height: 1.1;
     }}
 
@@ -920,7 +1344,7 @@ def render_job_detail(job: Job) -> str:
     }}
 
     .savebar p {{
-      font-weight: 700;
+      font-weight: 500;
     }}
 
     .savebar .secondary {{
@@ -931,7 +1355,7 @@ def render_job_detail(job: Job) -> str:
     .timeline-panel summary {{
       color: var(--accent-strong);
       cursor: pointer;
-      font-weight: 700;
+      font-weight: 500;
     }}
 
     .timeline-panel ol {{
@@ -973,6 +1397,21 @@ def render_job_detail(job: Job) -> str:
         display: grid;
       }}
 
+      .next-action,
+      .overview-grid,
+      .activity-grid {{
+        grid-template-columns: 1fr;
+      }}
+
+      .next-action-controls {{
+        justify-content: stretch;
+      }}
+
+      .next-action-controls > *,
+      .button-link {{
+        width: 100%;
+      }}
+
       dl {{
         grid-template-columns: 1fr;
       }}
@@ -982,13 +1421,13 @@ def render_job_detail(job: Job) -> str:
 <body>
   <main>
     <header class="topbar">
-      <div>
-        {_editable_title(job)}
-        <p class="subhead">{escape(job.company or "Company not set")} · {escape(job.status)}</p>
-      </div>
       <nav>
         <a href="/focus">Focus</a>
+        <a href="/inbox">Inbox</a>
+        <a href="/artefacts">Artefacts</a>
         <a href="/board">Board</a>
+      </nav>
+      <nav>
         <a href="/settings#profile">Profile</a>
         <form method="post" action="/logout">
           <button type="submit">Sign out</button>
@@ -996,72 +1435,107 @@ def render_job_detail(job: Job) -> str:
       </nav>
     </header>
 
-    <div class="layout">
+    <section class="workspace-hero">
       <div>
-        <section>
-          <h2>Description</h2>
-          {_editable_description(job)}
-        </section>
+        {_editable_title(job)}
+        <div class="hero-meta">
+          <span>{escape(job.company or "Company not set")}</span>
+          <span>{escape(job.location or "Location not set")}</span>
+          <span>{escape(_salary_range(job))}</span>
+          {_stage_pill(job.status)}
+        </div>
       </div>
-      <aside>
-        <section>
-          <h2>Details</h2>
-          <dl>
-            {_editable_select("Status", "status", job.status)}
-            {_field("Board position", job.board_position)}
+    </section>
+
+    <div class="layout">
+      <div class="workspace-main">
+        {_next_action(job)}
+        <section class="workspace-panel">
+          <div class="section-heading">
+            <p class="eyebrow">Role overview</p>
+            <h2>What this opportunity is</h2>
+          </div>
+          <dl class="overview-grid">
             {_editable_text("Company", "company", job.company)}
             {_editable_text("Location", "location", job.location)}
             {_editable_text("Remote policy", "remote_policy", job.remote_policy)}
             {_editable_text("Salary min", "salary_min", job.salary_min)}
             {_editable_text("Salary max", "salary_max", job.salary_max)}
             {_editable_text("Currency", "salary_currency", job.salary_currency)}
+          </dl>
+        </section>
+        <section class="workspace-panel">
+          <div class="section-heading">
+            <p class="eyebrow">Description</p>
+            <h2>Role description</h2>
+          </div>
+          {_editable_description(job)}
+        </section>
+        {_readiness(job)}
+        <section class="workspace-panel">
+          <div class="section-heading">
+            <p class="eyebrow">Activity</p>
+            <h2>Application and interviews</h2>
+          </div>
+          <div class="activity-grid">
+            <div>
+              <h3>Applications</h3>
+              {_applications(job.applications)}
+            </div>
+            <div>
+              <h3>Interviews</h3>
+              {_interviews(job.interviews)}
+            </div>
+          </div>
+        </section>
+      </div>
+      <aside class="workspace-aside">
+        {_external_links(job)}
+        <section class="workspace-panel">
+          <div class="section-heading">
+            <p class="eyebrow">State</p>
+            <h2>Workflow</h2>
+          </div>
+          <dl>
+            {_editable_select("Status", "status", job.status)}
+            {_field("Board position", job.board_position)}
             {_editable_text("Source", "source", job.source)}
             {_field("Captured", job.captured_at)}
             {_editable_url("Source URL", "source_url", job.source_url, "Open source")}
             {_editable_url("Apply URL", "apply_url", job.apply_url, "Open apply link")}
           </dl>
         </section>
-        <section>
-          <h2>Workflow Status</h2>
+        <section class="workspace-panel">
+          <h2>Move status</h2>
           {_status_transition_form(job)}
         </section>
-        <section>
-          <h2>Application</h2>
-          {_applications(job.applications)}
-        </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Artefacts</h2>
           {_artefacts(job.artefacts)}
-        </section>
-        <section>
-          <h2>Upload Artefact</h2>
           {_artefact_form(job)}
         </section>
-        <section>
-          <h2>Interviews</h2>
-          {_interviews(job.interviews)}
-        </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Schedule Interview</h2>
           {_schedule_interview_form(job)}
         </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Mark Applied</h2>
           {_mark_applied_form(job)}
         </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Archive</h2>
           {_archive_form(job)}
         </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Unarchive</h2>
           {_unarchive_form(job)}
         </section>
-        <section>
+        <section class="workspace-panel">
           <h2>Add Note</h2>
           {_note_form(job)}
         </section>
-        <section>
+        {_provenance(job)}
+        <section class="workspace-panel">
           <details class="timeline-panel">
             <summary>Journal</summary>
             {_timeline(events)}
@@ -1251,6 +1725,9 @@ def create_job_form(
         status=target_status,
         board_position=_next_board_position(db, current_user, target_status),
         source="manual",
+        intake_source="manual",
+        intake_confidence="high",
+        intake_state="accepted",
         source_url=_clean_optional(source_url),
         apply_url=_clean_optional(apply_url),
         location=_clean_optional(location),

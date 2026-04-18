@@ -32,6 +32,9 @@ def list_user_jobs(
     status: str | None = None,
 ) -> list[Job]:
     statement = select(Job).where(Job.owner_user_id == user.id)
+    if not include_archived:
+        statement = statement.where(Job.intake_state != "dismissed")
+        statement = statement.where(Job.intake_state != "needs_review")
     if status is not None:
         statement = statement.where(Job.status == status)
     elif not include_archived:
