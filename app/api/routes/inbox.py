@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.email_intake import EmailIntake
 from app.db.models.job import Job
 from app.db.models.user import User
@@ -289,25 +290,12 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
         grid-template-columns: 1fr;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Inbox</h1>
-        <p>{escape(user.email)} · Review captured opportunities before they become active work</p>
-      </div>
-      <nav>
-        <a href="/focus">Focus</a>
-        <a href="/board">Board</a>
-        <a href="/jobs/new">Add job</a>
-        <a href="/inbox/email/new">Paste email</a>
-        <a href="/api/capture/bookmarklet">Capture</a>
-        <a href="/settings">Settings</a>
-        {'<a href="/admin">Admin</a>' if user.is_admin else ""}
-      </nav>
-    </header>
+    {app_header(user, title="Inbox", subtitle="Review captured opportunities before they become active work", active="inbox", actions=(("Paste email", "/inbox/email/new", "paste-email"), ("Add job", "/jobs/new", "add-job")))}
     <div class="inbox-list">
       {cards}
     </div>
@@ -450,21 +438,12 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
     .error {{
       color: var(--warn);
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Paste email</h1>
-        <p>{escape(user.email)} · Add an interesting job email to Inbox</p>
-      </div>
-      <nav>
-        <a href="/inbox">Inbox</a>
-        <a href="/focus">Focus</a>
-        <a href="/board">Board</a>
-      </nav>
-    </header>
+    {app_header(user, title="Paste email", subtitle="Add an interesting job email to Inbox", active="inbox")}
     <form method="post" action="/inbox/email">
       {error_block}
       <label>

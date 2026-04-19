@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -356,26 +357,12 @@ def render_focus(
         grid-template-columns: 1fr;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Focus</h1>
-        <p>{escape(user.email)} · What needs attention now</p>
-      </div>
-      <nav>
-        <a href="/board">Board</a>
-        <a href="/inbox">Inbox</a>
-        <a href="/artefacts">Artefacts</a>
-        <a href="/jobs/new">Add job</a>
-        <a href="/api/capture/bookmarklet">Capture</a>
-        <a href="/settings#profile">Profile</a>
-        <a href="/settings">Settings</a>
-        {'<a href="/admin">Admin</a>' if user.is_admin else ""}
-      </nav>
-    </header>
+    {app_header(user, title="Focus", subtitle="What needs attention now", active="focus", actions=(("Add job", "/jobs/new", "add-job"),))}
 
     {profile_prompt}
 

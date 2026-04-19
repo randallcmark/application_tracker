@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.api.deps import DbSession, get_current_user
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.artefact import Artefact
 from app.db.models.user import User
 from app.services.artefacts import (
@@ -329,22 +330,12 @@ def render_artefact_library(user: User, artefacts: list[Artefact]) -> HTMLRespon
         grid-template-columns: 1fr;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Artefacts</h1>
-        <p class="muted">{escape(user.email)} · Resumes, cover letters, notes, and prep files</p>
-      </div>
-      <nav>
-        <a href="/focus">Focus</a>
-        <a href="/inbox">Inbox</a>
-        <a href="/board">Board</a>
-        <a href="/jobs/new">Add job</a>
-      </nav>
-    </header>
+    {app_header(user, title="Artefacts", subtitle="Resumes, cover letters, notes, and prep files", active="artefacts", actions=(("Add job", "/jobs/new", "add-job"),))}
 
     <div class="library-grid">
       {cards}

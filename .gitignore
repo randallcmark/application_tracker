@@ -17,6 +17,13 @@ venv/
 .env.*
 !.env.example
 
+# Agent configurations
+AGENTS.md
+.codex/
+.codex/agents/
+docs/CODEX_PLAYBOOK.md
+docs/AGENTS.md
+
 # Runtime data
 data/
 cookies.txt

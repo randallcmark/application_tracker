@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import DbSession, get_current_user
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.jobs import BOARD_STATUSES, list_user_jobs
@@ -819,28 +820,13 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         grid-template-columns: repeat({len(statuses)}, minmax(260px, 86vw));
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
     <div class="shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Application Tracker</p>
-          <h1>{escape(workflow_label)}</h1>
-          <p class="subhead">{escape(WORKFLOW_PROMPTS[workflow])}</p>
-        </div>
-        <nav class="top-actions">
-          <a class="nav-link primary" href="/jobs/new">Add job</a>
-          <a class="nav-link" href="/focus">Focus</a>
-          <a class="nav-link" href="/inbox">Inbox</a>
-          <a class="nav-link" href="/api/capture/bookmarklet">Capture</a>
-          <a class="nav-link" href="/settings#profile">Profile</a>
-          <a class="nav-link" href="/settings">Settings</a>
-          {'<a class="nav-link" href="/admin">Admin</a>' if user.is_admin else ""}
-          <a class="nav-link" href="/board?workflow={escape(workflow, quote=True)}&ui=classic">Classic</a>
-        </nav>
-      </header>
+      {app_header(user, title=workflow_label, subtitle=WORKFLOW_PROMPTS[workflow], active="board", actions=(("Add job", "/jobs/new", "add-job"), ("Classic", f"/board?workflow={escape(workflow, quote=True)}&ui=classic", "classic-board")))}
 
       <nav class="workflow-tabs" aria-label="Workflow views">
         {_refined_workflow_nav(workflow)}
@@ -1413,30 +1399,12 @@ def render_classic_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         align-items: start;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Application Board</h1>
-        <p>{escape(user.email)} · {escape(workflow_label)}</p>
-      </div>
-      <nav>
-        <a class="docs-link" href="/jobs/new">Add job</a>
-        <a class="docs-link" href="/focus">Focus</a>
-        <a class="docs-link" href="/inbox">Inbox</a>
-        <a class="docs-link" href="/api/capture/bookmarklet">Capture setup</a>
-        <a class="docs-link" href="/settings#profile">Profile</a>
-        <a class="docs-link" href="/settings">Settings</a>
-        {'<a class="docs-link" href="/admin">Admin</a>' if user.is_admin else ""}
-        <a class="docs-link" href="/docs">API docs</a>
-        <a class="docs-link" href="/board?workflow={escape(workflow, quote=True)}">Refined</a>
-        <form method="post" action="/logout">
-          <button type="submit">Sign out</button>
-        </form>
-      </nav>
-    </header>
+    {app_header(user, title="Application Board", subtitle=workflow_label, active="board", actions=(("Add job", "/jobs/new", "add-job"), ("API docs", "/docs", "api-docs"), ("Refined", f"/board?workflow={escape(workflow, quote=True)}", "refined-board")))}
     <nav class="workflow-nav" aria-label="Workflow views">
       {_workflow_nav(workflow)}
     </nav>

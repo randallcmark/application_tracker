@@ -59,15 +59,18 @@ Test expectations:
 
 Goal: make every page feel like part of one product and usable across desktop, tablet, and mobile.
 
-Status: planned from browser testing feedback. Main pages share slate/neutral tokens, but board still
-needs visual alignment, navigation varies by page, and mobile portrait layout needs dedicated work.
+Status: started. A shared server-rendered navigation helper now provides a consistent product
+anchor, primary navigation, and compact action links for Focus, Inbox, Paste email, Artefacts, and
+both Board modes. Job Workspace, Settings, Capture setup, Admin, and deeper mobile portrait
+optimisation remain follow-up work.
 
 Implementation targets:
 
 - Add a shared navigation shell or shared navigation helper for server-rendered pages.
-- Include a consistent top-left product/home anchor that returns to Focus.
+- Include a consistent top-left product/home anchor that returns to Focus. Done for Focus, Inbox,
+  Paste email, Artefacts, and Board.
 - Expose the same primary destinations consistently: Focus, Inbox, Active Work/Board, Artefacts,
-  Capture, Settings, and Admin when relevant.
+  Capture, Settings, and Admin when relevant. Started for the same first surfaces.
 - Bring Board fully onto the same visual language as Focus, Inbox, Job Workspace, Artefacts, and
   Settings.
 - Add responsive breakpoints for narrow portrait screens so content does not scroll behind form
@@ -85,6 +88,7 @@ Test expectations:
 
 - UI smoke tests for shared navigation links on Focus, Inbox, Board, Job Workspace, Artefacts,
   Settings, Capture, and Admin.
+- Current first-slice regression coverage: Focus, Inbox, Artefacts, and Board route tests.
 - Browser/manual tests at desktop, tablet, and mobile portrait widths.
 - Regression tests for fixed/sticky controls where present.
 
