@@ -891,8 +891,8 @@ def render_new_job(user: User) -> str:
 
     section {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       padding: 18px;
     }}
 
@@ -916,8 +916,8 @@ def render_new_job(user: User) -> str:
     input,
     select,
     textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
@@ -930,7 +930,7 @@ def render_new_job(user: User) -> str:
     button {{
       background: var(--accent);
       border: 0;
-      border-radius: 8px;
+      border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
@@ -1049,7 +1049,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     button {{
       background: var(--accent);
       border: 0;
-      border-radius: 8px;
+      border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
@@ -1061,8 +1061,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     input,
     select,
     textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
@@ -1102,7 +1102,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     .workspace-hero {{
       background: var(--panel);
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       border-radius: 14px;
       display: grid;
       gap: 16px;
@@ -1140,8 +1140,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     section {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       padding: 18px;
     }}
 
@@ -1223,8 +1223,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     .button-link {{
       align-items: center;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       color: var(--ink);
       display: inline-flex;
       justify-content: center;
@@ -1241,7 +1241,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     button.outline {{
       background: transparent;
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       color: var(--ink);
     }}
 
@@ -1281,7 +1281,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     }}
 
     .readiness-item::before {{
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       border-radius: 999px;
       content: "";
       height: 12px;
@@ -1351,7 +1351,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     .editable {{
       border: 1px solid transparent;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: text;
       margin: -5px;
       padding: 5px;
@@ -1404,7 +1404,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     .savebar {{
       align-items: center;
       background: var(--ink);
-      border-radius: 8px;
+      border-radius: 10px;
       bottom: 18px;
       color: #ffffff;
       display: none;

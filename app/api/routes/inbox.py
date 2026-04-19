@@ -198,13 +198,15 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
     }}
 
     h1 {{
-      font-size: 2rem;
+      font-size: 1.5rem;
+      font-weight: 500;
       line-height: 1.1;
     }}
 
     h2 {{
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       line-height: 1.3;
+      font-weight: 500;
     }}
 
     p,
@@ -225,8 +227,8 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
     .inbox-card,
     .empty-state {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       display: grid;
       gap: 14px;
       padding: 16px;
@@ -249,8 +251,8 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
     .button,
     .secondary,
     nav a {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       cursor: pointer;
       display: inline-flex;
       font: inherit;
@@ -413,6 +415,12 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
       margin: 0;
     }}
 
+    h1 {{
+      font-size: 1.5rem;
+      font-weight: 500;
+      line-height: 1.1;
+    }}
+
     p,
     .hint,
     .meta {{
@@ -433,8 +441,8 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
 
     section {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       display: grid;
       gap: 14px;
       padding: 18px;
@@ -453,8 +461,8 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
 
     input,
     textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
@@ -476,8 +484,8 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
     .button,
     .secondary {{
       align-items: center;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       cursor: pointer;
       display: inline-flex;
       font: inherit;
@@ -789,8 +797,8 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
 
     form {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       display: grid;
       gap: 14px;
       padding: 18px;
@@ -804,8 +812,8 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
 
     input,
     textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
@@ -818,8 +826,8 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
 
     button,
     nav a {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       cursor: pointer;
       display: inline-flex;
       font: inherit;

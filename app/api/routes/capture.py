@@ -98,7 +98,7 @@ def render_bookmarklet_setup(request: Request, user: User) -> str:
 
     main {{
       margin: 0 auto;
-      max-width: 920px;
+      max-width: 1120px;
       min-height: 100vh;
       padding: 24px;
     }}

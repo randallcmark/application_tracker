@@ -1,7 +1,8 @@
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Cookie, Depends, FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -47,6 +48,17 @@ def create_app() -> FastAPI:
         if session_token and get_active_session(db, session_token) is not None:
             return RedirectResponse(url="/focus")
         return RedirectResponse(url="/login")
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon_svg() -> FileResponse:
+        return FileResponse(
+            Path(__file__).resolve().parent / "assets" / "favicon.svg",
+            media_type="image/svg+xml",
+        )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon_ico() -> RedirectResponse:
+        return RedirectResponse(url="/favicon.svg")
 
     app.include_router(artefacts_router)
     app.include_router(auth_router)

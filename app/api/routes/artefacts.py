@@ -149,7 +149,7 @@ def render_artefact_library(user: User, artefacts: list[Artefact]) -> HTMLRespon
 
     main {{
       margin: 0 auto;
-      max-width: 1120px;
+      max-width: 1280px;
       min-height: 100vh;
       padding: 24px;
     }}

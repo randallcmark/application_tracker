@@ -347,7 +347,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     h1 {{
-      font-size: 2rem;
+      font-size: 1.5rem;
       letter-spacing: 0;
       line-height: 1.08;
       font-weight: 500;
@@ -375,7 +375,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     .workflow-tab,
     .refined-action,
     button {{
-      border-radius: 8px;
+      border-radius: 10px;
       font: inherit;
       min-height: 36px;
     }}
@@ -392,9 +392,9 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     .workflow-tab.active {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
+      background: var(--slate-soft);
+      border-color: #c3ccf0;
+      color: var(--accent-strong);
     }}
 
     .workflow-tabs {{

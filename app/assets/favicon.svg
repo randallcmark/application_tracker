@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Application Tracker">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8EBF8"/>
+  <path d="M18 44V20h6v24h-6Zm11 0V28h6v16h-6Zm11 0V24h6v20h-6Z" fill="#4F67E4"/>
+  <circle cx="21" cy="20" r="4" fill="#2D3A9A"/>
+  <circle cx="32" cy="28" r="4" fill="#2D3A9A"/>
+  <circle cx="43" cy="24" r="4" fill="#2D3A9A"/>
+</svg>

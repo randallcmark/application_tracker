@@ -18,10 +18,9 @@ PRIMARY_NAV: tuple[NavLink, ...] = (
 def app_shell_styles() -> str:
     return """
     .app-topbar {
-      align-items: start;
       display: grid;
-      gap: 16px;
-      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      grid-template-columns: 1fr;
       margin-bottom: 24px;
     }
 
@@ -29,42 +28,64 @@ def app_shell_styles() -> str:
       min-width: 0;
     }
 
+    .app-topbar h1 {
+      font-size: 1.5rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      line-height: 1.3;
+    }
+
     .app-brand {
+      align-items: center;
       color: var(--accent-strong);
       display: inline-flex;
+      gap: 8px;
       font-size: 0.82rem;
-      font-weight: 700;
+      font-weight: 500;
       margin-bottom: 8px;
       text-decoration: none;
     }
 
+    .app-brand-mark {
+      border-radius: 6px;
+      display: block;
+      height: 18px;
+      width: 18px;
+    }
+
     .app-subtitle {
       color: var(--muted);
+      display: block;
       line-height: 1.45;
       margin-top: 6px;
+      max-width: 80ch;
       overflow-wrap: anywhere;
     }
 
     .app-nav {
       align-items: center;
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 8px;
-      justify-content: end;
+      justify-content: start;
+      max-width: 100%;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .app-nav a,
     .app-nav button {
       align-items: center;
       background: transparent;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       color: var(--accent-strong);
       cursor: pointer;
       display: inline-flex;
       font: inherit;
       font-size: 0.92rem;
-      font-weight: 600;
+      font-weight: 500;
       min-height: 34px;
       padding: 0 10px;
       text-decoration: none;
@@ -72,13 +93,14 @@ def app_shell_styles() -> str:
     }
 
     .app-nav form {
+      flex: 0 0 auto;
       margin: 0;
     }
 
     .app-nav a.active {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: #ffffff;
+      background: #E8EBF8;
+      border-color: #C3CCF0;
+      color: var(--accent);
     }
 
     .app-nav a.primary {
@@ -87,18 +109,14 @@ def app_shell_styles() -> str:
       color: #ffffff;
     }
 
-    @media (max-width: 760px) {
-      .app-topbar {
-        grid-template-columns: 1fr;
-      }
+    .app-nav a:hover,
+    .app-nav button:hover {
+      border-color: rgba(0, 0, 0, 0.22);
+    }
 
-      .app-nav {
-        flex-wrap: nowrap;
-        justify-content: start;
-        max-width: 100%;
-        overflow-x: auto;
-        padding-bottom: 4px;
-        -webkit-overflow-scrolling: touch;
+    @media (max-width: 760px) {
+      .app-subtitle {
+        max-width: none;
       }
     }
     """
@@ -120,7 +138,10 @@ def app_header(
     return f"""
     <header class="app-topbar">
       <div>
-        <a class="app-brand" href="/focus">Application Tracker</a>
+        <a class="app-brand" href="/focus">
+          <img class="app-brand-mark" src="/favicon.svg" alt="" aria-hidden="true">
+          <span>Application Tracker</span>
+        </a>
         <h1>{escape(title)}</h1>
         <p class="app-subtitle">{escape(user.email)} · {escape(subtitle)}</p>
       </div>

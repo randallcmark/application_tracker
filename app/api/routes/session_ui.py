@@ -446,7 +446,7 @@ def settings_page(
 
     main {{
       margin: 0 auto;
-      max-width: 980px;
+      max-width: 1120px;
       min-height: 100vh;
       padding: 24px;
     }}
@@ -800,7 +800,7 @@ def admin_page(
 
     main {{
       margin: 0 auto;
-      max-width: 980px;
+      max-width: 1120px;
       min-height: 100vh;
       padding: 24px;
     }}

@@ -259,12 +259,14 @@ def render_focus(
     }}
 
     h1 {{
-      font-size: 2rem;
+      font-size: 1.5rem;
+      font-weight: 500;
       line-height: 1.1;
     }}
 
     h2 {{
-      font-size: 1rem;
+      font-size: 1.05rem;
+      font-weight: 500;
     }}
 
     p, span, .empty {{
@@ -277,8 +279,8 @@ def render_focus(
     }}
 
     .button, nav a {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       display: inline-flex;
       padding: 8px 10px;
       text-decoration: none;
@@ -300,8 +302,8 @@ def render_focus(
 
     .stat, section {{
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       padding: 16px;
     }}
 
