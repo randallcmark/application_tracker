@@ -291,6 +291,50 @@ def _mark_applied_form(job: Job) -> str:
     """
 
 
+def _application_started_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/application-started">
+      <label>
+        Notes
+        <textarea name="notes" rows="3" placeholder="What have you started externally?"></textarea>
+      </label>
+      <button type="submit">Application started</button>
+    </form>
+    """
+
+
+def _blocker_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/blockers">
+      <label>
+        Blocker
+        <textarea name="notes" rows="3" placeholder="What is blocked and what is needed?" required></textarea>
+      </label>
+      <label>
+        Follow-up date
+        <input name="follow_up_at" type="date">
+      </label>
+      <button type="submit">Record blocker</button>
+    </form>
+    """
+
+
+def _return_note_form(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/return-note">
+      <label>
+        Return note
+        <textarea name="notes" rows="3" placeholder="What happened and what is next?" required></textarea>
+      </label>
+      <label>
+        Follow-up date
+        <input name="follow_up_at" type="date">
+      </label>
+      <button type="submit">Record return note</button>
+    </form>
+    """
+
+
 def _archive_form(job: Job) -> str:
     disabled = " disabled" if job.status == "archived" else ""
     button_label = "Archived" if job.status == "archived" else "Archive"
@@ -1590,6 +1634,12 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
           {_mark_applied_form(job)}
         </section>
         <section class="workspace-panel">
+          <h2>External workflow actions</h2>
+          {_application_started_form(job)}
+          {_blocker_form(job)}
+          {_return_note_form(job)}
+        </section>
+        <section class="workspace-panel">
           <h2>Archive</h2>
           {_archive_form(job)}
         </section>
@@ -1940,6 +1990,72 @@ def mark_job_applied_form(
     )
     update_job_board_state(job, status="applied")
     record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/application-started", include_in_schema=False)
+def mark_application_started_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    notes: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    old_status = job.status
+    if job.status in {"saved", "interested"}:
+        update_job_board_state(job, status="preparing")
+        record_job_status_change(db, job, old_status=old_status, new_status=job.status)
+    note_text = notes.strip() or "Started work on the external application flow."
+    create_job_note(db, job, subject="Application started", notes=note_text)
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/blockers", include_in_schema=False)
+def record_job_blocker_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    notes: Annotated[str, Form()] = "",
+    follow_up_at: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    blocker_note = notes.strip()
+    if not blocker_note:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Blocker note is required")
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    create_job_note(
+        db,
+        job,
+        subject="Blocker recorded",
+        notes=blocker_note,
+        follow_up_at=_parse_follow_up_date(follow_up_at),
+    )
+    db.commit()
+    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/return-note", include_in_schema=False)
+def record_return_note_form(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    notes: Annotated[str, Form()] = "",
+    follow_up_at: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    return_note = notes.strip()
+    if not return_note:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Return note is required")
+
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    create_job_note(
+        db,
+        job,
+        subject="Return note",
+        notes=return_note,
+        follow_up_at=_parse_follow_up_date(follow_up_at),
+    )
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
 

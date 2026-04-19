@@ -79,6 +79,9 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert '<form class="quick-action-form"' in response.text
         assert f'action="/jobs/{job_uuid}/interviews"' in response.text
         assert f'action="/jobs/{job_uuid}/archive"' in response.text
+        assert f'action="/jobs/{job_uuid}/application-started"' in response.text
+        assert f'action="/jobs/{job_uuid}/blockers"' in response.text
+        assert f'action="/jobs/{job_uuid}/return-note"' in response.text
         assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
         assert "Next action" in response.text
@@ -504,6 +507,185 @@ def test_job_detail_status_form_rejects_bad_status(
 
         assert response.status_code == 400
         assert response.json()["detail"] == "Unsupported job status"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_application_started_moves_status_and_records_note(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Application started target", status="interested")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/application-started",
+            data={"notes": "Started tailoring a resume and opening the ATS flow."},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            job = db.scalar(select(Job).where(Job.uuid == job_uuid))
+
+            assert job is not None
+            assert job.status == "preparing"
+            assert any(note.subject == "Application started" for note in job.communications)
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+        assert detail_response.status_code == 200
+        assert "Status changed from interested to preparing" in detail_response.text
+        assert "Application started" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_blocker_form_adds_note_with_optional_follow_up(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Blocker target", status="preparing")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/blockers",
+            data={"notes": "Waiting for referral confirmation.", "follow_up_at": "2026-04-22"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            blocker_note = db.scalar(
+                select(Communication).where(Communication.subject == "Blocker recorded")
+            )
+            assert blocker_note is not None
+            assert blocker_note.notes == "Waiting for referral confirmation."
+            assert blocker_note.follow_up_at is not None
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+        assert detail_response.status_code == 200
+        assert "Blocker recorded" in detail_response.text
+        assert "Waiting for referral confirmation." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_blocker_form_rejects_blank_note(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Bad blocker target", status="preparing")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/blockers",
+            data={"notes": "   "},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Blocker note is required"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_return_note_form_adds_note_and_follow_up(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Return note target", status="applied")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/return-note",
+            data={
+                "notes": "Completed the external form and uploaded portfolio links.",
+                "follow_up_at": "2026-04-23",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/jobs/{job_uuid}"
+
+        with session_local() as db:
+            return_note = db.scalar(select(Communication).where(Communication.subject == "Return note"))
+            assert return_note is not None
+            assert return_note.notes == "Completed the external form and uploaded portfolio links."
+            assert return_note.follow_up_at is not None
+
+        detail_response = client.get(f"/jobs/{job_uuid}")
+        assert detail_response.status_code == 200
+        assert "Return note" in detail_response.text
+        assert "Completed the external form and uploaded portfolio links." in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_return_note_form_rejects_blank_note(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Bad return note target", status="applied")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/return-note",
+            data={"notes": "  "},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Return note is required"
     finally:
         app.dependency_overrides.clear()
 

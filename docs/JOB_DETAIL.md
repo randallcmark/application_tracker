@@ -40,6 +40,9 @@ http://127.0.0.1:8000/jobs/new
 - Attaches an existing artefact to a job without copying the stored file.
 - Links to the Artefact Library at `/artefacts` for a cross-job file view.
 - Marks a job applied and creates or updates the application record.
+- Marks external application work started from the workspace and moves early-stage jobs to preparing.
+- Records explicit blocker notes with optional follow-up dates.
+- Records explicit return notes after external workflow steps, with optional follow-up dates.
 - Schedules interviews and shows scheduled interview records.
 - Archives a job with an optional timeline note.
 - Restores an archived job to an active board status with an optional timeline note.
@@ -90,10 +93,16 @@ http://127.0.0.1:8000/board
 
 13. Schedule an interview and confirm the page shows an interview record and timeline event.
 
-14. Use Archive and confirm the job is archived with a timeline event.
+14. Use `Application started` and confirm a timeline event is added and prospect jobs move to
+    preparing.
 
-15. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
+15. Use `Record blocker` and `Record return note` with optional follow-up dates and confirm both
+    appear in the timeline.
+
+16. Use Archive and confirm the job is archived with a timeline event.
+
+17. Open the archived job detail page, use Unarchive, choose an active status, and confirm the
    job returns to that status with a timeline event.
 
-16. Move another job to a different stage on the board, then open the detail page again and expand
+18. Move another job to a different stage on the board, then open the detail page again and expand
    Journal to confirm the new `stage_change` event appears.
