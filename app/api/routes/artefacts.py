@@ -329,6 +329,11 @@ def render_artefact_library(user: User, artefacts: list[Artefact]) -> HTMLRespon
         display: grid;
         grid-template-columns: 1fr;
       }}
+
+      .actions,
+      .actions .button {{
+        width: 100%;
+      }}
     }}
     {app_shell_styles()}
   </style>

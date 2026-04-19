@@ -587,6 +587,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
+      flex: 0 0 auto;
       min-width: 126px;
       padding: 12px;
     }}
@@ -690,8 +691,9 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
 
     .item-title {{
       align-items: start;
-      display: flex;
+      display: grid;
       gap: 10px;
+      grid-template-columns: minmax(0, 1fr) auto;
       justify-content: space-between;
     }}
 
@@ -818,6 +820,34 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
 
       .refined-lanes {{
         grid-template-columns: repeat({len(statuses)}, minmax(260px, 86vw));
+      }}
+
+      .workflow-tabs,
+      .metrics {{
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 5px;
+        -webkit-overflow-scrolling: touch;
+      }}
+
+      .workflow-tab {{
+        flex: 0 0 auto;
+      }}
+
+      .item-title {{
+        grid-template-columns: 1fr;
+      }}
+
+      .item-title span {{
+        justify-self: start;
+      }}
+
+      .item-actions {{
+        gap: 6px;
+      }}
+
+      .refined-action {{
+        min-height: 34px;
       }}
     }}
     {app_shell_styles()}
@@ -1397,6 +1427,11 @@ def render_classic_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
 
       .row-title-line {{
         align-items: start;
+      }}
+
+      .workflow-nav {{
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }}
     }}
     {app_shell_styles()}

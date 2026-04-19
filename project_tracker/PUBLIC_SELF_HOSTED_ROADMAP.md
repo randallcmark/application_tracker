@@ -88,10 +88,11 @@ As of 2026-04-12, the Stage 3 board workflow is browser-tested through:
 
 Known next product focus:
 
-- Phase 2.5: navigation and responsive shell. First slice is implemented for Focus, Inbox, Paste
-  email, Artefacts, and Board with a shared product anchor and primary navigation. Continue with Job
-  Workspace, Settings, Capture setup, Admin, mobile portrait usability, and full Board visual
-  alignment.
+- Phase 2.5: navigation and responsive shell. Shared navigation is implemented across the core
+  authenticated server-rendered pages, including Focus, Inbox, Paste email, Artefacts, Board, Job
+  Workspace, Add Job, Settings, Capture setup, and Admin. First responsive hardening is implemented
+  for nav overflow, board controls, job workspace save controls, tables, and stacked actions.
+  Continue with manual mobile portrait validation and full Board visual alignment.
 - Phase 3 follow-up: provider-backed email ingestion and richer enrich/review handling.
 - Phase 4 follow-up: richer external workflow actions on the Job Workspace.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.

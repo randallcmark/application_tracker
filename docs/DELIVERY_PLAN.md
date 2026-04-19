@@ -59,23 +59,28 @@ Test expectations:
 
 Goal: make every page feel like part of one product and usable across desktop, tablet, and mobile.
 
-Status: started. A shared server-rendered navigation helper now provides a consistent product
-anchor, primary navigation, and compact action links for Focus, Inbox, Paste email, Artefacts, and
-both Board modes. Job Workspace, Settings, Capture setup, Admin, and deeper mobile portrait
-optimisation remain follow-up work.
+Status: partially implemented. A shared server-rendered navigation helper now provides a
+consistent product anchor, primary navigation, compact action links, and sign-out across Focus,
+Inbox, Paste email, Artefacts, both Board modes, Job Workspace, Add Job, Settings, Capture setup,
+and Admin. The first responsive hardening pass improves mobile navigation, board workflow controls,
+job workspace editing/save controls, tables, and stacked actions. Manual browser testing at narrow
+portrait widths and full Board visual alignment remain follow-up work.
 
 Implementation targets:
 
-- Add a shared navigation shell or shared navigation helper for server-rendered pages.
+- Add a shared navigation shell or shared navigation helper for server-rendered pages. Done for the
+  core authenticated server-rendered pages.
 - Include a consistent top-left product/home anchor that returns to Focus. Done for Focus, Inbox,
-  Paste email, Artefacts, and Board.
+  Paste email, Artefacts, Board, Job Workspace, Add Job, Settings, Capture setup, and Admin.
 - Expose the same primary destinations consistently: Focus, Inbox, Active Work/Board, Artefacts,
-  Capture, Settings, and Admin when relevant. Started for the same first surfaces.
+  Capture, Settings, and Admin when relevant. Done for the same core authenticated pages.
 - Bring Board fully onto the same visual language as Focus, Inbox, Job Workspace, Artefacts, and
   Settings.
 - Add responsive breakpoints for narrow portrait screens so content does not scroll behind form
-  controls or action bars.
+  controls or action bars. Started with shared nav overflow handling, job workspace savebar
+  placement, and table/action stacking.
 - Define stable mobile behaviour for large forms, action bars, board/list views, and card grids.
+  Started for board tabs/metrics, settings/admin tables, Inbox actions, and Artefact actions.
 
 Acceptance criteria:
 
@@ -88,8 +93,10 @@ Test expectations:
 
 - UI smoke tests for shared navigation links on Focus, Inbox, Board, Job Workspace, Artefacts,
   Settings, Capture, and Admin.
-- Current first-slice regression coverage: Focus, Inbox, Artefacts, and Board route tests.
-- Browser/manual tests at desktop, tablet, and mobile portrait widths.
+- Current regression coverage: Focus, Inbox, Artefacts, Board, Job Workspace, Capture setup,
+  Settings, and Admin route tests.
+- Browser/manual tests at desktop, tablet, and mobile portrait widths. Still required after CSS
+  hardening.
 - Regression tests for fixed/sticky controls where present.
 
 ## Phase 3: Inbox And Intake Semantics

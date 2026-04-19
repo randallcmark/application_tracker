@@ -11,6 +11,7 @@ from starlette.datastructures import FormData
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
@@ -785,7 +786,7 @@ def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
     ) + 1
 
 
-def render_new_job() -> str:
+def render_new_job(user: User) -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -908,14 +909,12 @@ def render_new_job() -> str:
         display: grid;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <h1>Add job</h1>
-      <a href="/board">Board</a>
-    </header>
+    {app_header(user, title="Add job", subtitle="Create an intentional job entry", active=None)}
     <section>
       {_new_job_form()}
     </section>
@@ -1422,7 +1421,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 
     @media (max-width: 800px) {{
       main {{
-        padding: 16px;
+        padding: 16px 16px 104px;
       }}
 
       .topbar,
@@ -1446,28 +1445,41 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
         width: 100%;
       }}
 
+      .editable-heading .editable-control {{
+        font-size: 1.5rem;
+      }}
+
+      .description-editor {{
+        min-height: 280px;
+      }}
+
+      .savebar {{
+        bottom: 12px;
+        display: none;
+        gap: 8px;
+        left: 12px;
+        right: 12px;
+        transform: none;
+      }}
+
+      .savebar.is-visible {{
+        display: grid;
+      }}
+
+      .savebar button {{
+        width: 100%;
+      }}
+
       dl {{
         grid-template-columns: 1fr;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <nav>
-        <a href="/focus">Focus</a>
-        <a href="/inbox">Inbox</a>
-        <a href="/artefacts">Artefacts</a>
-        <a href="/board">Board</a>
-      </nav>
-      <nav>
-        <a href="/settings#profile">Profile</a>
-        <form method="post" action="/logout">
-          <button type="submit">Sign out</button>
-        </form>
-      </nav>
-    </header>
+    {app_header(job.owner, title="Job Workspace", subtitle=job.title, active=None, actions=(("Add job", "/jobs/new", "add-job"),))}
 
     <section class="workspace-hero">
       <div>
@@ -1722,8 +1734,7 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
 def new_job(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> HTMLResponse:
-    _ = current_user
-    return HTMLResponse(render_new_job())
+    return HTMLResponse(render_new_job(current_user))
 
 
 @router.post("/jobs/new", include_in_schema=False)

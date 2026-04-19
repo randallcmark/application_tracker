@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.deps import DbSession, get_current_user, require_capture_jobs_api_token
+from app.api.routes.ui import app_header, app_shell_styles
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.capture import capture_job
@@ -176,17 +177,12 @@ def render_bookmarklet_setup(request: Request, user: User) -> str:
     .hint {{
       font-size: 0.92rem;
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Capture setup</h1>
-        <p>{user.email}</p>
-      </div>
-      <a href="/board">Board</a>
-    </header>
+    {app_header(user, title="Capture setup", subtitle="Configure bookmarklet and extension capture", active="capture")}
 
     <section>
       <h2>1. Create a capture token</h2>

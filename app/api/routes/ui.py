@@ -25,6 +25,10 @@ def app_shell_styles() -> str:
       margin-bottom: 24px;
     }
 
+    .app-topbar > div {
+      min-width: 0;
+    }
+
     .app-brand {
       color: var(--accent-strong);
       display: inline-flex;
@@ -38,6 +42,7 @@ def app_shell_styles() -> str:
       color: var(--muted);
       line-height: 1.45;
       margin-top: 6px;
+      overflow-wrap: anywhere;
     }
 
     .app-nav {
@@ -66,6 +71,10 @@ def app_shell_styles() -> str:
       white-space: nowrap;
     }
 
+    .app-nav form {
+      margin: 0;
+    }
+
     .app-nav a.active {
       background: var(--ink);
       border-color: var(--ink);
@@ -84,9 +93,12 @@ def app_shell_styles() -> str:
       }
 
       .app-nav {
+        flex-wrap: nowrap;
         justify-content: start;
+        max-width: 100%;
         overflow-x: auto;
         padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
       }
     }
     """
@@ -114,6 +126,9 @@ def app_header(
       </div>
       <nav class="app-nav" aria-label="Primary navigation">
         {"".join(links)}
+        <form method="post" action="/logout">
+          <button type="submit">Sign out</button>
+        </form>
       </nav>
     </header>
     """

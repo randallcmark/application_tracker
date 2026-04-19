@@ -15,6 +15,7 @@ from sqlalchemy.engine import make_url
 
 from app.api.deps import DbSession, get_current_user, require_admin
 from app.api.routes.auth import authenticate_local_user, create_login_session
+from app.api.routes.ui import app_header, app_shell_styles
 from app.auth.api_tokens import (
     CAPTURE_JOBS_SCOPE,
     create_user_api_token,
@@ -585,29 +586,23 @@ def settings_page(
       .field-grid {{
         align-items: start;
         display: grid;
+        grid-template-columns: 1fr;
       }}
 
       table {{
         display: block;
+        max-width: 100%;
         overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Settings</h1>
-        <p>{escape(user.email)}</p>
-      </div>
-      <nav>
-        {'<a href="/admin">Admin</a>' if user.is_admin else ""}
-        <a href="/focus">Focus</a>
-        <a href="/inbox">Inbox</a>
-        <a href="/board">Board</a>
-      </nav>
-    </header>
+    {app_header(user, title="Settings", subtitle="Profile, AI placeholders, and capture tokens", active="settings")}
 
     {new_token_block}
 
@@ -959,30 +954,23 @@ def admin_page(
       .link-list {{
         align-items: start;
         display: grid;
+        grid-template-columns: 1fr;
       }}
 
       table {{
         display: block;
+        max-width: 100%;
         overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
       }}
     }}
+    {app_shell_styles()}
   </style>
 </head>
 <body>
   <main>
-    <header class="topbar">
-      <div>
-        <h1>Admin</h1>
-        <p>{escape(user.email)}</p>
-      </div>
-      <nav>
-        <a href="/focus">Focus</a>
-        <a href="/inbox">Inbox</a>
-        <a href="/board">Board</a>
-        <a href="/settings">Settings</a>
-        <a href="/docs">API docs</a>
-      </nav>
-    </header>
+    {app_header(user, title="Admin", subtitle="Self-hosted operations and capture token management", active="admin", actions=(("API docs", "/docs", "api-docs"),))}
 
     {new_token_block}
 

@@ -289,6 +289,16 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
         display: grid;
         grid-template-columns: 1fr;
       }}
+
+      .actions {{
+        width: 100%;
+      }}
+
+      .actions > *,
+      .actions button,
+      .actions a {{
+        width: 100%;
+      }}
     }}
     {app_shell_styles()}
   </style>
