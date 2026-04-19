@@ -15,7 +15,7 @@ from sqlalchemy.engine import make_url
 
 from app.api.deps import DbSession, get_current_user, require_admin
 from app.api.routes.auth import authenticate_local_user, create_login_session
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.auth.api_tokens import (
     CAPTURE_JOBS_SCOPE,
     create_user_api_token,
@@ -413,199 +413,58 @@ def settings_page(
         "urgency": escape(_form_value(profile.urgency if profile else None)),
         "positioning_notes": escape(_form_value(profile.positioning_notes if profile else None)),
     }
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Settings - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-      --warn: #a43d2b;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1120px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      line-height: 1.1;
-    }}
-
-    h2 {{
-      font-size: 1.1rem;
-    }}
-
-    p,
-    .muted {{
-      color: var(--muted);
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    section {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      display: grid;
-      gap: 14px;
-      margin-bottom: 16px;
-      padding: 18px;
-    }}
-
-    label {{
-      display: grid;
-      font-weight: 500;
-      gap: 6px;
-    }}
-
-    .checkbox-label {{
-      align-items: center;
-      display: flex;
-    }}
-
-    .checkbox-label input {{
-      width: auto;
-    }}
-
-    input,
-    select,
-    textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    extra_styles = compact_content_rhythm_styles() + """
+    .checkbox-label { align-items: center; display: flex; }
+    .checkbox-label input { width: auto; }
+    input, select, textarea {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    textarea {{
-      min-height: 96px;
-      resize: vertical;
-    }}
-
-    .field-grid {{
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-
-    button {{
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    .field-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    button {
       background: var(--accent);
       border: 0;
-      border-radius: 8px;
+      border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
       font-weight: 500;
       min-height: 38px;
       padding: 0 14px;
-    }}
-
-    button:hover {{
-      background: var(--accent-strong);
-    }}
-
-    button.secondary {{
+    }
+    button:hover { background: var(--accent-strong); }
+    button.secondary {
       background: #ffffff;
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       color: var(--warn);
-    }}
-
-    table {{
-      border-collapse: collapse;
-      width: 100%;
-    }}
-
-    th,
-    td {{
-      border-bottom: 1px solid var(--line);
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th, td {
+      border-bottom: 0.5px solid var(--line);
       padding: 10px 8px;
       text-align: left;
       vertical-align: middle;
-    }}
-
-    th {{
-      color: var(--muted);
-      font-size: 0.82rem;
-      text-transform: uppercase;
-    }}
-
-    td form {{
-      margin: 0;
-    }}
-
-    .secret {{
-      border-color: var(--accent);
-    }}
-
-    @media (max-width: 760px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      .field-grid {{
-        align-items: start;
-        display: grid;
-        grid-template-columns: 1fr;
-      }}
-
-      table {{
+    }
+    th { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; }
+    td form { margin: 0; }
+    .secret { border-color: var(--accent); }
+    @media (max-width: 760px) {
+      .field-grid { grid-template-columns: 1fr; }
+      table {
         display: block;
         max-width: 100%;
         overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Settings", subtitle="Profile, AI placeholders, and capture tokens", active="settings")}
-
+      }
+    }
+    """
+    body = f"""
     {new_token_block}
-
     <section id="profile">
       <h2>Job-search profile</h2>
       <p>This manual profile gives future Focus, Inbox, search, and AI guidance a stable record of what you are trying to achieve.</p>
@@ -659,7 +518,6 @@ def settings_page(
         <button type="submit">Save profile</button>
       </form>
     </section>
-
     <section id="ai">
       <h2>AI readiness</h2>
       <p>AI is optional, inspectable, and disabled by default. These placeholders reserve provider configuration without storing secrets or making external calls.</p>
@@ -706,7 +564,6 @@ def settings_page(
         </tbody>
       </table>
     </section>
-
     <section>
       <h2>Create API token</h2>
       <p>Use capture tokens for the browser bookmarklet and future extensions.</p>
@@ -719,7 +576,6 @@ def settings_page(
         <button type="submit">Create capture token</button>
       </form>
     </section>
-
     <section>
       <h2>API tokens</h2>
       <table>
@@ -738,9 +594,18 @@ def settings_page(
         </tbody>
       </table>
     </section>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Settings",
+            title="Settings",
+            subtitle="Profile, AI placeholders, and capture tokens",
+            active="settings",
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 
@@ -768,212 +633,76 @@ def admin_page(
         if new_token
         else ""
     )
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1120px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar,
-    nav,
-    .stats {{
-      align-items: center;
-      display: flex;
-      gap: 12px;
-    }}
-
-    .topbar {{
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      line-height: 1.1;
-    }}
-
-    h2 {{
-      font-size: 1.1rem;
-    }}
-
-    p,
-    .muted {{
-      color: var(--muted);
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    input {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    extra_styles = compact_content_rhythm_styles() + """
+    input {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    button {{
+    }
+    button {
       background: var(--accent);
       border: 0;
-      border-radius: 8px;
+      border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
       font-weight: 500;
       min-height: 38px;
       padding: 0 14px;
-    }}
-
-    button:hover {{
-      background: var(--accent-strong);
-    }}
-
-    button.secondary {{
+    }
+    button:hover { background: var(--accent-strong); }
+    button.secondary {
       background: #ffffff;
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       color: #a43d2b;
-    }}
-
-    section {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      display: grid;
-      gap: 14px;
-      margin-bottom: 16px;
-      padding: 18px;
-    }}
-
-    form,
-    label {{
-      display: grid;
-      gap: 8px;
-    }}
-
-    label {{
-      font-weight: 500;
-    }}
-
-    .stats {{
+    }
+    .stats {
       align-items: stretch;
       display: grid;
+      gap: 12px;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-    }}
-
-    .stat {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    }
+    .stat {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       padding: 14px;
-    }}
-
-    .stat strong {{
+    }
+    .stat strong {
       display: block;
-      font-size: 1.7rem;
+      font-size: 1.6rem;
       line-height: 1;
       margin-bottom: 6px;
-    }}
-
-    .link-list {{
+    }
+    .link-list {
       display: grid;
       gap: 10px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-
-    table {{
-      border-collapse: collapse;
-      width: 100%;
-    }}
-
-    th,
-    td {{
-      border-bottom: 1px solid var(--line);
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th, td {
+      border-bottom: 0.5px solid var(--line);
       padding: 10px 8px;
       text-align: left;
       vertical-align: middle;
-    }}
-
-    th {{
-      color: var(--muted);
-      font-size: 0.82rem;
-      text-transform: uppercase;
-    }}
-
-    td form {{
-      margin: 0;
-    }}
-
-    .secret {{
-      border-color: var(--accent);
-    }}
-
-    @media (max-width: 760px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      nav,
-      .stats,
-      .link-list {{
-        align-items: start;
-        display: grid;
-        grid-template-columns: 1fr;
-      }}
-
-      table {{
+    }
+    th { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; }
+    td form { margin: 0; }
+    .secret { border-color: var(--accent); }
+    @media (max-width: 760px) {
+      .stats, .link-list { grid-template-columns: 1fr; }
+      table {
         display: block;
         max-width: 100%;
         overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Admin", subtitle="Self-hosted operations and capture token management", active="admin", actions=(("API docs", "/docs", "api-docs"),))}
-
+      }
+    }
+    """
+    body = f"""
     {new_token_block}
-
     <section>
       <h2>System</h2>
       <div class="stats">
@@ -985,7 +714,6 @@ def admin_page(
       <p>Public URL: {escape(str(settings.public_base_url))}</p>
       <p>Storage: {escape(settings.storage_backend)} at {escape(settings.local_storage_path)}</p>
     </section>
-
     <section>
       <h2>Admin Tasks</h2>
       <div class="link-list">
@@ -995,7 +723,6 @@ def admin_page(
         <a href="/admin/backup">Download backup</a>
       </div>
     </section>
-
     <section>
       <h2>Create Capture Token</h2>
       <p>Create a scoped capture token owned by your admin account.</p>
@@ -1008,7 +735,6 @@ def admin_page(
         <button type="submit">Create capture token</button>
       </form>
     </section>
-
     <section>
       <h2>API Tokens</h2>
       <table>
@@ -1028,9 +754,183 @@ def admin_page(
         </tbody>
       </table>
     </section>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Admin",
+            title="Admin",
+            subtitle="Self-hosted operations and capture token management",
+            active="admin",
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
+    )
+
+
+def help_page(user: User) -> HTMLResponse:
+    extra_styles = compact_content_rhythm_styles() + """
+    .help-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .help-links a {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
+      color: var(--accent-strong);
+      display: inline-flex;
+      min-height: 34px;
+      padding: 0 10px;
+      text-decoration: none;
+      align-items: center;
+    }
+    .help-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .help-grid section {
+      margin-bottom: 0;
+    }
+    .checklist {
+      display: grid;
+      gap: 6px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .checklist li {
+      border-left: 3px solid var(--line);
+      padding-left: 8px;
+    }
+    .next-steps {
+      display: grid;
+      gap: 8px;
+      list-style: decimal;
+      margin: 0;
+      padding-left: 20px;
+    }
+    @media (max-width: 760px) {
+      .help-grid { grid-template-columns: 1fr; }
+    }
+    """
+    admin_section = (
+        """
+    <section>
+      <h2>Admin Operations</h2>
+      <p>Admin tools are for self-hosted maintenance and recovery. They do not change ownership boundaries.</p>
+      <ul class="checklist">
+        <li><strong>Admin page:</strong> review users, jobs, token counts, and create scoped capture tokens.</li>
+        <li><strong>Backup:</strong> use the Admin backup action for portable restore material.</li>
+        <li><strong>API Docs:</strong> available from your user menu and at <a href="/docs">/docs</a>.</li>
+      </ul>
+    </section>
+        """
+        if user.is_admin
+        else ""
+    )
+    body = f"""
+    <section>
+      <h2>What This App Is For</h2>
+      <p>Application Tracker is a private, local-first workspace for managing opportunities from capture through outcomes. It is not board-first: Focus, Inbox, and Job Workspace are the primary working surfaces.</p>
+      <div class="help-links">
+        <a href="/focus">Open Focus</a>
+        <a href="/inbox">Open Inbox</a>
+        <a href="/board">Open Board</a>
+        <a href="/artefacts">Open Artefacts</a>
+        <a href="/api/capture/bookmarklet">Open Capture Setup</a>
+        <a href="/settings">Open Settings</a>
+      </div>
+    </section>
+    <section>
+      <h2>Daily Workflow</h2>
+      <ol class="next-steps">
+        <li>Start in Focus and work top-to-bottom on due follow-ups and stale items.</li>
+        <li>Review Inbox candidates, then accept into workflow or dismiss.</li>
+        <li>Use Job Workspace to execute one opportunity: next action, edits, artefacts, notes, timeline.</li>
+        <li>Use Board for stage movement and visual scanning of active work.</li>
+        <li>Capture new jobs as you browse, and keep Settings profile current to improve triage relevance.</li>
+      </ol>
+    </section>
+    <div class="help-grid">
+      <section>
+        <h2>Focus</h2>
+        <p>Focus answers what needs attention now.</p>
+        <ul class="checklist">
+          <li>Use this as your default landing page each session.</li>
+          <li>Follow direct links into the relevant job workspace.</li>
+          <li>If Focus is sparse, capture more opportunities or complete profile settings.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Inbox</h2>
+        <p>Inbox is for unreviewed intake, including pasted email opportunities.</p>
+        <ul class="checklist">
+          <li>Review extracted fields before acceptance.</li>
+          <li>Accept moves items into active workflow states.</li>
+          <li>Dismiss keeps low-quality intake out of active views.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Board</h2>
+        <p>Board is a workflow lens over active work, not the strategic center.</p>
+        <ul class="checklist">
+          <li>Use drag or quick actions to update stage status.</li>
+          <li>Switch workflows to narrow attention (Prospects, In Progress, Outcomes).</li>
+          <li>Open Job Workspace for details and execution.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Job Workspace</h2>
+        <p>Job Workspace is where execution happens for one opportunity.</p>
+        <ul class="checklist">
+          <li>Maintain title, source links, description, and status in one place.</li>
+          <li>Track applications and interviews without leaving the page.</li>
+          <li>Use notes and timeline as your private learning record.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Artefacts</h2>
+        <p>Artefacts are reusable working assets tied to outcomes.</p>
+        <ul class="checklist">
+          <li>Store resumes, cover letters, and prep files for reuse across jobs.</li>
+          <li>Keep purpose/version metadata updated.</li>
+          <li>Attach existing artefacts from Job Workspace when preparing submissions.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Capture</h2>
+        <p>Capture brings external jobs into Inbox with provenance.</p>
+        <ul class="checklist">
+          <li>Use the bookmarklet/token flow for browser intake.</li>
+          <li>Use Paste email from Inbox when a recruiter or job-board email is relevant.</li>
+          <li>Review all captured items in Inbox before active workflow entry.</li>
+        </ul>
+      </section>
+    </div>
+    <section>
+      <h2>Settings And Privacy</h2>
+      <ul class="checklist">
+        <li><strong>Profile:</strong> update target roles, locations, and constraints to guide decisions.</li>
+        <li><strong>AI placeholders:</strong> optional and inspectable. No hidden job/profile mutations.</li>
+        <li><strong>API tokens:</strong> create only what you need and revoke unused tokens promptly.</li>
+      </ul>
+    </section>
+    {admin_section}
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Help",
+            title="Help",
+            subtitle="How to use Application Tracker",
+            active=None,
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 
@@ -1177,6 +1077,13 @@ def settings_form(
         profile=get_user_profile(db, current_user),
         ai_provider_settings=list_user_ai_provider_settings(db, current_user),
     )
+
+
+@router.get("/help", response_class=HTMLResponse, include_in_schema=False)
+def help_view(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> HTMLResponse:
+    return help_page(current_user)
 
 
 @router.get("/admin", response_class=HTMLResponse, include_in_schema=False)

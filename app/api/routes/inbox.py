@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.email_intake import EmailIntake
 from app.db.models.job import Job
 from app.db.models.user import User
@@ -139,118 +139,22 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
           </div>
         </section>
         """
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Inbox - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-      --warn: #a43d2b;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 980px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    nav,
-    .actions {{
-      align-items: center;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 1.5rem;
-      font-weight: 500;
-      line-height: 1.1;
-    }}
-
-    h2 {{
-      font-size: 1.05rem;
-      line-height: 1.3;
-      font-weight: 500;
-    }}
-
-    p,
-    .meta {{
-      color: var(--muted);
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    .inbox-list {{
-      display: grid;
-      gap: 12px;
-    }}
-
-    .inbox-card,
-    .empty-state {{
+    extra_styles = compact_content_rhythm_styles() + """
+    :root { --warn: #a43d2b; }
+    .inbox-list { display: grid; gap: 12px; }
+    .inbox-card, .empty-state {
       background: var(--panel);
       border: 0.5px solid var(--line);
       border-radius: 10px;
       display: grid;
       gap: 14px;
       padding: 16px;
-    }}
-
-    .inbox-card {{
-      grid-template-columns: minmax(0, 1fr) auto;
-    }}
-
-    .inbox-card > div {{
-      min-width: 0;
-    }}
-
-    .source-url {{
-      overflow-wrap: anywhere;
-      word-break: break-word;
-    }}
-
-    button,
-    .button,
-    .secondary,
-    nav a {{
+    }
+    .inbox-card { grid-template-columns: minmax(0, 1fr) auto; }
+    .inbox-card > div { min-width: 0; }
+    .source-url { overflow-wrap: anywhere; word-break: break-word; }
+    .actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+    button, .button, .secondary {
       border: 0.5px solid var(--line);
       border-radius: 10px;
       cursor: pointer;
@@ -259,61 +163,37 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
       font-weight: 500;
       padding: 8px 10px;
       text-decoration: none;
-    }}
-
-    button,
-    .button {{
+    }
+    button, .button {
       background: var(--accent);
       border-color: var(--accent);
       color: #ffffff;
-    }}
-
-    .secondary,
-    nav a {{
-      background: transparent;
-      color: var(--accent-strong);
-    }}
-
-    .ghost {{
-      background: transparent;
-      border-color: var(--line);
-      color: var(--warn);
-    }}
-
-    @media (max-width: 760px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      .inbox-card {{
-        align-items: start;
-        display: grid;
-        grid-template-columns: 1fr;
-      }}
-
-      .actions {{
-        width: 100%;
-      }}
-
-      .actions > *,
-      .actions button,
-      .actions a {{
-        width: 100%;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Inbox", subtitle="Review captured opportunities before they become active work", active="inbox", actions=(("Paste email", "/inbox/email/new", "paste-email"), ("Add job", "/jobs/new", "add-job")))}
+    }
+    .secondary { background: transparent; color: var(--accent-strong); }
+    .ghost { background: transparent; border-color: var(--line); color: var(--warn); }
+    @media (max-width: 760px) {
+      .inbox-card { align-items: start; grid-template-columns: 1fr; }
+      .actions { width: 100%; }
+      .actions > *, .actions button, .actions a { width: 100%; }
+    }
+    """
+    body = f"""
     <div class="inbox-list">
       {cards}
     </div>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Inbox",
+            title="Inbox",
+            subtitle="Review captured opportunities before they become active work",
+            active="inbox",
+            actions=(("Paste email", "/inbox/email/new", "paste-email"), ("Add job", "/jobs/new", "add-job")),
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 
@@ -373,116 +253,31 @@ def _provenance_summary(job: Job) -> str:
 def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HTMLResponse:
     error_block = f'<p class="error">{escape(error)}</p>' if error else ""
     source_url = _selected_source_url(job)
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Review Inbox Item - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-      --warn: #a43d2b;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1120px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 1.5rem;
-      font-weight: 500;
-      line-height: 1.1;
-    }}
-
-    p,
-    .hint,
-    .meta {{
-      color: var(--muted);
-      line-height: 1.45;
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    .review-layout {{
+    extra_styles = compact_content_rhythm_styles() + """
+    :root { --warn: #a43d2b; }
+    .hint, .meta { color: var(--muted); line-height: 1.45; }
+    .review-layout {
       display: grid;
       gap: 18px;
       grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-    }}
-
-    section {{
-      background: var(--panel);
-      border: 0.5px solid var(--line);
-      border-radius: 10px;
-      display: grid;
-      gap: 14px;
-      padding: 18px;
-    }}
-
-    form {{
-      display: grid;
-      gap: 14px;
-    }}
-
-    label {{
-      display: grid;
-      font-weight: 500;
-      gap: 6px;
-    }}
-
-    input,
-    textarea {{
+    }
+    section { padding: 18px; }
+    form { display: grid; gap: 14px; }
+    label { gap: 6px; }
+    input, textarea {
       border: 0.5px solid var(--line);
       border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    textarea {{
-      min-height: 320px;
-      resize: vertical;
-    }}
-
-    .field-grid,
-    .actions {{
+    }
+    textarea { min-height: 320px; resize: vertical; }
+    .field-grid, .actions {
       display: grid;
       gap: 12px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-
-    button,
-    .button,
-    .secondary {{
+    }
+    button, .button, .secondary {
       align-items: center;
       border: 0.5px solid var(--line);
       border-radius: 10px;
@@ -494,71 +289,30 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
       min-height: 38px;
       padding: 0 14px;
       text-decoration: none;
-    }}
-
-    button,
-    .button {{
+    }
+    button, .button {
       background: var(--accent);
       border-color: var(--accent);
       color: #ffffff;
-    }}
-
-    .secondary {{
-      background: transparent;
-      color: var(--accent-strong);
-    }}
-
-    .ghost {{
-      background: transparent;
-      border-color: var(--line);
-      color: var(--warn);
-    }}
-
-    .provenance ul,
-    .provenance ol {{
+    }
+    .secondary { background: transparent; color: var(--accent-strong); }
+    .ghost { background: transparent; border-color: var(--line); color: var(--warn); }
+    .provenance ul, .provenance ol {
       display: grid;
       gap: 10px;
       list-style: none;
       margin: 0;
       padding: 0;
-    }}
-
-    .provenance li {{
-      display: grid;
-      gap: 3px;
-      min-width: 0;
-    }}
-
-    .provenance strong {{
-      font-weight: 500;
-    }}
-
-    .provenance span,
-    .provenance a {{
-      overflow-wrap: anywhere;
-    }}
-
-    .error {{
-      color: var(--warn);
-    }}
-
-    @media (max-width: 800px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .review-layout,
-      .field-grid,
-      .actions {{
-        grid-template-columns: 1fr;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Review Inbox Item", subtitle="Clean up extracted fields before accepting or dismissing", active="inbox")}
+    }
+    .provenance li { display: grid; gap: 3px; min-width: 0; }
+    .provenance strong { font-weight: 500; }
+    .provenance span, .provenance a { overflow-wrap: anywhere; }
+    .error { color: var(--warn); }
+    @media (max-width: 800px) {
+      .review-layout, .field-grid, .actions { grid-template-columns: 1fr; }
+    }
+    """
+    body = f"""
     <div class="review-layout">
       <section>
         <h2>Opportunity fields</h2>
@@ -614,9 +368,18 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
         </section>
       </aside>
     </div>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Review Inbox Item",
+            title="Review Inbox Item",
+            subtitle="Clean up extracted fields before accepting or dismissing",
+            active="inbox",
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 
@@ -728,135 +491,41 @@ def update_inbox_review(
 
 def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLResponse:
     error_block = f'<p class="error">{escape(error)}</p>' if error else ""
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Paste email - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-      --warn: #a43d2b;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 860px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    nav {{
-      align-items: center;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    p,
-    .hint {{
-      color: var(--muted);
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    form {{
+    extra_styles = compact_content_rhythm_styles() + """
+    :root { --warn: #a43d2b; }
+    .hint { color: var(--muted); }
+    form[action="/inbox/email"] {
       background: var(--panel);
       border: 0.5px solid var(--line);
       border-radius: 10px;
       display: grid;
       gap: 14px;
       padding: 18px;
-    }}
-
-    label {{
-      display: grid;
-      font-weight: 500;
-      gap: 6px;
-    }}
-
-    input,
-    textarea {{
+    }
+    label { gap: 6px; }
+    input, textarea {
       border: 0.5px solid var(--line);
       border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    textarea {{
-      min-height: 160px;
-      resize: vertical;
-    }}
-
-    button,
-    nav a {{
-      border: 0.5px solid var(--line);
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    form[action="/inbox/email"] button[type="submit"] {
+      background: var(--accent);
+      border: 0.5px solid var(--accent);
       border-radius: 10px;
+      color: #ffffff;
       cursor: pointer;
       display: inline-flex;
       font: inherit;
       font-weight: 500;
-      padding: 8px 10px;
-      text-decoration: none;
-    }}
-
-    button {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
       justify-self: start;
-    }}
-
-    nav a {{
-      background: transparent;
-      color: var(--accent-strong);
-    }}
-
-    .error {{
-      color: var(--warn);
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Paste email", subtitle="Add an interesting job email to Inbox", active="inbox")}
+      padding: 8px 10px;
+    }
+    .error { color: var(--warn); }
+    """
+    body = f"""
     <form method="post" action="/inbox/email">
       {error_block}
       <label>
@@ -882,9 +551,18 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
       <p class="hint">The first meaningful job URL becomes the source link. Raw email content is preserved for later review and provider integrations.</p>
       <button type="submit">Add to Inbox</button>
     </form>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Paste email",
+            title="Paste email",
+            subtitle="Add an interesting job email to Inbox",
+            active="inbox",
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 

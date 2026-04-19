@@ -11,7 +11,7 @@ from starlette.datastructures import FormData
 
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import render_shell_page
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
@@ -831,103 +831,30 @@ def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
 
 
 def render_new_job(user: User) -> str:
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Add Job - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 840px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    h1, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      line-height: 1.1;
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    section {{
+    extra_styles = """
+    section {
       background: var(--panel);
       border: 0.5px solid var(--line);
       border-radius: 10px;
       padding: 18px;
-    }}
-
-    .job-form {{
-      display: grid;
-      gap: 14px;
-    }}
-
-    .inline-fields {{
+    }
+    h1 { font-size: 2rem; line-height: 1.1; }
+    .job-form { display: grid; gap: 14px; }
+    .inline-fields {
       display: grid;
       gap: 12px;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-    }}
-
-    label {{
-      display: grid;
-      font-weight: 500;
-      gap: 6px;
-    }}
-
-    input,
-    select,
-    textarea {{
+    }
+    label { display: grid; font-weight: 500; gap: 6px; }
+    input, select, textarea {
       border: 0.5px solid var(--line);
       border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    textarea {{
-      resize: vertical;
-    }}
-
-    button {{
+    }
+    textarea { resize: vertical; }
+    button {
       background: var(--accent);
       border: 0;
       border-radius: 10px;
@@ -937,34 +864,22 @@ def render_new_job(user: User) -> str:
       font-weight: 500;
       min-height: 38px;
       padding: 0 14px;
-    }}
-
-    button:hover {{
-      background: var(--accent-strong);
-    }}
-
-    @media (max-width: 720px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      .inline-fields {{
-        display: grid;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Add job", subtitle="Create an intentional job entry", active=None)}
-    <section>
-      {_new_job_form()}
-    </section>
-  </main>
-</body>
-</html>"""
+    }
+    button:hover { background: var(--accent-strong); }
+    @media (max-width: 720px) {
+      .inline-fields { display: grid; }
+    }
+    """
+    return render_shell_page(
+        user,
+        page_title="Add Job",
+        title="Add job",
+        subtitle="Create an intentional job entry",
+        active=None,
+        body=f"<section>{_new_job_form()}</section>",
+        container="standard",
+        extra_styles=extra_styles,
+    )
 
 
 def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = None) -> str:
@@ -976,65 +891,9 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     artefacts = linked_artefacts_for_job(job)
     available_artefacts = available_artefacts or []
 
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(job.title)} - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1120px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    nav {{
-      align-items: center;
-      display: flex;
-      gap: 12px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      line-height: 1.1;
-      overflow-wrap: anywhere;
-    }}
+    extra_styles = f"""
+    h1, h2, p {{ margin: 0; }}
+    h1 {{ font-size: 2rem; line-height: 1.1; overflow-wrap: anywhere; }}
 
     h2 {{
       font-size: 1.1rem;
@@ -1464,11 +1323,6 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     }}
 
     @media (max-width: 800px) {{
-      main {{
-        padding: 16px 16px 104px;
-      }}
-
-      .topbar,
       .layout,
       .inline-fields {{
         display: grid;
@@ -1537,13 +1391,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
         grid-template-columns: 1fr;
       }}
     }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(job.owner, title="Job Workspace", subtitle=job.title, active=None, actions=(("Add job", "/jobs/new", "add-job"),))}
-
+    """
+    body = f"""
     <section class="workspace-hero">
       <div>
         {_editable_title(job)}
@@ -1665,7 +1514,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
       <button id="save-inline-edits" type="button">Save</button>
       <button id="cancel-inline-edits" class="secondary" type="button">Cancel</button>
     </div>
-  </main>
+    """
+    scripts = f"""
   <script>
     (() => {{
       const jobUuid = "{escape(job.uuid, quote=True)}";
@@ -1795,8 +1645,19 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
       cancelButton.addEventListener("click", () => window.location.reload());
     }})();
   </script>
-</body>
-</html>"""
+"""
+    return render_shell_page(
+        job.owner,
+        page_title=job.title,
+        title="Job Workspace",
+        subtitle=job.title,
+        active=None,
+        actions=(("Add job", "/jobs/new", "add-job"),),
+        body=body,
+        container="standard",
+        extra_styles=extra_styles,
+        scripts=scripts,
+    )
 
 
 @router.get("/jobs/new", response_class=HTMLResponse)

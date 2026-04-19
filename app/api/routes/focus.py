@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -202,188 +202,83 @@ def render_focus(
     stale_items = [_job_item(job, detail=f"Updated {_value(job.updated_at)}") for job in stale_jobs]
     recent_items = [_job_item(job, detail=f"Added {_value(job.created_at)}") for job in recent_jobs]
     interview_items = [_interview_item(interview) for interview in interviews]
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Focus - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1100px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    nav {{
-      align-items: center;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 1.5rem;
-      font-weight: 500;
-      line-height: 1.1;
-    }}
-
-    h2 {{
-      font-size: 1.05rem;
-      font-weight: 500;
-    }}
-
-    p, span, .empty {{
-      color: var(--muted);
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    .button, nav a {{
-      border: 0.5px solid var(--line);
+    extra_styles = compact_content_rhythm_styles() + """
+    p, span, .empty { color: var(--muted); }
+    .button {
+      background: var(--accent);
+      border: 0.5px solid var(--accent);
       border-radius: 10px;
+      color: #ffffff;
       display: inline-flex;
       padding: 8px 10px;
       text-decoration: none;
-    }}
-
-    .button {{
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
       width: max-content;
-    }}
-
-    .summary {{
+    }
+    .summary {
       display: grid;
       gap: 12px;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       margin-bottom: 16px;
-    }}
-
-    .stat, section {{
+    }
+    .stat {
       background: var(--panel);
       border: 0.5px solid var(--line);
       border-radius: 10px;
       padding: 16px;
-    }}
-
-    .stat strong {{
+    }
+    .stat strong {
       display: block;
       font-size: 1.8rem;
       line-height: 1;
       margin-bottom: 6px;
-    }}
-
-    .grid {{
-      display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-
-    .prompt {{
-      border-color: var(--accent);
-      display: grid;
-      gap: 10px;
-      margin-bottom: 16px;
-    }}
-
-    ul {{
+    }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .prompt { border-color: var(--accent); margin-bottom: 16px; }
+    ul {
       display: grid;
       gap: 10px;
       list-style: none;
       margin: 12px 0 0;
       padding: 0;
-    }}
-
-    li {{
-      border-top: 1px solid var(--line);
+    }
+    li {
+      border-top: 0.5px solid var(--line);
       display: grid;
       gap: 4px;
       padding-top: 10px;
-    }}
-
-    li strong {{
-      font-size: 1rem;
-    }}
-
-    @media (max-width: 760px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      .summary,
-      .grid {{
-        align-items: start;
-        display: grid;
-        grid-template-columns: 1fr;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Focus", subtitle="What needs attention now", active="focus", actions=(("Add job", "/jobs/new", "add-job"),))}
-
+    }
+    li strong { font-size: 1rem; }
+    @media (max-width: 760px) {
+      .summary, .grid { grid-template-columns: 1fr; }
+    }
+    """
+    body = f"""
     {profile_prompt}
-
     <div class="summary" aria-label="Focus summary">
       <div class="stat"><strong>{len(due_followups)}</strong><span>Due follow-ups</span></div>
       <div class="stat"><strong>{len(stale_jobs)}</strong><span>Stale jobs</span></div>
       <div class="stat"><strong>{len(interviews)}</strong><span>Upcoming interviews</span></div>
       <div class="stat"><strong>{active_count}</strong><span>Active jobs</span></div>
     </div>
-
     <div class="grid">
       {_section("Due follow-ups", _list(due_items, "No due follow-ups."))}
       {_section("Stale active jobs", _list(stale_items, "No stale active jobs."))}
       {_section("Upcoming interviews", _list(interview_items, "No upcoming interviews."))}
       {_section("Recent prospects", _list(recent_items, "No recent saved or interested jobs."))}
     </div>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Focus",
+            title="Focus",
+            subtitle="What needs attention now",
+            active="focus",
+            actions=(("Add job", "/jobs/new", "add-job"),),
+            body=body,
+            container="standard",
+            extra_styles=extra_styles,
+        )
     )
 
 

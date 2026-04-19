@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.deps import DbSession, get_current_user, require_capture_jobs_api_token
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.capture import capture_job
@@ -67,129 +67,32 @@ def _bookmarklet_javascript(base_url: str, token: str) -> str:
 def render_bookmarklet_setup(request: Request, user: User) -> str:
     base_url = str(request.base_url).rstrip("/")
     bookmarklet_preview = escape(_bookmarklet_javascript(base_url, "PASTE_TOKEN_HERE"), quote=True)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Capture Setup - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1120px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      line-height: 1.1;
-    }}
-
-    h2 {{
-      font-size: 1.1rem;
-      margin-bottom: 10px;
-    }}
-
-    p {{
-      color: var(--muted);
-      line-height: 1.45;
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    section {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      display: grid;
-      gap: 14px;
-      margin-bottom: 16px;
-      padding: 18px;
-    }}
-
-    label {{
-      display: grid;
-      font-weight: 500;
-      gap: 6px;
-    }}
-
-    input,
-    textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    extra_styles = compact_content_rhythm_styles() + """
+    input, textarea {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    textarea {{
-      min-height: 120px;
-    }}
-
-    .bookmarklet {{
+    }
+    textarea { min-height: 120px; }
+    .bookmarklet {
       background: var(--accent);
-      border-radius: 8px;
+      border-radius: 10px;
       color: #ffffff;
       display: inline-block;
       justify-self: start;
       padding: 9px 12px;
       text-decoration: none;
-    }}
-
-    .hint {{
-      font-size: 0.92rem;
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Capture setup", subtitle="Configure bookmarklet and extension capture", active="capture")}
-
+    }
+    .hint { font-size: 0.92rem; }
+    """
+    body = f"""
     <section>
       <h2>1. Create a capture token</h2>
       <p>Create a scoped API token named Browser bookmarklet from Settings. Paste the one-time token below. It is only used in your browser to generate the bookmarklet link.</p>
       <p><a href="/settings">Open Settings</a></p>
     </section>
-
     <section>
       <h2>2. Generate bookmarklet</h2>
       <label>
@@ -203,12 +106,12 @@ def render_bookmarklet_setup(request: Request, user: User) -> str:
       <a id="bookmarklet-link" class="bookmarklet" href="{bookmarklet_preview}">Capture job</a>
       <p class="hint">Drag Capture job to your bookmarks bar. On a job page, click it to save the current URL, title, selected text, page text, and any JSON-LD JobPosting data into the tracker.</p>
     </section>
-
     <section>
       <h2>Generated code</h2>
       <textarea id="bookmarklet-code" readonly></textarea>
     </section>
-  </main>
+    """
+    scripts = f"""
   <script>
     function bookmarklet(base, token) {{
       return {_bookmarklet_javascript("__BASE__", "__TOKEN__")!r}.replace("'__BASE__'", JSON.stringify(base.replace(/\\/$/, ""))).replace("'__TOKEN__'", JSON.stringify(token));
@@ -226,8 +129,18 @@ def render_bookmarklet_setup(request: Request, user: User) -> str:
     document.getElementById("capture-token").addEventListener("input", refresh);
     refresh();
   </script>
-</body>
-</html>"""
+"""
+    return render_shell_page(
+        user,
+        page_title="Capture setup",
+        title="Capture setup",
+        subtitle="Configure bookmarklet and extension capture",
+        active="capture",
+        body=body,
+        container="standard",
+        extra_styles=extra_styles,
+        scripts=scripts,
+    )
 
 
 @router.get("/bookmarklet", response_class=HTMLResponse, include_in_schema=False)

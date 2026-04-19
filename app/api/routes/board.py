@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import DbSession, get_current_user
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import render_shell_page
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.jobs import BOARD_STATUSES, list_user_jobs
@@ -295,23 +295,9 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         workflow=workflow,
         statuses=statuses,
     )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(workflow_label)} - Application Tracker</title>
-  <style>
+    extra_styles = f"""
     :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --panel: #ffffff;
       --soft: #f1f0ed;
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
       --danger: #d64535;
       --danger-soft: #fdefed;
       --success: #2a8a58;
@@ -319,27 +305,6 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       --amber: #b87800;
       --amber-soft: #fdf3e6;
       --slate-soft: #e8ebf8;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .shell {{
-      margin: 0 auto;
-      max-width: 1280px;
     }}
 
     h1, h2, h3, p {{
@@ -659,10 +624,6 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     @media (max-width: 860px) {{
-      main {{
-        padding: 16px;
-      }}
-
       .item-actions {{
         justify-content: start;
       }}
@@ -699,28 +660,22 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         min-height: 34px;
       }}
     }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    <div class="shell">
-      {app_header(user, title=workflow_label, subtitle=WORKFLOW_PROMPTS[workflow], active="board", actions=(("Add job", "/jobs/new", "add-job"),))}
+    """
+    body = f"""
+    <nav class="workflow-tabs" aria-label="Workflow views">
+      {_refined_workflow_nav(workflow)}
+    </nav>
 
-      <nav class="workflow-tabs" aria-label="Workflow views">
-        {_refined_workflow_nav(workflow)}
-      </nav>
+    <section class="metrics" aria-label="Workflow summary">
+      {_refined_status_summary(jobs_by_status, statuses)}
+    </section>
 
-      <section class="metrics" aria-label="Workflow summary">
-        {_refined_status_summary(jobs_by_status, statuses)}
-      </section>
-
-      <p class="notice" role="status" aria-live="polite"></p>
-      <div class="refined-board" data-statuses="{escape(status_list, quote=True)}">
-        {content}
-      </div>
+    <p class="notice" role="status" aria-live="polite"></p>
+    <div class="refined-board" data-statuses="{escape(status_list, quote=True)}">
+      {content}
     </div>
-  </main>
+    """
+    scripts = f"""
   <script>
     const notice = document.querySelector(".notice");
 
@@ -843,8 +798,19 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       }}, {{offset: Number.NEGATIVE_INFINITY, element: null}}).element;
     }}
   </script>
-</body>
-</html>"""
+"""
+    return render_shell_page(
+        user,
+        page_title=workflow_label,
+        title=workflow_label,
+        subtitle=WORKFLOW_PROMPTS[workflow],
+        active="board",
+        actions=(("Add job", "/jobs/new", "add-job"),),
+        body=body,
+        container="kanban",
+        extra_styles=extra_styles,
+        scripts=scripts,
+    )
 
 
 @router.get("/board", response_class=HTMLResponse)

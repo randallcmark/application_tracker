@@ -1,4 +1,5 @@
 from html import escape
+from typing import Literal
 
 from app.db.models.user import User
 
@@ -11,7 +12,6 @@ PRIMARY_NAV: tuple[NavLink, ...] = (
     ("Board", "/board", "board"),
     ("Artefacts", "/artefacts", "artefacts"),
     ("Capture", "/api/capture/bookmarklet", "capture"),
-    ("Settings", "/settings", "settings"),
 )
 
 
@@ -24,7 +24,16 @@ def app_shell_styles() -> str:
       margin-bottom: 24px;
     }
 
-    .app-topbar > div {
+    .app-topbar-main {
+      align-items: start;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .app-topbar-left {
+      display: grid;
+      gap: 4px;
       min-width: 0;
     }
 
@@ -33,6 +42,7 @@ def app_shell_styles() -> str:
       font-weight: 500;
       letter-spacing: -0.01em;
       line-height: 1.3;
+      margin: 0;
     }
 
     .app-brand {
@@ -42,7 +52,7 @@ def app_shell_styles() -> str:
       gap: 8px;
       font-size: 0.82rem;
       font-weight: 500;
-      margin-bottom: 8px;
+      margin: 0;
       text-decoration: none;
     }
 
@@ -57,9 +67,89 @@ def app_shell_styles() -> str:
       color: var(--muted);
       display: block;
       line-height: 1.45;
-      margin-top: 6px;
+      margin: 0;
       max-width: 80ch;
       overflow-wrap: anywhere;
+    }
+
+    .user-menu {
+      position: relative;
+    }
+
+    .user-menu > summary {
+      align-items: center;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
+      cursor: pointer;
+      display: inline-flex;
+      font-size: 0.92rem;
+      font-weight: 500;
+      gap: 8px;
+      list-style: none;
+      min-height: 34px;
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+
+    .user-menu > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .user-menu[open] > summary {
+      background: #ffffff;
+      border-color: rgba(0, 0, 0, 0.22);
+    }
+
+    .user-menu-panel {
+      background: #ffffff;
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+      display: grid;
+      gap: 2px;
+      margin-top: 8px;
+      min-width: 220px;
+      padding: 6px;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      z-index: 30;
+    }
+
+    .user-menu-head {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+      padding: 6px 8px 8px;
+    }
+
+    .user-menu-panel a,
+    .user-menu-panel button {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: 8px;
+      color: var(--ink);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 500;
+      min-height: 34px;
+      padding: 0 8px;
+      text-decoration: none;
+      text-align: left;
+      width: 100%;
+    }
+
+    .user-menu-panel a:hover,
+    .user-menu-panel button:hover {
+      background: #f1f0ed;
+    }
+
+    .user-menu-panel form {
+      margin: 0;
     }
 
     .app-nav {
@@ -115,11 +205,133 @@ def app_shell_styles() -> str:
     }
 
     @media (max-width: 760px) {
+      .app-topbar-main {
+        grid-template-columns: 1fr;
+      }
+
+      .user-menu {
+        justify-self: start;
+      }
+
       .app-subtitle {
         max-width: none;
       }
     }
     """
+
+
+def compact_content_rhythm_styles() -> str:
+    return """
+    h2 { font-size: 1.05rem; font-weight: 500; margin: 0 0 8px; line-height: 1.25; }
+    p, .muted { color: var(--muted); line-height: 1.35; margin: 0; }
+    a { color: var(--accent-strong); font-weight: 500; }
+    section {
+      background: var(--panel);
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
+      display: grid;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 16px;
+    }
+    form { display: grid; gap: 4px; }
+    label { display: grid; font-weight: 500; gap: 4px; }
+    """
+
+
+def render_shell_page(
+    user: User,
+    *,
+    page_title: str,
+    title: str,
+    subtitle: str,
+    body: str,
+    active: str | None = None,
+    actions: tuple[NavLink, ...] = (),
+    container: Literal["narrow", "standard", "wide", "kanban"] = "standard",
+    extra_styles: str = "",
+    scripts: str = "",
+) -> str:
+    container_class = f"page-content {container}"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(page_title)} - Application Tracker</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <style>
+    :root {{
+      color-scheme: light;
+      --page: #f9f9f7;
+      --panel: #ffffff;
+      --ink: #111111;
+      --muted: #5f5e5a;
+      --line: rgba(0, 0, 0, 0.10);
+      --accent: #4f67e4;
+      --accent-strong: #2d3a9a;
+    }}
+
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      background: var(--page);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      overflow-y: scroll;
+      scrollbar-gutter: stable;
+    }}
+
+    .page-shell {{
+      margin: 0 auto;
+      max-width: 1280px;
+      min-height: 100vh;
+      padding: 24px;
+    }}
+
+    .page-content {{
+      width: 100%;
+    }}
+
+    .page-content.narrow {{
+      max-width: 860px;
+    }}
+
+    .page-content.standard {{
+      max-width: 1120px;
+    }}
+
+    .page-content.wide {{
+      max-width: 1280px;
+    }}
+
+    .page-content.kanban {{
+      max-width: 1280px;
+    }}
+
+    @media (max-width: 760px) {{
+      .page-shell {{
+        padding: 16px;
+      }}
+    }}
+    {app_shell_styles()}
+    {extra_styles}
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    {app_header(user, title=title, subtitle=subtitle, active=active, actions=actions)}
+    <section class="{container_class}">
+      {body}
+    </section>
+  </main>
+  {scripts}
+</body>
+</html>"""
 
 
 def app_header(
@@ -132,24 +344,43 @@ def app_header(
 ) -> str:
     links = _render_links(actions, active=active, primary=True)
     links.extend(_render_links(PRIMARY_NAV, active=active, primary=False))
+    menu_links: list[str] = [_render_user_menu_link("Settings", "/settings", active=active == "settings")]
     if user.is_admin:
-        links.append(_render_link("Admin", "/admin", "admin", active=active, primary=False))
+        menu_links.append(_render_user_menu_link("Admin", "/admin", active=active == "admin"))
+        menu_links.append(_render_user_menu_link("API Docs", "/docs", active=False))
+    menu_links.append(_render_user_menu_link("Help", "/help", active=False))
+    menu_links.append(
+        """
+        <form method="post" action="/logout">
+          <button type="submit">Sign out</button>
+        </form>
+        """
+    )
 
     return f"""
     <header class="app-topbar">
-      <div>
+      <div class="app-topbar-main">
+        <div class="app-topbar-left">
         <a class="app-brand" href="/focus">
           <img class="app-brand-mark" src="/favicon.svg" alt="" aria-hidden="true">
           <span>Application Tracker</span>
         </a>
         <h1>{escape(title)}</h1>
-        <p class="app-subtitle">{escape(user.email)} · {escape(subtitle)}</p>
+        <p class="app-subtitle">{escape(subtitle)}</p>
+        </div>
+        <details class="user-menu">
+          <summary aria-label="User menu">
+            <span>{escape(user.email)}</span>
+            <span aria-hidden="true">▾</span>
+          </summary>
+          <div class="user-menu-panel">
+            <p class="user-menu-head">{escape(user.email)}</p>
+            {"".join(menu_links)}
+          </div>
+        </details>
       </div>
       <nav class="app-nav" aria-label="Primary navigation">
         {"".join(links)}
-        <form method="post" action="/logout">
-          <button type="submit">Sign out</button>
-        </form>
       </nav>
     </header>
     """
@@ -181,5 +412,11 @@ def _render_link(
     if active == key:
         classes.append("active")
     class_attr = f' class="{" ".join(classes)}"' if classes else ""
+    escaped_href = escape(href, quote=True).replace("&amp;", "&")
+    return f'<a{class_attr} href="{escaped_href}">{escape(label)}</a>'
+
+
+def _render_user_menu_link(label: str, href: str, *, active: bool) -> str:
+    class_attr = ' class="active"' if active else ""
     escaped_href = escape(href, quote=True).replace("&amp;", "&")
     return f'<a{class_attr} href="{escaped_href}">{escape(label)}</a>'

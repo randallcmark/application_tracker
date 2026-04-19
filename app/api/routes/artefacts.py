@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.api.deps import DbSession, get_current_user
-from app.api.routes.ui import app_header, app_shell_styles
+from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.artefact import Artefact
 from app.db.models.user import User
 from app.services.artefacts import (
@@ -117,237 +117,96 @@ def render_artefact_library(user: User, artefacts: list[Artefact]) -> HTMLRespon
           <a class="button" href="/board">Find a job workspace</a>
         </section>
         """
-    return HTMLResponse(
-        f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Artefacts - Application Tracker</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --page: #f9f9f7;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #5f5e5a;
-      --line: rgba(0, 0, 0, 0.10);
-      --accent: #4f67e4;
-      --accent-strong: #2d3a9a;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      background: var(--page);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-    }}
-
-    main {{
-      margin: 0 auto;
-      max-width: 1280px;
-      min-height: 100vh;
-      padding: 24px;
-    }}
-
-    .topbar {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }}
-
-    nav {{
-      align-items: center;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }}
-
-    h1, h2, p {{
-      margin: 0;
-    }}
-
-    h1 {{
-      font-size: 2rem;
-      font-weight: 500;
-      letter-spacing: -0.02em;
-      line-height: 1.2;
-    }}
-
-    h2 {{
-      font-size: 1rem;
-      font-weight: 500;
-      line-height: 1.4;
-      overflow-wrap: anywhere;
-    }}
-
-    a {{
-      color: var(--accent-strong);
-      font-weight: 500;
-    }}
-
-    .muted,
-    .meta,
-    .empty-state p {{
-      color: var(--muted);
-    }}
-
-    .eyebrow,
-    dt {{
+    extra_styles = compact_content_rhythm_styles() + """
+    h2 { overflow-wrap: anywhere; }
+    .muted, .meta, .empty-state p { color: var(--muted); }
+    .eyebrow, dt {
       color: var(--muted);
       font-size: 0.76rem;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-    }}
-
-    .library-grid {{
+    }
+    .library-grid {
       align-items: start;
       display: grid;
       gap: 14px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }}
-
-    .artefact-card,
-    .empty-state {{
+    }
+    .artefact-card, .empty-state {
       background: var(--panel);
-      border: 1px solid var(--line);
+      border: 0.5px solid var(--line);
       border-radius: 14px;
       display: grid;
       gap: 16px;
       padding: 18px;
-    }}
-
-    dl {{
+    }
+    dl {
       display: grid;
       gap: 12px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       margin: 0;
-    }}
-
-    dd {{
-      margin: 3px 0 0;
-      overflow-wrap: anywhere;
-    }}
-
-    details {{
-      border-top: 1px solid var(--line);
-      padding-top: 12px;
-    }}
-
-    summary {{
-      color: var(--accent-strong);
-      cursor: pointer;
-      font-weight: 500;
-    }}
-
-    label,
-    .metadata-form {{
-      display: grid;
-      gap: 8px;
-    }}
-
-    label {{
-      color: var(--muted);
-      font-size: 0.86rem;
-    }}
-
-    input,
-    textarea {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    }
+    dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+    details { border-top: 0.5px solid var(--line); padding-top: 12px; }
+    summary { color: var(--accent-strong); cursor: pointer; font-weight: 500; }
+    .metadata-form { gap: 8px; }
+    label { color: var(--muted); font-size: 0.86rem; }
+    input, textarea {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       color: var(--ink);
       font: inherit;
       padding: 8px 10px;
       width: 100%;
-    }}
-
-    .linked-jobs {{
+    }
+    .linked-jobs {
       display: grid;
       gap: 8px;
       list-style: none;
       margin: 8px 0 0;
       padding: 0;
-    }}
-
-    .linked-jobs li {{
-      display: grid;
-      gap: 2px;
-    }}
-
-    .linked-jobs span {{
-      color: var(--muted);
-    }}
-
-    .actions {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }}
-
-    .button,
-    button,
-    nav a {{
-      border: 1px solid var(--line);
-      border-radius: 8px;
+    }
+    .linked-jobs li { display: grid; gap: 2px; }
+    .linked-jobs span { color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .button, button {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
       display: inline-flex;
       font: inherit;
       font-weight: 500;
       min-height: 36px;
       padding: 8px 10px;
       text-decoration: none;
-    }}
-
-    .button,
-    button {{
-      align-items: center;
-      cursor: pointer;
-      justify-content: center;
-    }}
-
-    .button:not(.secondary),
-    button {{
+    }
+    .button, button { align-items: center; cursor: pointer; justify-content: center; }
+    .button:not(.secondary), button {
       background: var(--accent);
       border-color: var(--accent);
       color: #ffffff;
-    }}
-
-    @media (max-width: 760px) {{
-      main {{
-        padding: 16px;
-      }}
-
-      .topbar,
-      .library-grid,
-      dl {{
-        align-items: start;
-        display: grid;
-        grid-template-columns: 1fr;
-      }}
-
-      .actions,
-      .actions .button {{
-        width: 100%;
-      }}
-    }}
-    {app_shell_styles()}
-  </style>
-</head>
-<body>
-  <main>
-    {app_header(user, title="Artefacts", subtitle="Resumes, cover letters, notes, and prep files", active="artefacts", actions=(("Add job", "/jobs/new", "add-job"),))}
-
+    }
+    @media (max-width: 760px) {
+      .library-grid, dl { grid-template-columns: 1fr; }
+      .actions, .actions .button { width: 100%; }
+    }
+    """
+    body = f"""
     <div class="library-grid">
       {cards}
     </div>
-  </main>
-</body>
-</html>"""
+    """
+    return HTMLResponse(
+        render_shell_page(
+            user,
+            page_title="Artefacts",
+            title="Artefacts",
+            subtitle="Resumes, cover letters, notes, and prep files",
+            active="artefacts",
+            actions=(("Add job", "/jobs/new", "add-job"),),
+            body=body,
+            container="wide",
+            extra_styles=extra_styles,
+        )
     )
 
 
