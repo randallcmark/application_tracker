@@ -5,6 +5,8 @@ from sqlalchemy import select
 
 from app.auth.users import create_local_user
 from app.core.config import settings
+from app.db.models.ai_output import AiOutput
+from app.db.models.ai_provider_setting import AiProviderSetting
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
@@ -85,6 +87,9 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
         assert "Next action" in response.text
+        assert "Visible AI output" in response.text
+        assert "Generate fit summary" in response.text
+        assert "Suggest next step" in response.text
         assert "Role overview" in response.text
         assert "Application readiness" in response.text
         assert "External workflow" in response.text
@@ -99,6 +104,135 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "Intl.DateTimeFormat" in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_renders_existing_ai_output(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="AI target", status="saved")
+            db.add(job)
+            db.flush()
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    output_type="fit_summary",
+                    title="AI fit summary",
+                    body="Strengths: strong systems background.",
+                    provider="openai_compatible",
+                    model_name="local-model",
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{job_uuid}")
+
+        assert response.status_code == 200
+        assert "AI fit summary" in response.text
+        assert "Strengths: strong systems background." in response.text
+        assert "local-model" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_ai_generation_requires_enabled_provider(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="AI generation target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/ai-outputs",
+            data={"output_type": "fit_summary"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_error=" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert "Enable an AI provider in Settings before generating AI output" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_ai_generation_creates_visible_output(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="AI success target", status="saved")
+            db.add(job)
+            db.add(
+                AiProviderSetting(
+                    owner_user_id=user.id,
+                    provider="openai_compatible",
+                    label="Local endpoint",
+                    base_url="http://localhost:11434/v1",
+                    model_name="local-model",
+                    is_enabled=True,
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+
+        def fake_generate_job_ai_output(db, user, job, *, output_type, profile=None):
+            output = AiOutput(
+                owner_user_id=user.id,
+                job_id=job.id,
+                output_type=output_type,
+                title="AI fit summary",
+                body="Strengths: shipped platform work.",
+                provider="openai_compatible",
+                model_name="local-model",
+            )
+            db.add(output)
+            db.flush()
+            return output
+
+        monkeypatch.setattr(
+            "app.api.routes.job_detail.generate_job_ai_output",
+            fake_generate_job_ai_output,
+        )
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/ai-outputs",
+            data={"output_type": "fit_summary"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_status=AI%20output%20generated" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert detail_response.status_code == 200
+        assert "AI output generated" in detail_response.text
+        assert "AI fit summary" in detail_response.text
+        assert "Strengths: shipped platform work." in detail_response.text
+
+        with session_local() as db:
+            outputs = db.scalars(select(AiOutput)).all()
+            assert len(outputs) == 1
+            assert outputs[0].job.uuid == job_uuid
+            assert outputs[0].output_type == "fit_summary"
     finally:
         app.dependency_overrides.clear()
 

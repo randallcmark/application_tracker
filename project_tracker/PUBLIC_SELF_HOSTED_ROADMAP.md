@@ -96,7 +96,10 @@ As of 2026-04-19, the app is verified through:
   desktop retains the multi-column workspace style, while mobile presents a single continuous form
   column.
 - Embedded AI readiness schema and settings placeholders, with owner-scoped provider records and
-  visible AI output records. No secrets are stored and no provider calls are made.
+  visible AI output records.
+- First explicit AI execution slice in Job Workspace: visible AI output cards and user-triggered
+  generation for fit summaries and recommendations through enabled OpenAI-compatible local
+  endpoints, with no workflow mutation.
 
 Known next product focus:
 
@@ -105,7 +108,8 @@ Known next product focus:
 - Phase 4 follow-up: continue improving Job Workspace execution flows where external systems are
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
-- Phase 6 follow-up: render AI output records in Job Workspace, Inbox, Focus, and Artefact Library.
+- Phase 6 follow-up: extend AI output rendering to Inbox, Focus, and Artefact Library, and expand
+  provider execution beyond the first Job Workspace slice.
 - Phase 7: scheduler and worker support.
 - Phase 8: admin, restore, and self-hosted operations.
 

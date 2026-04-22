@@ -4,7 +4,7 @@ from html import escape
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from starlette.datastructures import FormData
@@ -12,12 +12,14 @@ from starlette.datastructures import FormData
 from app.api.deps import DbSession, get_current_user
 from app.api.ownership import require_owner
 from app.api.routes.ui import render_shell_page
+from app.db.models.ai_output import AiOutput
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.services.ai import AiExecutionError, generate_job_ai_output
 from app.services.applications import mark_job_applied
 from app.services.artefacts import (
     get_user_artefact_by_uuid,
@@ -36,6 +38,7 @@ from app.services.jobs import (
     record_job_status_change,
     update_job_board_state,
 )
+from app.services.profiles import get_user_profile
 from app.storage.provider import get_storage_provider
 
 router = APIRouter(tags=["job-detail"])
@@ -469,6 +472,66 @@ def _interviews(interviews: list[InterviewEvent]) -> str:
     return f"<ol>{items}</ol>"
 
 
+def _ai_badge(output_type: str) -> str:
+    labels = {
+        "fit_summary": ("Fit summary", "accent"),
+        "recommendation": ("Recommendation", "success"),
+        "draft": ("Draft", "accent"),
+        "profile_observation": ("Profile", "warn"),
+        "artefact_suggestion": ("Artefact", "accent"),
+    }
+    label, tone = labels.get(output_type, ("AI output", "accent"))
+    return f'<span class="status-pill {tone}">{escape(label)}</span>'
+
+
+def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
+    if not outputs:
+        return '<p class="empty">No AI output yet. Generate a fit summary or recommendation when you want help deciding what to do next.</p>'
+    cards = []
+    for output in outputs:
+        provider = output.model_name or output.provider or "AI"
+        cards.append(
+            f"""
+            <article class="ai-output-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">AI output</p>
+                  <h3>{escape(output.title or output.output_type.replace('_', ' ').title())}</h3>
+                </div>
+                {_ai_badge(output.output_type)}
+              </div>
+              <p class="muted">From {escape(provider)}</p>
+              <pre>{escape(output.body)}</pre>
+            </article>
+            """
+        )
+    return '<div class="ai-output-list">' + "".join(cards) + "</div>"
+
+
+def _ai_actions(job: Job) -> str:
+    return f"""
+    <div class="action-stack">
+      <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+        <input type="hidden" name="output_type" value="fit_summary">
+        <button type="submit">Generate fit summary</button>
+      </form>
+      <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+        <input type="hidden" name="output_type" value="recommendation">
+        <button class="outline" type="submit">Suggest next step</button>
+      </form>
+      <p class="muted">AI only creates visible output records. It does not change status, notes, artefacts, or profile data.</p>
+    </div>
+    """
+
+
+def _flash_message(message: str, *, tone: str) -> str:
+    return f"""
+    <section class="workspace-panel flash flash-{escape(tone, quote=True)}">
+      <p>{escape(message)}</p>
+    </section>
+    """
+
+
 def _artefact(job: Job, artefact: Artefact) -> str:
     size = f"{artefact.size_bytes} bytes" if artefact.size_bytes is not None else "Size not set"
     purpose = f"<p>{escape(artefact.purpose)}</p>" if artefact.purpose else ""
@@ -877,7 +940,13 @@ def render_new_job(user: User) -> str:
     )
 
 
-def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = None) -> str:
+def render_job_detail(
+    job: Job,
+    *,
+    available_artefacts: list[Artefact] | None = None,
+    ai_status: str | None = None,
+    ai_error: str | None = None,
+) -> str:
     events = sorted(
         job.communications,
         key=lambda event: event.occurred_at or event.created_at,
@@ -885,6 +954,11 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     )
     artefacts = linked_artefacts_for_job(job)
     available_artefacts = available_artefacts or []
+    ai_outputs = [
+        output
+        for output in sorted(job.ai_outputs, key=lambda item: item.updated_at, reverse=True)
+        if output.status == "active"
+    ]
 
     extra_styles = f"""
     h1, h2, p {{ margin: 0; }}
@@ -998,6 +1072,20 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
       border: 1px solid var(--line-soft);
       box-shadow: var(--shadow-md);
       padding: 20px;
+    }}
+
+    .flash {{
+      margin-bottom: 18px;
+    }}
+
+    .flash-success {{
+      background: linear-gradient(180deg, rgba(234,244,238,0.98), rgba(244,249,246,0.98));
+      border-color: rgba(59,167,134,0.28);
+    }}
+
+    .flash-error {{
+      background: linear-gradient(180deg, rgba(253,239,237,0.98), rgba(255,246,244,0.98));
+      border-color: rgba(226,91,76,0.28);
     }}
 
     .section-heading {{
@@ -1286,6 +1374,20 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
       font-weight: 500;
     }}
 
+    .ai-output-list {{
+      display: grid;
+      gap: 12px;
+    }}
+
+    .ai-output-card {{
+      background: linear-gradient(180deg, rgba(232,239,255,0.96), rgba(244,247,255,0.98));
+      border: 1px solid var(--ai-line);
+      border-radius: var(--radius-lg);
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }}
+
     .timeline-panel ol {{
       margin-top: 12px;
     }}
@@ -1385,6 +1487,8 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     }}
     """
     body = f"""
+    {(_flash_message(ai_status, tone="success") if ai_status else "")}
+    {(_flash_message(ai_error, tone="error") if ai_error else "")}
     <section class="workspace-hero">
       <div>
         {_editable_title(job)}
@@ -1424,6 +1528,13 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
         {_readiness(job, artefacts)}
         <section class="workspace-panel">
           <div class="section-heading">
+            <p class="eyebrow">AI guidance</p>
+            <h2>Visible AI output</h2>
+          </div>
+          {_ai_outputs_panel(ai_outputs)}
+        </section>
+        <section class="workspace-panel">
+          <div class="section-heading">
             <p class="eyebrow">Activity</p>
             <h2>Application and interviews</h2>
           </div>
@@ -1441,6 +1552,13 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
       </div>
       <aside class="workspace-aside">
         {_external_links(job)}
+        <section class="workspace-panel">
+          <div class="section-heading">
+            <p class="eyebrow">AI actions</p>
+            <h2>Generate guidance</h2>
+          </div>
+          {_ai_actions(job)}
+        </section>
         <section class="workspace-panel">
           <div class="section-heading">
             <p class="eyebrow">State</p>
@@ -1654,6 +1772,16 @@ def render_job_detail(job: Job, *, available_artefacts: list[Artefact] | None = 
     )
 
 
+def _job_detail_redirect(job_uuid: str, *, ai_status: str | None = None, ai_error: str | None = None) -> str:
+    params = []
+    if ai_status:
+        params.append(f"ai_status={quote(ai_status)}")
+    if ai_error:
+        params.append(f"ai_error={quote(ai_error)}")
+    suffix = f"?{'&'.join(params)}" if params else ""
+    return f"/jobs/{job_uuid}{suffix}"
+
+
 @router.get("/jobs/new", response_class=HTMLResponse)
 def new_job(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1722,12 +1850,16 @@ def job_detail(
     job_uuid: str,
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
+    ai_status: Annotated[str | None, Query()] = None,
+    ai_error: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     return HTMLResponse(
         render_job_detail(
             job,
             available_artefacts=list_user_unlinked_artefacts_for_job(db, current_user, job),
+            ai_status=ai_status,
+            ai_error=ai_error,
         )
     )
 
@@ -1913,6 +2045,36 @@ def record_return_note_form(
     )
     db.commit()
     return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/{job_uuid}/ai-outputs", include_in_schema=False)
+def create_job_ai_output_route(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    output_type: Annotated[str, Form()] = "fit_summary",
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    try:
+        generate_job_ai_output(
+            db,
+            current_user,
+            job,
+            output_type=output_type,
+            profile=get_user_profile(db, current_user),
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    db.commit()
+    return RedirectResponse(
+        url=_job_detail_redirect(job.uuid, ai_status="AI output generated"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/jobs/{job_uuid}/interviews", include_in_schema=False)
