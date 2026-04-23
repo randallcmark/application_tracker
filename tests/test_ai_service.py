@@ -1,10 +1,25 @@
 from io import BytesIO
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 
+from app.auth.users import create_local_user
+from app.db.models.ai_output import AiOutput
 from app.db.models.job import Job
 from app.db.models.ai_provider_setting import AiProviderSetting
 from app.db.models.user_profile import UserProfile
-from app.services.ai import _build_job_prompt, _http_error_message, _url_error_message
+from app.db.models.artefact import Artefact
+from app.db.models.user import User
+from app.main import app
+from app.services.ai import (
+    _build_artefact_tailoring_prompt,
+    _build_artefact_suggestion_prompt,
+    _build_job_prompt,
+    _http_error_message,
+    _url_error_message,
+    generate_job_artefact_tailoring_guidance,
+    generate_job_artefact_suggestion,
+)
+from tests.test_local_auth_routes import build_client
 
 
 def _setting(provider: str, *, base_url: str | None = None) -> AiProviderSetting:
@@ -125,3 +140,271 @@ def test_build_job_prompt_keeps_default_recommendation_instruction_for_non_focus
     assert "This recommendation is for the Focus surface" not in prompt
     assert "Why now" in prompt
     assert "No user profile is configured." in prompt
+
+
+def test_build_artefact_suggestion_prompt_includes_candidate_summaries() -> None:
+    profile = UserProfile(target_roles="Technical Program Manager")
+    job = Job(title="Staff TPM", status="saved", description_raw="Lead cross-functional delivery.")
+    candidate = type("Candidate", (), {
+        "summary_text": "Kind: resume | Filename: tpm-resume.pdf | Linked jobs: 2",
+        "artefact_uuid": "artefact-1",
+    })()
+
+    title, prompt = _build_artefact_suggestion_prompt(
+        profile=profile,
+        job=job,
+        candidates=[candidate],
+    )
+
+    assert title == "AI artefact suggestion"
+    assert "Best starting artefact" in prompt
+    assert "Candidate 1:" in prompt
+    assert "Kind: resume | Filename: tpm-resume.pdf" in prompt
+    assert "Target roles: Technical Program Manager" in prompt
+    assert "Title: Staff TPM" in prompt
+
+
+def test_build_artefact_suggestion_prompt_handles_empty_candidate_list() -> None:
+    job = Job(title="No artefacts role", status="saved")
+
+    _, prompt = _build_artefact_suggestion_prompt(
+        profile=None,
+        job=job,
+        candidates=[],
+    )
+
+    assert "No existing artefacts are available for this user." in prompt
+    assert "Prefer 'no suitable artefact' over weak guesses." in prompt
+
+
+def test_generate_job_artefact_suggestion_stores_visible_output(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Staff TPM", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=job.id,
+                kind="resume",
+                purpose="TPM resume",
+                version_label="v3",
+                notes="Used for senior platform roles.",
+                outcome_context="Helped reach interview loop.",
+                filename="tpm-resume.pdf",
+                storage_key="artefacts/tpm-resume.pdf",
+            )
+            setting = AiProviderSetting(
+                owner_user_id=user.id,
+                provider="gemini",
+                model_name="gemini-flash-latest",
+                api_key_encrypted="sealed",
+                api_key_hint="key...1234",
+                is_enabled=True,
+            )
+            db.add_all([job, artefact, setting])
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+
+        def fake_execute_prompt(setting, prompt):
+            assert "Candidate artefacts:" in prompt
+            assert "tpm-resume.pdf" in prompt
+            return "### Best starting artefact\n* **tpm-resume.pdf**"
+
+        monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
+
+        with session_local() as db:
+            user = db.get(User, user_id)
+            job = db.get(Job, job_id)
+
+            output = generate_job_artefact_suggestion(db, user, job)
+            db.commit()
+
+            assert output.output_type == "artefact_suggestion"
+            assert output.title == "AI artefact suggestion"
+            assert output.source_context["surface"] == "job_workspace"
+            assert output.source_context["prompt_contract"] == "artefact_suggestion_v1"
+            assert len(output.source_context["shortlisted_artefact_uuids"]) == 1
+
+            stored = db.get(AiOutput, output.id)
+            assert stored is not None
+            assert stored.body == "### Best starting artefact\n* **tpm-resume.pdf**"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_generate_job_artefact_suggestion_uses_local_fallback_when_no_candidates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="No artefacts role",
+                status="saved",
+                description_raw="Please submit a cover letter and supporting statement.",
+            )
+            db.add(job)
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+
+        with session_local() as db:
+            user = db.get(User, user_id)
+            job = db.get(Job, job_id)
+
+            output = generate_job_artefact_suggestion(db, user, job)
+            db.commit()
+
+            assert output.output_type == "artefact_suggestion"
+            assert output.provider == "system"
+            assert output.source_context["local_fallback"] is True
+            assert output.source_context["shortlisted_artefact_uuids"] == []
+            assert "No existing artefact is available yet" in output.body
+            assert "cover letter, supporting statement" in output.body
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_build_artefact_tailoring_prompt_uses_selected_artefact_context() -> None:
+    profile = UserProfile(target_roles="Technical Program Manager")
+    job = Job(title="Staff TPM", status="saved", description_raw="Lead delivery.")
+    artefact = Artefact(
+        kind="resume",
+        purpose="TPM resume",
+        filename="tpm-resume.pdf",
+        storage_key="artefacts/tpm-resume.pdf",
+    )
+    candidate = type("Candidate", (), {
+        "summary_text": "Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong",
+    })()
+    prior = AiOutput(body="### Best starting artefact\n* **tpm-resume.pdf**")
+
+    title, prompt = _build_artefact_tailoring_prompt(
+        profile=profile,
+        job=job,
+        artefact=artefact,
+        artefact_summary=candidate,
+        prior_suggestion=prior,
+    )
+
+    assert title == "AI tailoring guidance"
+    assert "sections titled 'Keep', 'Strengthen', 'De-emphasise or remove'" in prompt
+    assert "Selected artefact:" in prompt
+    assert "Filename: tpm-resume.pdf" in prompt
+    assert "Prior artefact suggestion:" in prompt
+    assert "Target roles: Technical Program Manager" in prompt
+
+
+def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Staff TPM", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=job.id,
+                kind="resume",
+                purpose="TPM resume",
+                version_label="v3",
+                notes="Used for senior platform roles.",
+                outcome_context="Helped reach interview loop.",
+                filename="tpm-resume.pdf",
+                storage_key="artefacts/tpm-resume.pdf",
+            )
+            setting = AiProviderSetting(
+                owner_user_id=user.id,
+                provider="gemini",
+                model_name="gemini-flash-latest",
+                api_key_encrypted="sealed",
+                api_key_hint="key...1234",
+                is_enabled=True,
+            )
+            db.add_all([job, artefact, setting])
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+            artefact_id = artefact.id
+
+        def fake_execute_prompt(setting, prompt):
+            assert "Selected artefact:" in prompt
+            assert "tpm-resume.pdf" in prompt
+            return "### Keep\n* **Programme delivery evidence**"
+
+        monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
+
+        with session_local() as db:
+            user = db.get(User, user_id)
+            job = db.get(Job, job_id)
+            artefact = db.get(Artefact, artefact_id)
+
+            output = generate_job_artefact_tailoring_guidance(db, user, job, artefact)
+            db.commit()
+
+            assert output.output_type == "tailoring_guidance"
+            assert output.artefact_id == artefact_id
+            assert output.title == "AI tailoring guidance"
+            assert output.source_context["prompt_contract"] == "artefact_tailoring_v1"
+            assert output.source_context["artefact_uuid"] == artefact.uuid
+            assert output.source_context["used_extracted_text"] is False
+
+            stored = db.get(AiOutput, output.id)
+            assert stored is not None
+            assert stored.body == "### Keep\n* **Programme delivery evidence**"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_generate_job_artefact_tailoring_guidance_uses_local_fallback_for_thin_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Sparse tailoring target",
+                status="saved",
+                description_raw="Please include a supporting statement.",
+            )
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=job.id,
+                kind="resume",
+                filename="baseline-resume.pdf",
+                storage_key="artefacts/baseline-resume.pdf",
+            )
+            db.add_all([job, artefact])
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+            artefact_id = artefact.id
+
+        with session_local() as db:
+            user = db.get(User, user_id)
+            job = db.get(Job, job_id)
+            artefact = db.get(Artefact, artefact_id)
+
+            output = generate_job_artefact_tailoring_guidance(db, user, job, artefact)
+            db.commit()
+
+            assert output.output_type == "tailoring_guidance"
+            assert output.provider == "system"
+            assert output.source_context["local_fallback"] is True
+            assert output.source_context["metadata_quality"] == "thin"
+            assert output.source_context["artefact_uuid"] == artefact.uuid
+            assert "Tailoring is currently working from metadata only" in output.body
+            assert "supporting statement" in output.body
+    finally:
+        app.dependency_overrides.clear()

@@ -67,6 +67,10 @@ Each output is owner-scoped and may be tied to a job, artefact, provider, model,
 Future UI work should render these records where the user is working, such as the job workspace,
 Inbox, Focus, or Artefact Library.
 
+Detailed planning for artefact-aware AI work now lives in `docs/ARTEFACT_AI_PLAN.md`. The next
+recommended artefact AI slice is existing artefact suggestion in Job Workspace before tailoring or
+draft generation.
+
 ## First Visible Execution Slice
 
 Job Workspace now renders visible AI output records and exposes explicit generation actions for:

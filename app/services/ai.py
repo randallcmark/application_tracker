@@ -12,6 +12,12 @@ from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
 from app.security.sealed_secrets import SecretEnvelopeError, key_hint, open_secret, seal_secret
+from app.db.models.artefact import Artefact
+from app.services.artefacts import (
+    ArtefactCandidateSummary,
+    list_candidate_artefacts_for_job,
+    summarise_artefact_for_ai,
+)
 
 KNOWN_PROVIDERS = ("openai", "gemini", "anthropic", "openai_compatible")
 KNOWN_OUTPUT_TYPES = (
@@ -20,6 +26,7 @@ KNOWN_OUTPUT_TYPES = (
     "draft",
     "profile_observation",
     "artefact_suggestion",
+    "tailoring_guidance",
 )
 
 PROVIDER_LABELS = {
@@ -262,6 +269,133 @@ def _build_job_prompt(
     return title, prompt
 
 
+def _build_artefact_suggestion_prompt(
+    *,
+    profile: UserProfile | None,
+    job: Job,
+    candidates: list[ArtefactCandidateSummary],
+) -> tuple[str, str]:
+    title = "AI artefact suggestion"
+    if candidates:
+        candidate_block = "\n\n".join(
+            f"Candidate {index + 1}:\n{candidate.summary_text}"
+            for index, candidate in enumerate(candidates)
+        )
+    else:
+        candidate_block = "No existing artefacts are available for this user."
+    prompt = (
+        "Recommend which existing artefacts should be reused or adapted for this job. "
+        "Use markdown sections titled 'Best starting artefact', 'Other usable candidates', "
+        "'Missing artefacts', 'Why', and 'What to adapt before submission'. "
+        "Prefer 'no suitable artefact' over weak guesses. "
+        "Do not invent unseen document content. "
+        "Use the provided artefact summaries and outcome signals conservatively.\n\n"
+        f"User profile:\n{_profile_context(profile)}\n\n"
+        f"Job:\n{_job_context(job)}\n\n"
+        f"Candidate artefacts:\n{candidate_block}"
+    )
+    return title, prompt
+
+
+def _build_artefact_tailoring_prompt(
+    *,
+    profile: UserProfile | None,
+    job: Job,
+    artefact: Artefact,
+    artefact_summary: ArtefactCandidateSummary,
+    prior_suggestion: AiOutput | None = None,
+) -> tuple[str, str]:
+    title = "AI tailoring guidance"
+    prior_context = ""
+    if prior_suggestion is not None and prior_suggestion.body:
+        prior_context = f"\n\nPrior artefact suggestion:\n{prior_suggestion.body}"
+    prompt = (
+        "You are providing tailoring guidance for one selected artefact against one job. "
+        "Use markdown sections titled 'Keep', 'Strengthen', 'De-emphasise or remove', "
+        "'Missing evidence', 'Supporting documents', and 'How to use this artefact for this submission'. "
+        "Do not invent document content. If extracted artefact text is unavailable, say that you are "
+        "reasoning from metadata and prior usage history only. Be concrete and job-specific.\n\n"
+        f"User profile:\n{_profile_context(profile)}\n\n"
+        f"Job:\n{_job_context(job)}\n\n"
+        f"Selected artefact:\n{artefact_summary.summary_text}{prior_context}"
+    )
+    return title, prompt
+
+
+def _infer_missing_artefacts(job: Job) -> list[str]:
+    description = (job.description_raw or "").lower()
+    needed = ["resume"]
+    if "cover letter" in description:
+        needed.append("cover letter")
+    if "supporting statement" in description or "personal statement" in description:
+        needed.append("supporting statement")
+    if "attestation" in description:
+        needed.append("attestation")
+    if "writing sample" in description:
+        needed.append("writing sample")
+    return needed
+
+
+def _build_empty_artefact_suggestion_body(job: Job, *, profile: UserProfile | None) -> str:
+    target_role = profile.target_roles if profile and profile.target_roles else "this role"
+    missing = _infer_missing_artefacts(job)
+    missing_text = ", ".join(missing)
+    role_context = f" for {target_role}" if target_role else ""
+    return (
+        "### Best starting artefact\n"
+        "* No existing artefact is available yet for this job.\n\n"
+        "### Other usable candidates\n"
+        "* None yet.\n\n"
+        f"### Missing artefacts\n"
+        f"* Prepare at least a {missing_text}{role_context}.\n\n"
+        "### Why\n"
+        "* The artefact library has no current candidates to reuse or adapt for this application.\n"
+        "* Starting with a clear baseline artefact will make later tailoring suggestions much stronger.\n\n"
+        "### What to adapt before submission\n"
+        "* Upload a baseline resume or relevant submission document first.\n"
+        "* Add purpose, version, and outcome notes so future suggestions have stronger evidence.\n"
+        "* If the role asks for extra materials, add those as separate artefacts rather than folding everything into one file."
+    )
+
+
+def _build_sparse_tailoring_guidance_body(
+    job: Job,
+    artefact: Artefact,
+    artefact_summary: ArtefactCandidateSummary,
+    *,
+    prior_suggestion: AiOutput | None = None,
+) -> str:
+    prior_note = ""
+    if prior_suggestion is not None and prior_suggestion.body:
+        prior_note = (
+            "\n* A prior artefact suggestion exists for this job, but the selected artefact still needs "
+            "clearer metadata before stronger tailoring advice will be reliable."
+        )
+    return (
+        "### Keep\n"
+        f"* Keep `{artefact.filename}` as a possible baseline only if it is the closest available starting point for {job.title or 'this job'}.\n"
+        "* Keep any clearly relevant role, domain, or delivery evidence that you know is already in the file.\n\n"
+        "### Strengthen\n"
+        "* Add purpose, version, and notes so the system can understand what this artefact is meant to do.\n"
+        "* Link the artefact to prior jobs or outcomes if it has been used before.\n"
+        "* Add outcome context when this artefact helped lead to interviews or other meaningful progress.\n\n"
+        "### De-emphasise or remove\n"
+        "* Avoid assuming this artefact is submission-ready until its purpose and history are clearer.\n"
+        "* Do not over-index on generic content that is not obviously tied to this role.\n\n"
+        "### Missing evidence\n"
+        f"* Tailoring is currently working from metadata only, and this artefact has **{artefact_summary.metadata_quality}** metadata quality.\n"
+        "* The current record is too thin to give high-confidence line-by-line tailoring advice.\n"
+        f"* Missing metadata should be filled in first: {', '.join(part for part in ['purpose' if not artefact.purpose else '', 'version' if not artefact.version_label else '', 'notes' if not artefact.notes else '', 'outcome context' if not artefact.outcome_context else ''] if part) or 'linked history or richer artefact notes'}.\n\n"
+        "### Supporting documents\n"
+        "* Check the role description for extra submission requirements such as a cover letter, supporting statement, or attestation.\n"
+        "* Add those as separate artefacts if they are required for this application.\n\n"
+        "### How to use this artefact for this submission\n"
+        "* Treat this as a baseline candidate rather than a final recommendation.\n"
+        "* Improve the artefact record first, then run tailoring guidance again for stronger advice."
+        f"{prior_note}"
+    )
+
+
 def _call_openai_compatible(setting: AiProviderSetting, prompt: str) -> str:
     if not setting.base_url:
         raise AiExecutionError("Enabled AI provider is missing a base URL")
@@ -416,6 +550,18 @@ def _call_gemini(setting: AiProviderSetting, prompt: str) -> str:
     raise AiExecutionError("AI provider returned an empty response")
 
 
+def _execute_prompt(setting: AiProviderSetting, prompt: str) -> str:
+    if setting.provider == "openai_compatible":
+        return _call_openai_compatible(setting, prompt)
+    if setting.provider == "gemini":
+        return _call_gemini(setting, prompt)
+    if setting.provider == "openai":
+        return _call_openai(setting, prompt)
+    raise AiExecutionError(
+        "Anthropic execution is not implemented yet. Use OpenAI, Gemini, or an OpenAI-compatible endpoint."
+    )
+
+
 def generate_job_ai_output(
     db: Session,
     user: User,
@@ -435,16 +581,7 @@ def generate_job_ai_output(
         job=job,
         surface=surface,
     )
-    if setting.provider == "openai_compatible":
-        body = _call_openai_compatible(setting, prompt)
-    elif setting.provider == "gemini":
-        body = _call_gemini(setting, prompt)
-    elif setting.provider == "openai":
-        body = _call_openai(setting, prompt)
-    else:
-        raise AiExecutionError(
-            "Anthropic execution is not implemented yet. Use OpenAI or an OpenAI-compatible endpoint."
-        )
+    body = _execute_prompt(setting, prompt)
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -460,6 +597,154 @@ def generate_job_ai_output(
             "job_status": job.status,
             "job_title": job.title,
             "surface": surface,
+        },
+    )
+    db.add(output)
+    db.flush()
+    return output
+
+
+def generate_job_artefact_suggestion(
+    db: Session,
+    user: User,
+    job: Job,
+    *,
+    profile: UserProfile | None = None,
+    shortlist_limit: int = 5,
+) -> AiOutput:
+    candidates = list_candidate_artefacts_for_job(db, user, job, limit=shortlist_limit)
+    if not candidates:
+        output = AiOutput(
+            owner_user_id=user.id,
+            job_id=job.id,
+            output_type="artefact_suggestion",
+            title="AI artefact suggestion",
+            body=_build_empty_artefact_suggestion_body(job, profile=profile),
+            provider="system",
+            model_name=None,
+            status="active",
+            source_context={
+                "job_uuid": job.uuid,
+                "job_status": job.status,
+                "job_title": job.title,
+                "surface": "job_workspace",
+                "prompt_contract": "artefact_suggestion_v1",
+                "shortlisted_artefact_uuids": [],
+                "local_fallback": True,
+            },
+        )
+        db.add(output)
+        db.flush()
+        return output
+
+    setting = get_enabled_ai_provider(db, user)
+    if setting is None:
+        raise AiExecutionError("Enable an AI provider in Settings before generating AI output")
+
+    title, prompt = _build_artefact_suggestion_prompt(
+        profile=profile,
+        job=job,
+        candidates=candidates,
+    )
+    body = _execute_prompt(setting, prompt)
+    output = AiOutput(
+        owner_user_id=user.id,
+        job_id=job.id,
+        output_type="artefact_suggestion",
+        title=title,
+        body=body,
+        provider=setting.provider,
+        model_name=setting.model_name,
+        status="active",
+        source_context={
+            "job_uuid": job.uuid,
+            "provider_label": setting.label,
+            "job_status": job.status,
+            "job_title": job.title,
+            "surface": "job_workspace",
+            "prompt_contract": "artefact_suggestion_v1",
+            "shortlisted_artefact_uuids": [candidate.artefact_uuid for candidate in candidates],
+        },
+    )
+    db.add(output)
+    db.flush()
+    return output
+
+
+def generate_job_artefact_tailoring_guidance(
+    db: Session,
+    user: User,
+    job: Job,
+    artefact: Artefact,
+    *,
+    profile: UserProfile | None = None,
+    prior_suggestion: AiOutput | None = None,
+) -> AiOutput:
+    artefact_summary = summarise_artefact_for_ai(artefact, current_job=job)
+    if artefact_summary.metadata_quality == "thin":
+        output = AiOutput(
+            owner_user_id=user.id,
+            job_id=job.id,
+            artefact_id=artefact.id,
+            output_type="tailoring_guidance",
+            title="AI tailoring guidance",
+            body=_build_sparse_tailoring_guidance_body(
+                job,
+                artefact,
+                artefact_summary,
+                prior_suggestion=prior_suggestion,
+            ),
+            provider="system",
+            model_name=None,
+            status="active",
+            source_context={
+                "surface": "job_workspace",
+                "job_uuid": job.uuid,
+                "artefact_uuid": artefact.uuid,
+                "prompt_contract": "artefact_tailoring_v1",
+                "used_extracted_text": False,
+                "metadata_quality": artefact_summary.metadata_quality,
+                "local_fallback": True,
+                **(
+                    {"artefact_suggestion_output_id": prior_suggestion.id}
+                    if prior_suggestion is not None
+                    else {}
+                ),
+            },
+        )
+        db.add(output)
+        db.flush()
+        return output
+
+    setting = get_enabled_ai_provider(db, user)
+    if setting is None:
+        raise AiExecutionError("Enable an AI provider in Settings before generating AI output")
+
+    title, prompt = _build_artefact_tailoring_prompt(
+        profile=profile,
+        job=job,
+        artefact=artefact,
+        artefact_summary=artefact_summary,
+        prior_suggestion=prior_suggestion,
+    )
+    body = _execute_prompt(setting, prompt)
+    output = AiOutput(
+        owner_user_id=user.id,
+        job_id=job.id,
+        artefact_id=artefact.id,
+        output_type="tailoring_guidance",
+        title=title,
+        body=body,
+        provider=setting.provider,
+        model_name=setting.model_name,
+        status="active",
+        source_context={
+            "surface": "job_workspace",
+            "job_uuid": job.uuid,
+            "artefact_uuid": artefact.uuid,
+            "prompt_contract": "artefact_tailoring_v1",
+            "artefact_suggestion_output_id": prior_suggestion.id if prior_suggestion is not None else None,
+            "used_extracted_text": False,
         },
     )
     db.add(output)

@@ -20,7 +20,12 @@ from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
-from app.services.ai import AiExecutionError, generate_job_ai_output
+from app.services.ai import (
+    AiExecutionError,
+    generate_job_ai_output,
+    generate_job_artefact_suggestion,
+    generate_job_artefact_tailoring_guidance,
+)
 from app.services.applications import mark_job_applied
 from app.services.artefacts import (
     get_user_artefact_by_uuid,
@@ -480,6 +485,7 @@ def _ai_badge(output_type: str) -> str:
         "draft": ("Draft", "accent"),
         "profile_observation": ("Profile", "warn"),
         "artefact_suggestion": ("Artefact", "accent"),
+        "tailoring_guidance": ("Tailoring", "success"),
     }
     label, tone = labels.get(output_type, ("AI output", "accent"))
     return f'<span class="status-pill {tone}">{escape(label)}</span>'
@@ -544,12 +550,74 @@ def _render_description_markdown(text: str) -> str:
     return _render_markdown_blocks(text, class_name="description-markdown")
 
 
-def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
+def _artefact_suggestion_links(
+    output: AiOutput,
+    artefact_lookup: dict[str, Artefact],
+) -> str:
+    source_context = output.source_context or {}
+    shortlisted = source_context.get("shortlisted_artefact_uuids")
+    if not isinstance(shortlisted, list) or not shortlisted:
+        return ""
+    links: list[str] = []
+    for artefact_uuid in shortlisted[:5]:
+        if not isinstance(artefact_uuid, str):
+            continue
+        artefact = artefact_lookup.get(artefact_uuid)
+        if artefact is None:
+            continue
+        links.append(
+            f'<li><a href="/artefacts/{escape(artefact.uuid, quote=True)}/download">'
+            f'{escape(artefact.filename)}</a>'
+            f' <span class="muted">({escape(artefact.kind)})</span></li>'
+        )
+    if not links:
+        return ""
+    return (
+        '<div class="ai-output-links">'
+        '<p class="muted">Shortlisted artefacts</p>'
+        '<ul>' + "".join(links) + "</ul>"
+        "</div>"
+    )
+
+
+def _tailoring_guidance_links(
+    output: AiOutput,
+    artefact_lookup: dict[str, Artefact],
+) -> str:
+    source_context = output.source_context or {}
+    artefact_uuid = source_context.get("artefact_uuid")
+    if not isinstance(artefact_uuid, str) or not artefact_uuid:
+        return ""
+    artefact = artefact_lookup.get(artefact_uuid)
+    if artefact is None:
+        return ""
+    metadata_quality = source_context.get("metadata_quality")
+    metadata_note = ""
+    if isinstance(metadata_quality, str) and metadata_quality:
+        metadata_note = f' <span class="muted">(metadata: {escape(metadata_quality)})</span>'
+    return (
+        '<div class="ai-output-links">'
+        '<p class="muted">Selected artefact</p>'
+        '<ul>'
+        f'<li><a href="/artefacts/{escape(artefact.uuid, quote=True)}/download">{escape(artefact.filename)}</a>'
+        f' <span class="muted">({escape(artefact.kind)})</span>{metadata_note}</li>'
+        '</ul>'
+        '</div>'
+    )
+
+
+def _ai_outputs_panel(outputs: list[AiOutput], *, artefact_lookup: dict[str, Artefact] | None = None) -> str:
     if not outputs:
         return '<p class="empty">No AI output yet. Generate a fit summary or recommendation when you want help deciding what to do next.</p>'
+    artefact_lookup = artefact_lookup or {}
     cards = []
     for output in outputs:
         provider = output.model_name or output.provider or "AI"
+        extra_links = ""
+        if output.output_type == "artefact_suggestion":
+            extra_links = _artefact_suggestion_links(output, artefact_lookup)
+        elif output.output_type == "tailoring_guidance":
+            extra_links = _tailoring_guidance_links(output, artefact_lookup)
         cards.append(
             f"""
             <article class="ai-output-card">
@@ -562,6 +630,7 @@ def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
               </div>
               <p class="muted">From {escape(provider)}</p>
               {_render_ai_markdown(output.body)}
+              {extra_links}
             </article>
             """
         )
@@ -601,7 +670,12 @@ def _artefact(job: Job, artefact: Artefact) -> str:
       <strong>{escape(artefact.filename)}</strong>
       <p>{escape(artefact.kind)}{version} · {escape(size)}</p>
       {purpose}
-      <p><a href="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}">Download</a></p>
+      <div class="artefact-actions">
+        <a href="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}">Download</a>
+        <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/tailoring-guidance">
+          <button class="outline" type="submit">Suggest tailoring changes</button>
+        </form>
+      </div>
     </li>
     """
 
@@ -630,6 +704,15 @@ def _link_existing_artefact_form(job: Job, available_artefacts: list[Artefact]) 
         </select>
       </label>
       <button type="submit">Attach existing</button>
+    </form>
+    """
+
+
+def _artefact_ai_action(job: Job) -> str:
+    return f"""
+    <form class="quick-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefact-suggestions">
+      <button class="outline" type="submit">Suggest artefacts</button>
+      <p class="muted">AI ranks existing artefacts for this job and highlights missing materials. It does not attach files automatically.</p>
     </form>
     """
 
@@ -1014,6 +1097,8 @@ def render_job_detail(
     )
     artefacts = linked_artefacts_for_job(job)
     available_artefacts = available_artefacts or []
+    artefact_lookup = {artefact.uuid: artefact for artefact in artefacts}
+    artefact_lookup.update({artefact.uuid: artefact for artefact in available_artefacts})
     ai_outputs = [
         output
         for output in sorted(job.ai_outputs, key=lambda item: item.updated_at, reverse=True)
@@ -1308,6 +1393,13 @@ def render_job_detail(
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }}
 
+    .artefact-actions {{
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+
     .provenance-panel dl {{
       margin-top: 14px;
     }}
@@ -1446,6 +1538,22 @@ def render_job_detail(
       display: grid;
       gap: 10px;
       padding: 16px;
+    }}
+
+    .ai-output-links {{
+      border-top: 1px solid var(--line-soft);
+      display: grid;
+      gap: 8px;
+      margin-top: 4px;
+      padding-top: 10px;
+    }}
+
+    .ai-output-links ul {{
+      display: grid;
+      gap: 6px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
     }}
 
     .ai-markdown {{
@@ -1647,7 +1755,7 @@ def render_job_detail(
             <p class="eyebrow">AI guidance</p>
             <h2>Visible AI output</h2>
           </div>
-          {_ai_outputs_panel(ai_outputs)}
+          {_ai_outputs_panel(ai_outputs, artefact_lookup=artefact_lookup)}
         </section>
         <section class="workspace-panel">
           <div class="section-heading">
@@ -1696,6 +1804,8 @@ def render_job_detail(
         <section class="workspace-panel">
           <h2>Artefacts</h2>
           {_artefacts(job, artefacts)}
+          <h2>AI artefact help</h2>
+          {_artefact_ai_action(job)}
           <h2>Attach Existing</h2>
           {_link_existing_artefact_form(job, available_artefacts)}
           {_artefact_form(job)}
@@ -2189,6 +2299,78 @@ def create_job_ai_output_route(
     db.commit()
     return RedirectResponse(
         url=_job_detail_redirect(job.uuid, ai_status="AI output generated"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/jobs/{job_uuid}/artefact-suggestions", include_in_schema=False)
+def create_job_artefact_suggestion_route(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    try:
+        generate_job_artefact_suggestion(
+            db,
+            current_user,
+            job,
+            profile=get_user_profile(db, current_user),
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    db.commit()
+    return RedirectResponse(
+        url=_job_detail_redirect(job.uuid, ai_status="Artefact suggestion generated"),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/jobs/{job_uuid}/artefacts/{artefact_uuid}/tailoring-guidance", include_in_schema=False)
+def create_job_artefact_tailoring_guidance_route(
+    job_uuid: str,
+    artefact_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> RedirectResponse:
+    job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
+    artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
+    if artefact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artefact not found")
+    prior_suggestion = db.scalar(
+        select(AiOutput)
+        .where(
+            AiOutput.owner_user_id == current_user.id,
+            AiOutput.job_id == job.id,
+            AiOutput.output_type == "artefact_suggestion",
+            AiOutput.status == "active",
+        )
+        .order_by(AiOutput.updated_at.desc(), AiOutput.created_at.desc())
+    )
+    try:
+        generate_job_artefact_tailoring_guidance(
+            db,
+            current_user,
+            job,
+            artefact,
+            profile=get_user_profile(db, current_user),
+            prior_suggestion=prior_suggestion,
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    db.commit()
+    return RedirectResponse(
+        url=_job_detail_redirect(job.uuid, ai_status="Tailoring guidance generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

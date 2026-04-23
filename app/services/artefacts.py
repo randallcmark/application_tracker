@@ -1,16 +1,227 @@
+from dataclasses import dataclass
 from hashlib import sha256
+from typing import Iterable
 from uuid import uuid4
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.db.models.application import Application
 from app.db.models.artefact import Artefact
+from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.job_artefact_link import JobArtefactLink
 from app.db.models.user import User
 from app.storage.base import StorageProvider
 from app.storage.paths import sanitize_filename
 from app.storage.provider import get_storage_provider
+
+
+ARTEFACT_KIND_PRIORITY = {
+    "resume": 40,
+    "cv": 40,
+    "cover_letter": 34,
+    "supporting_statement": 30,
+    "attestation": 28,
+    "writing_sample": 28,
+    "portfolio": 24,
+    "case_study": 24,
+    "other": 10,
+}
+
+
+@dataclass(frozen=True)
+class ArtefactCandidateSummary:
+    artefact_uuid: str
+    filename: str
+    kind: str
+    purpose: str | None
+    version_label: str | None
+    notes: str | None
+    outcome_context: str | None
+    is_linked_to_current_job: bool
+    linked_job_count: int
+    linked_interview_count: int
+    linked_offer_count: int
+    linked_rejection_count: int
+    linked_active_count: int
+    metadata_quality: str
+    score: int
+    summary_text: str
+
+
+def _related_jobs_for_artefact(artefact: Artefact) -> list[Job]:
+    jobs: dict[int, Job] = {}
+    if artefact.job is not None:
+        jobs[artefact.job.id] = artefact.job
+    for link in artefact.job_links:
+        if link.job is not None:
+            jobs[link.job.id] = link.job
+    if artefact.application is not None and artefact.application.job is not None:
+        jobs[artefact.application.job.id] = artefact.application.job
+    if artefact.interview_event is not None and artefact.interview_event.job is not None:
+        jobs[artefact.interview_event.job.id] = artefact.interview_event.job
+    return list(jobs.values())
+
+
+def _status_counts(jobs: Iterable[Job]) -> tuple[int, int, int, int]:
+    interview_like = 0
+    offer_like = 0
+    rejection_like = 0
+    active_like = 0
+    for job in jobs:
+        status = (job.status or "").strip().lower()
+        if status == "offer":
+            offer_like += 1
+        elif status == "interviewing":
+            interview_like += 1
+        elif status in {"rejected", "archived"}:
+            rejection_like += 1
+        elif status in {"saved", "interested", "preparing", "applied"}:
+            active_like += 1
+    return interview_like, offer_like, rejection_like, active_like
+
+
+def _artefact_score(
+    artefact: Artefact,
+    *,
+    current_job: Job,
+    linked_jobs: list[Job],
+    interview_like: int,
+    offer_like: int,
+    rejection_like: int,
+    active_like: int,
+) -> int:
+    score = ARTEFACT_KIND_PRIORITY.get((artefact.kind or "other").strip().lower(), 12)
+    if any(job.id == current_job.id for job in linked_jobs):
+        score += 60
+    if artefact.purpose:
+        score += 10
+    if artefact.version_label:
+        score += 4
+    if artefact.notes:
+        score += 4
+    if artefact.outcome_context:
+        score += 6
+    score += min(len(linked_jobs), 4) * 3
+    score += interview_like * 8
+    score += offer_like * 12
+    score += active_like * 2
+    score -= rejection_like * 2
+    return score
+
+
+def _metadata_gaps(artefact: Artefact, linked_jobs: list[Job]) -> list[str]:
+    gaps: list[str] = []
+    if not artefact.purpose:
+        gaps.append("purpose")
+    if not artefact.version_label:
+        gaps.append("version")
+    if not artefact.notes:
+        gaps.append("notes")
+    if not artefact.outcome_context:
+        gaps.append("outcome context")
+    if not linked_jobs:
+        gaps.append("linked history")
+    return gaps
+
+
+def _metadata_quality_label(gaps: list[str]) -> str:
+    if len(gaps) <= 1:
+        return "strong"
+    if len(gaps) <= 3:
+        return "moderate"
+    return "thin"
+
+
+def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> ArtefactCandidateSummary:
+    linked_jobs = _related_jobs_for_artefact(artefact)
+    interview_like, offer_like, rejection_like, active_like = _status_counts(linked_jobs)
+    is_linked_to_current_job = any(job.id == current_job.id for job in linked_jobs)
+    metadata_gaps = _metadata_gaps(artefact, linked_jobs)
+    metadata_quality = _metadata_quality_label(metadata_gaps)
+    score = _artefact_score(
+        artefact,
+        current_job=current_job,
+        linked_jobs=linked_jobs,
+        interview_like=interview_like,
+        offer_like=offer_like,
+        rejection_like=rejection_like,
+        active_like=active_like,
+    )
+    recent_titles = ", ".join(job.title for job in linked_jobs[:3] if job.title)
+    summary_bits = [
+        f"Kind: {artefact.kind}",
+        f"Filename: {artefact.filename}",
+        f"Purpose: {artefact.purpose or 'Not set'}",
+        f"Version: {artefact.version_label or 'Not set'}",
+        f"Outcome context: {artefact.outcome_context or 'Not set'}",
+        f"Linked jobs: {len(linked_jobs)}",
+        f"Interview-linked jobs: {interview_like}",
+        f"Offer-linked jobs: {offer_like}",
+        f"Rejected/archived-linked jobs: {rejection_like}",
+        f"Active-linked jobs: {active_like}",
+        f"Metadata quality: {metadata_quality}",
+        f"Already linked to current job: {'yes' if is_linked_to_current_job else 'no'}",
+    ]
+    if metadata_gaps:
+        summary_bits.append("Missing metadata: " + ", ".join(metadata_gaps))
+    if recent_titles:
+        summary_bits.append(f"Recent linked job titles: {recent_titles}")
+    if artefact.notes:
+        summary_bits.append(f"Notes: {artefact.notes}")
+    return ArtefactCandidateSummary(
+        artefact_uuid=artefact.uuid,
+        filename=artefact.filename,
+        kind=artefact.kind,
+        purpose=artefact.purpose,
+        version_label=artefact.version_label,
+        notes=artefact.notes,
+        outcome_context=artefact.outcome_context,
+        is_linked_to_current_job=is_linked_to_current_job,
+        linked_job_count=len(linked_jobs),
+        linked_interview_count=interview_like,
+        linked_offer_count=offer_like,
+        linked_rejection_count=rejection_like,
+        linked_active_count=active_like,
+        metadata_quality=metadata_quality,
+        score=score,
+        summary_text=" | ".join(summary_bits),
+    )
+
+
+def list_candidate_artefacts_for_job(
+    db: Session,
+    user: User,
+    job: Job,
+    *,
+    limit: int = 5,
+) -> list[ArtefactCandidateSummary]:
+    artefacts = list(
+        db.scalars(
+            select(Artefact)
+            .where(Artefact.owner_user_id == user.id)
+            .options(
+                selectinload(Artefact.job),
+                selectinload(Artefact.application).selectinload(Application.job),
+                selectinload(Artefact.interview_event).selectinload(InterviewEvent.job),
+                selectinload(Artefact.job_links).selectinload(JobArtefactLink.job),
+            )
+            .order_by(Artefact.updated_at.desc(), Artefact.created_at.desc())
+        )
+    )
+    summaries = [summarise_artefact_for_ai(artefact, current_job=job) for artefact in artefacts]
+    summaries.sort(
+        key=lambda item: (
+            item.score,
+            item.linked_offer_count,
+            item.linked_interview_count,
+            item.linked_job_count,
+            item.filename.lower(),
+        ),
+        reverse=True,
+    )
+    return summaries[: max(limit, 0)]
 
 
 def get_user_job_artefact_by_uuid(

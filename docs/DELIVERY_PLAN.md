@@ -180,6 +180,29 @@ owned artefacts from an owner-scoped library route, and attach an existing artef
 without copying the file. Application/interview-level reuse, extraction, and AI suggestions remain
 planned follow-on work.
 
+Detailed resumable planning for AI-assisted artefact selection, tailoring, draft generation, and
+outcome-aware learning now lives in `docs/ARTEFACT_AI_PLAN.md`. The next recommended slice is
+Phase B from that document: existing artefact suggestion in Job Workspace before tailoring or
+generation. Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
+shortlist and compact AI summary helpers, and sub-slice 2 is now implemented in the AI service
+layer: a dedicated `artefact_suggestion` prompt contract and generation entry point. Sub-slice 3 is
+also now implemented: Job Workspace exposes `Suggest artefacts` and renders visible
+`artefact_suggestion` output. Sub-slice 4 is also implemented: when no candidate artefacts exist,
+the app now creates a visible local fallback suggestion without requiring a provider. Optional
+linking affordances and thin-metadata output polish are now also implemented. Phase B is complete
+for the first intended artefact suggestion slice; the next recommended step is Phase C tailoring
+guidance. The detailed implementation spec for that next phase now lives in
+`docs/ARTEFACT_AI_PLAN.md`, including the proposed `tailoring_guidance` output contract, service
+boundaries, Job Workspace trigger model, sparse-content behavior, and handoff to later draft
+generation. Phase C sub-slice 1 is now implemented in the AI layer: the `tailoring_guidance`
+output contract, prompt contract, and service entry point now exist. Phase C sub-slice 2 is also
+implemented: Job Workspace now exposes a per-artefact tailoring action with ownership-safe
+retrieval and route wiring. Phase C sub-slices 3 and 4 are now also implemented: tailoring
+guidance renders through the shared visible AI output surface with a selected artefact link, and
+thin metadata artefacts now degrade to a visible local fallback instead of forcing a weak provider
+call. The next remaining Phase C slice is extraction-aware refinement and handoff preparation for
+later draft generation.
+
 Implementation targets:
 
 - Add artefact metadata for type, purpose, version label, notes, associated jobs/applications, and outcome linkage where known.
@@ -210,6 +233,10 @@ OpenAI-compatible endpoints, encrypted-at-rest API key storage, owner-scoped AI 
 visible Job Workspace generation actions for fit summaries and recommendations. OpenAI, Gemini, and
 OpenAI-compatible execution are available; Anthropic remains planned. AI does not mutate workflow
 state.
+
+Visible AI output rendering now also exists on Inbox review and Focus. Focus uses a distinct
+surface-specific prompt contract for its AI nudge so the recommendation remains tied to the
+Focus-mode "one immediate next move" use case.
 
 Implementation targets:
 

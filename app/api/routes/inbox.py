@@ -298,6 +298,7 @@ def _ai_badge(output_type: str) -> str:
         "draft": ("Draft", "accent"),
         "profile_observation": ("Profile", "warn"),
         "artefact_suggestion": ("Artefact", "accent"),
+        "tailoring_guidance": ("Tailoring", "success"),
     }
     label, tone = labels.get(output_type, ("AI output", "accent"))
     return f'<span class="status-pill {tone}">{escape(label)}</span>'

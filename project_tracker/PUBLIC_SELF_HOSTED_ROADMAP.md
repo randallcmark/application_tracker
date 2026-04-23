@@ -11,7 +11,7 @@ Status key:
 - Planned: not started or needs a substantial rebuild.
 - Deferred: intentionally out of scope until the core product is stable.
 
-Last planning update: 2026-04-20
+Last planning update: 2026-04-23
 
 ---
 
@@ -101,6 +101,34 @@ As of 2026-04-19, the app is verified through:
   generation for fit summaries and recommendations through enabled OpenAI-compatible local
   endpoints, OpenAI API-key configuration, or Gemini AI Studio API-key configuration, with
   encrypted-at-rest key storage and no workflow mutation.
+- AI output rendering extended into Inbox review and Focus, with product-readable provider error
+  messages and a Focus-specific nudge prompt path.
+- Artefact-aware AI planning documented in `docs/ARTEFACT_AI_PLAN.md`, with Phase B defined as
+  existing artefact suggestion inside Job Workspace before tailoring or draft generation.
+- Artefact AI Phase B sub-slice 1 implemented: deterministic candidate shortlist and compact
+  artefact summary helpers are available in the service layer, ready for prompt/UI wiring.
+- Artefact AI Phase B sub-slice 2 implemented: the AI service now has a dedicated
+  `artefact_suggestion` prompt contract and generation entry point built on the shortlist helpers,
+  ready for Job Workspace action/rendering.
+- Artefact AI Phase B sub-slice 3 implemented: Job Workspace now provides `Suggest artefacts` and
+  renders visible `artefact_suggestion` output through the existing AI output panel.
+- Artefact AI Phase B sub-slice 4 implemented: when no candidate artefacts exist, the app now
+  generates a visible local fallback artefact suggestion without requiring a configured provider.
+- Artefact AI Phase B sub-slice 5 implemented: artefact suggestions now surface shortlisted
+  artefact links in Job Workspace, and thin metadata/evidence is called out explicitly in artefact
+  summaries. Phase B is now complete for the first artefact suggestion slice.
+- Artefact AI Phase C is now fully planned in `docs/ARTEFACT_AI_PLAN.md` as the next execution
+  target: tailoring guidance for one selected artefact against one job, with a dedicated
+  `tailoring_guidance` output contract and no document mutation.
+- Artefact AI Phase C sub-slice 1 implemented: the AI service now supports a dedicated
+  `tailoring_guidance` output type and `artefact_tailoring_v1` prompt contract for one selected
+  artefact, ready for Job Workspace selection/route wiring.
+- Artefact AI Phase C sub-slice 2 implemented: Job Workspace now exposes per-artefact tailoring
+  actions with ownership-safe retrieval and route wiring for one selected artefact.
+- Artefact AI Phase C sub-slice 3 implemented: tailoring guidance now renders through the shared
+  visible AI panel with a direct link back to the selected artefact.
+- Artefact AI Phase C sub-slice 4 implemented: thin metadata artefacts now produce a visible local
+  fallback tailoring record instead of forcing a low-confidence provider call.
 
 Known next product focus:
 
@@ -109,8 +137,12 @@ Known next product focus:
 - Phase 4 follow-up: continue improving Job Workspace execution flows where external systems are
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
-- Phase 6 follow-up: extend AI output rendering to Inbox, Focus, and Artefact Library, and expand
-  provider execution beyond the first Job Workspace slice, especially Anthropic.
+- Phase 5 / Phase 6 follow-up: continue Phase C from `docs/ARTEFACT_AI_PLAN.md` with
+  extraction-aware tailoring refinement and draft-handoff preparation before Phase D generation.
+  existing artefact suggestion in Job Workspace, then continue into tailoring guidance and later
+  draft generation.
+- Phase 6 follow-up: extend provider execution further, especially Anthropic, and later consider
+  Artefact Library rendering once Job Workspace artefact suggestion is stable.
 - Phase 7: scheduler and worker support.
 - Phase 8: admin, restore, and self-hosted operations.
 
