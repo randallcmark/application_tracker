@@ -2,18 +2,21 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from html import escape
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Query, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
 from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
+from app.db.models.ai_output import AiOutput
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
+from app.services.ai import AiExecutionError, generate_job_ai_output
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["focus"])
@@ -194,6 +197,143 @@ def _list(items: list[str], empty_message: str) -> str:
     return '<ul class="focus-list">' + "\n".join(items) + "</ul>"
 
 
+def _focus_ai_target(
+    due_followups: list[Communication],
+    stale_jobs: list[Job],
+    recent_jobs: list[Job],
+) -> Job | None:
+    if due_followups:
+        return due_followups[0].job
+    if stale_jobs:
+        return stale_jobs[0]
+    if recent_jobs:
+        return recent_jobs[0]
+    return None
+
+
+def _render_inline_markdown(text: str) -> str:
+    escaped = escape(text)
+    escaped = escaped.replace("**", "\u0000")
+    parts = escaped.split("\u0000")
+    if len(parts) > 1:
+        rebuilt: list[str] = []
+        for index, part in enumerate(parts):
+            if index % 2 == 1:
+                rebuilt.append(f"<strong>{part}</strong>")
+            else:
+                rebuilt.append(part)
+        escaped = "".join(rebuilt)
+    return escaped
+
+
+def _render_markdown_blocks(text: str, *, class_name: str) -> str:
+    lines = text.replace("\r\n", "\n").split("\n")
+    blocks: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if line.startswith("### "):
+            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
+            i += 1
+            continue
+        if line.startswith("## "):
+            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
+            i += 1
+            continue
+        if line.startswith("# "):
+            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
+            i += 1
+            continue
+        if line.startswith(("* ", "- ")):
+            items: list[str] = []
+            while i < len(lines):
+                bullet = lines[i].strip()
+                if not bullet.startswith(("* ", "- ")):
+                    break
+                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
+                i += 1
+            blocks.append("<ul>" + "".join(items) + "</ul>")
+            continue
+        paragraph_lines: list[str] = []
+        while i < len(lines):
+            paragraph = lines[i].strip()
+            if not paragraph or paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
+                break
+            paragraph_lines.append(paragraph)
+            i += 1
+        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
+    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
+
+
+def _flash_message(message: str, *, tone: str) -> str:
+    return f'<section class="page-panel flash flash-{escape(tone, quote=True)}"><p>{escape(message)}</p></section>'
+
+
+def _focus_redirect(*, ai_status: str | None = None, ai_error: str | None = None) -> str:
+    params = []
+    if ai_status:
+        params.append(f"ai_status={quote(ai_status)}")
+    if ai_error:
+        params.append(f"ai_error={quote(ai_error)}")
+    if not params:
+        return "/focus"
+    return "/focus?" + "&".join(params)
+
+
+def _focus_ai_output(output: AiOutput | None, job: Job | None) -> str:
+    if output is None or job is None:
+        return '<p class="meta">No AI nudge yet. Generate one when you want a quick steer on the next useful move.</p>'
+    provider = output.model_name or output.provider or "AI provider"
+    return f"""
+    <article class="focus-ai-card">
+      <div class="panel-header">
+        <div>
+          <p class="panel-micro">Visible AI output</p>
+          <h2>AI nudge</h2>
+        </div>
+        <span class="status-pill accent">Optional</span>
+      </div>
+      <p class="meta">For <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a> · From {escape(provider)}</p>
+      {_render_markdown_blocks(output.body, class_name="ai-markdown")}
+    </article>
+    """
+
+
+def _focus_ai_panel(job: Job | None) -> str:
+    if job is None:
+        return """
+        <section class="page-panel soft">
+          <div class="panel-header">
+            <div>
+              <p class="panel-micro">AI nudge</p>
+              <h2>No current target</h2>
+            </div>
+          </div>
+          <p>No due follow-up, stale active job, or recent prospect is available for a Focus suggestion right now.</p>
+        </section>
+        """
+    return f"""
+    <section class="page-panel ai">
+      <div class="panel-header">
+        <div>
+          <p class="panel-micro">AI nudge</p>
+          <h2>Suggest the next useful move</h2>
+        </div>
+        <span class="status-pill accent">Manual</span>
+      </div>
+      <p class="meta">Targeting <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a>. Focus uses one explicit recommendation at a time.</p>
+      <form method="post" action="/focus/ai-nudge">
+        <input type="hidden" name="job_uuid" value="{escape(job.uuid, quote=True)}">
+        <button type="submit">Suggest next step</button>
+      </form>
+      <p class="meta">AI only creates a visible note. It does not move status, add artefacts, or update workflow state.</p>
+    </section>
+    """
+
+
 def render_focus(
     user: User,
     *,
@@ -203,6 +343,10 @@ def render_focus(
     recent_jobs: list[Job],
     interviews: list[InterviewEvent],
     active_count: int,
+    ai_output: AiOutput | None = None,
+    ai_target_job: Job | None = None,
+    ai_status: str | None = None,
+    ai_error: str | None = None,
 ) -> HTMLResponse:
     goal = None
     if profile and (profile.target_roles or profile.target_locations or profile.salary_min or profile.salary_max):
@@ -305,12 +449,42 @@ def render_focus(
       border-radius: var(--radius-lg);
       padding: 14px;
     }
+    .flash { padding: 14px 18px; }
+    .flash-success {
+      background: rgba(59, 167, 134, 0.10);
+      border-color: rgba(59, 167, 134, 0.28);
+    }
+    .flash-error {
+      background: rgba(226, 91, 76, 0.10);
+      border-color: rgba(226, 91, 76, 0.28);
+    }
+    .focus-ai-card {
+      background: rgba(232, 239, 255, 0.72);
+      border: 1px solid var(--ai-line);
+      border-radius: var(--radius-xl);
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+    }
+    .focus-aside form { display: grid; gap: 10px; }
+    .ai-markdown { display: grid; gap: 10px; }
+    .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 { font-size: 1rem; margin: 0; }
+    .ai-markdown p, .ai-markdown ul { margin: 0; }
+    .ai-markdown ul { padding-left: 18px; }
     @media (max-width: 760px) {
       .focus-grid { grid-template-columns: 1fr; }
     }
     """
+    flash_parts = []
+    if ai_status:
+        flash_parts.append(_flash_message(ai_status, tone="success"))
+    if ai_error:
+        flash_parts.append(_flash_message(ai_error, tone="error"))
     aside = f"""
     <div class="focus-aside">
+      {' '.join(flash_parts)}
+      {_focus_ai_panel(ai_target_job)}
+      {_focus_ai_output(ai_output, ai_target_job)}
       <section class="page-panel soft">
         <div class="panel-header">
           <div>
@@ -379,14 +553,76 @@ def render_focus(
 def focus(
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
+    ai_status: Annotated[str | None, Query()] = None,
+    ai_error: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
     now = datetime.now(UTC)
+    profile = get_user_profile(db, current_user)
+    due_followups = _list_due_followups(db, current_user, now=now)
+    stale_jobs = _list_stale_jobs(db, current_user, now=now)
+    recent_jobs = _list_recent_jobs(db, current_user)
+    ai_target_job = _focus_ai_target(due_followups, stale_jobs, recent_jobs)
+    ai_output = None
+    if ai_target_job is not None:
+        ai_output = db.scalar(
+            select(AiOutput)
+            .where(
+                AiOutput.owner_user_id == current_user.id,
+                AiOutput.job_id == ai_target_job.id,
+                AiOutput.output_type == "recommendation",
+                AiOutput.status == "active",
+            )
+            .order_by(AiOutput.updated_at.desc(), AiOutput.created_at.desc())
+        )
     return render_focus(
         current_user,
-        profile=get_user_profile(db, current_user),
-        due_followups=_list_due_followups(db, current_user, now=now),
-        stale_jobs=_list_stale_jobs(db, current_user, now=now),
-        recent_jobs=_list_recent_jobs(db, current_user),
+        profile=profile,
+        due_followups=due_followups,
+        stale_jobs=stale_jobs,
+        recent_jobs=recent_jobs,
         interviews=_list_upcoming_interviews(db, current_user, now=now),
         active_count=_count_active_jobs(db, current_user),
+        ai_output=ai_output,
+        ai_target_job=ai_target_job,
+        ai_status=ai_status,
+        ai_error=ai_error,
+    )
+
+
+@router.post("/focus/ai-nudge", include_in_schema=False)
+def create_focus_ai_nudge(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    job_uuid: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    job = db.scalar(
+        select(Job).where(
+            Job.uuid == job_uuid,
+            Job.owner_user_id == current_user.id,
+        )
+    )
+    if job is None:
+        return RedirectResponse(
+            url=_focus_redirect(ai_error="Focus target was not found"),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    try:
+        generate_job_ai_output(
+            db,
+            current_user,
+            job,
+            output_type="recommendation",
+            profile=get_user_profile(db, current_user),
+            surface="focus",
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=_focus_redirect(ai_error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    db.commit()
+    return RedirectResponse(
+        url=_focus_redirect(ai_status="AI nudge generated"),
+        status_code=status.HTTP_303_SEE_OTHER,
     )

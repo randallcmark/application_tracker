@@ -5,6 +5,7 @@ from app.db.models.user import User
 
 
 NavLink = tuple[str, str, str]
+HeroVariant = Literal["standard", "workspace", "compact"]
 
 PRIMARY_NAV: tuple[NavLink, ...] = (
     ("Focus", "/focus", "focus"),
@@ -124,17 +125,17 @@ def shell_token_styles() -> str:
       align-items: center;
       background: rgba(255,255,255,0.78);
       border-bottom: 1px solid var(--line);
-      display: grid;
-      gap: 20px;
-      grid-template-columns: minmax(0, 1fr) minmax(0, clamp(180px, 28vw, 420px)) auto;
+      display: flex;
+      gap: 16px;
       min-height: var(--topbar-h);
-      padding: 14px 18px 14px 18px;
+      padding: 14px 18px;
     }
 
     .app-nav-left {
       align-items: center;
       display: flex;
-      gap: 14px;
+      flex: 1 1 auto;
+      gap: 12px;
       min-width: 0;
     }
 
@@ -142,6 +143,7 @@ def shell_token_styles() -> str:
       align-items: center;
       color: var(--ink);
       display: inline-flex;
+      flex: 0 0 auto;
       gap: 10px;
       font-size: 0.88rem;
       font-weight: 700;
@@ -160,17 +162,18 @@ def shell_token_styles() -> str:
     .app-nav {
       align-items: center;
       display: flex;
-      gap: 18px;
+      flex: 1 1 auto;
+      gap: 14px;
       min-width: 0;
-      overflow-x: auto;
+      overflow: hidden;
       padding-bottom: 2px;
-      -webkit-overflow-scrolling: touch;
     }
 
     .app-nav a {
       border-radius: 10px;
       color: var(--muted);
       display: inline-flex;
+      flex: 0 0 auto;
       font-size: 0.98rem;
       font-weight: 600;
       min-height: 42px;
@@ -196,7 +199,15 @@ def shell_token_styles() -> str:
       right: 12px;
     }
 
-    .goal-chip {
+    .header-context {
+      align-items: center;
+      display: flex;
+      flex: 0 1 360px;
+      justify-content: end;
+      min-width: 0;
+    }
+
+    .header-context-chip {
       align-items: center;
       background: rgba(255,255,255,0.78);
       border: 1px solid var(--line);
@@ -213,13 +224,13 @@ def shell_token_styles() -> str:
       box-shadow: var(--shadow-sm);
     }
 
-    .goal-chip strong {
+    .header-context-chip strong {
       color: var(--ink);
       font-weight: 800;
     }
 
-    .goal-chip span,
-    .goal-chip strong {
+    .header-context-chip span,
+    .header-context-chip strong {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -244,23 +255,32 @@ def shell_token_styles() -> str:
       flex: 0 0 auto;
     }
 
-    .goal-chip[data-collapse="tertiary"] .goal-chip-tertiary,
-    .goal-chip[data-collapse="tertiary"] .goal-chip-sep.tertiary {
+    .app-topbar[data-chip-state="tertiary"] .goal-chip-tertiary,
+    .app-topbar[data-chip-state="tertiary"] .goal-chip-sep.tertiary {
       display: none;
     }
 
-    .goal-chip[data-collapse="secondary"] .goal-chip-secondary,
-    .goal-chip[data-collapse="secondary"] .goal-chip-tertiary,
-    .goal-chip[data-collapse="secondary"] .goal-chip-sep.secondary,
-    .goal-chip[data-collapse="secondary"] .goal-chip-sep.tertiary {
+    .app-topbar[data-chip-state="secondary"] .goal-chip-secondary,
+    .app-topbar[data-chip-state="secondary"] .goal-chip-tertiary,
+    .app-topbar[data-chip-state="secondary"] .goal-chip-sep.secondary,
+    .app-topbar[data-chip-state="secondary"] .goal-chip-sep.tertiary {
+      display: none;
+    }
+
+    .app-topbar[data-chip-state="hidden"] .header-context {
       display: none;
     }
 
     .topbar-actions {
       align-items: center;
       display: flex;
-      gap: 10px;
-      justify-self: end;
+      flex: 0 0 auto;
+      gap: 8px;
+      justify-content: end;
+    }
+
+    .shell-topbar-action {
+      min-width: 112px;
     }
 
     .button,
@@ -278,6 +298,7 @@ def shell_token_styles() -> str:
       justify-content: center;
       min-height: 40px;
       padding: 0 16px;
+      white-space: nowrap;
     }
 
     .button,
@@ -439,6 +460,11 @@ def shell_token_styles() -> str:
       min-width: 0;
     }
 
+    .page-main {
+      align-content: start;
+      display: grid;
+    }
+
     .page-main.narrow {
       max-width: 860px;
     }
@@ -462,8 +488,18 @@ def shell_token_styles() -> str:
 
     .page-hero {
       display: grid;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 18px;
+    }
+
+    .page-hero[data-hero-variant="compact"] {
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+
+    .page-hero[data-hero-variant="workspace"] {
+      gap: 8px;
+      margin-bottom: 22px;
     }
 
     .page-kicker {
@@ -486,13 +522,12 @@ def shell_token_styles() -> str:
     .page-subtitle {
       color: var(--muted);
       font-size: 1.05rem;
-      line-height: 1.5;
+      line-height: 1.4;
       margin: 0;
       max-width: 72ch;
     }
 
-    .page-panel,
-    section {
+    .page-panel {
       background: var(--panel);
       border: 1px solid var(--line-soft);
       border-radius: var(--radius-xl);
@@ -755,8 +790,8 @@ def shell_token_styles() -> str:
     }
 
     @media (max-width: 1120px) {
-      .goal-chip {
-        max-width: 320px;
+      .header-context {
+        flex-basis: 280px;
       }
 
       .app-content-shell.split,
@@ -784,17 +819,35 @@ def shell_token_styles() -> str:
       }
 
       .app-topbar {
-        grid-template-columns: 1fr;
+        align-items: start;
+        flex-wrap: wrap;
         min-height: 0;
       }
 
       .app-nav-left,
       .topbar-actions {
-        flex-wrap: wrap;
-        justify-self: start;
+        width: 100%;
       }
 
-      .goal-chip {
+      .app-nav-left {
+        flex-wrap: wrap;
+      }
+
+      .app-nav {
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .topbar-actions {
+        justify-content: flex-start;
+      }
+
+      .shell-topbar-action {
+        min-width: 0;
+      }
+
+      .header-context {
         display: none;
       }
 
@@ -883,6 +936,7 @@ def render_shell_page(
     aside: str | None = None,
     goal: str | None = None,
     kicker: str | None = None,
+    hero_variant: HeroVariant = "standard",
 ) -> str:
     return f"""<!doctype html>
 <html lang="en">
@@ -904,11 +958,7 @@ def render_shell_page(
       {app_header(user, active=active, actions=actions, goal=goal)}
       <div class="app-content-shell {container}">
         <section class="page-main {container}">
-          <div class="page-hero">
-            {f'<p class="page-kicker">{escape(kicker)}</p>' if kicker else ""}
-            <h1>{escape(title)}</h1>
-            <p class="page-subtitle">{escape(subtitle)}</p>
-          </div>
+          {render_page_hero(title=title, subtitle=subtitle, kicker=kicker, hero_variant=hero_variant)}
           {body}
         </section>
         {f'<aside class="page-aside">{aside}</aside>' if aside else ""}
@@ -917,48 +967,62 @@ def render_shell_page(
   </main>
   <script>
     (() => {{
-      const chip = document.querySelector(".goal-chip");
+      const topbar = document.querySelector(".app-topbar");
+      const nav = document.querySelector(".app-nav");
+      if (!topbar || !nav) {{
+        return;
+      }}
+
+      const chip = topbar.querySelector(".header-context-chip");
       if (!chip) {{
-        return;
-      }}
-      const primary = chip.querySelector(".goal-chip-primary");
-      if (!primary) {{
+        topbar.dataset.chipState = "none";
         return;
       }}
 
-      function setCollapse(level) {{
-        if (level) {{
-          chip.dataset.collapse = level;
-        }} else {{
-          chip.removeAttribute("data-collapse");
-        }}
+      function setState(level) {{
+        topbar.dataset.chipState = level;
       }}
 
-      function titleIsTruncated() {{
-        return primary.scrollWidth > primary.clientWidth + 1;
+      function navIsCompressed() {{
+        return nav.scrollWidth > nav.clientWidth + 1;
       }}
 
-      function refreshGoalChip() {{
-        setCollapse("");
-        if (!titleIsTruncated()) {{
+      function refreshTopbar() {{
+        setState("full");
+        if (!navIsCompressed()) {{
           return;
         }}
 
-        setCollapse("tertiary");
-        if (!titleIsTruncated()) {{
+        setState("tertiary");
+        if (!navIsCompressed()) {{
           return;
         }}
 
-        setCollapse("secondary");
+        setState("secondary");
+        if (!navIsCompressed()) {{
+          return;
+        }}
+
+        setState("hidden");
       }}
 
-      window.addEventListener("resize", refreshGoalChip);
-      refreshGoalChip();
+      window.addEventListener("resize", refreshTopbar);
+      requestAnimationFrame(refreshTopbar);
     }})();
   </script>
   {scripts}
 </body>
 </html>"""
+
+
+def render_page_hero(*, title: str, subtitle: str, kicker: str | None = None, hero_variant: HeroVariant) -> str:
+    return f"""
+          <div class="page-hero" data-shell-hero="shared" data-hero-variant="{escape(hero_variant, quote=True)}">
+            {f'<p class="page-kicker">{escape(kicker)}</p>' if kicker else ""}
+            <h1>{escape(title)}</h1>
+            <p class="page-subtitle">{escape(subtitle)}</p>
+          </div>
+    """
 
 
 def app_header(
@@ -986,24 +1050,29 @@ def app_header(
         </form>
         """
     )
-    goal_chip = f'<div class="goal-chip">{goal}</div>' if goal else ""
+    goal_slot = (
+        f'<div class="header-context" data-shell-chip="context"><div class="header-context-chip">{goal}</div></div>'
+        if goal
+        else ""
+    )
+    chip_present = "true" if goal else "false"
 
     return f"""
-    <header class="app-topbar">
-      <div class="app-nav-left">
+    <header class="app-topbar" data-chip-state="full" data-has-chip="{chip_present}" data-shell-topbar="protected">
+      <div class="app-nav-left" data-shell-cluster="nav">
         <a class="app-brand" href="/focus">
           <img class="app-brand-mark" src="/favicon.svg" alt="" aria-hidden="true">
           <span>Application Tracker</span>
         </a>
-        <nav class="app-nav" aria-label="Primary navigation">
+        <nav class="app-nav" aria-label="Primary navigation" data-shell-nav="primary">
           {primary_links}
         </nav>
       </div>
-      {goal_chip}
-      <div class="topbar-actions">
+      {goal_slot}
+      <div class="topbar-actions" data-shell-actions="primary">
         {action_links}
         <details class="user-menu">
-          <summary aria-label="User menu">
+          <summary class="shell-topbar-action" aria-label="User menu">
             <span class="avatar-mark">{escape(_initials(user.email))}</span>
             <span>{escape(user.email)}</span>
             <span aria-hidden="true">⌄</span>
@@ -1036,7 +1105,7 @@ def _render_link(label: str, href: str, key: str, *, active: str | None) -> str:
 
 def _render_action_link(label: str, href: str) -> str:
     escaped_href = escape(href, quote=True).replace("&amp;", "&")
-    return f'<a class="btn" href="{escaped_href}">{escape(label)}</a>'
+    return f'<a class="btn shell-topbar-action" href="{escaped_href}">{escape(label)}</a>'
 
 
 def _render_user_menu_link(label: str, href: str, *, active: bool) -> str:

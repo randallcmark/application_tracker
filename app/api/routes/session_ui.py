@@ -35,6 +35,12 @@ from app.services.profiles import get_or_create_user_profile, get_user_profile
 
 router = APIRouter(tags=["session-ui"])
 
+OPENAI_BILLING_HELP_URL = "https://help.openai.com/en/articles/9039756-billing-settings-in-chatgpt-vs-platform"
+OPENAI_API_QUICKSTART_URL = "https://platform.openai.com/docs/quickstart/using-the-api"
+ANTHROPIC_API_OVERVIEW_URL = "https://docs.anthropic.com/en/api/getting-started"
+GEMINI_API_KEYS_URL = "https://ai.google.dev/gemini-api/docs/api-key"
+GEMINI_API_OVERVIEW_URL = "https://ai.google.dev/docs/gemini_api_overview/"
+
 
 def _value(value: object) -> str:
     if value is None or value == "":
@@ -152,18 +158,24 @@ def _ai_provider_rows(provider_settings) -> str:
     rows = []
     labels = {
         "openai": "OpenAI",
+        "gemini": "Google Gemini (AI Studio)",
         "anthropic": "Anthropic",
         "openai_compatible": "OpenAI-compatible local endpoint",
     }
     for provider in KNOWN_PROVIDERS:
         setting = by_provider.get(provider)
+        model_name = setting.model_name if setting and setting.model_name else "Not set"
+        base_url = setting.base_url if setting and setting.base_url else "Default"
+        api_key_hint = setting.api_key_hint if setting and setting.api_key_hint else "Not saved"
+        status = "Enabled" if setting and setting.is_enabled else "Disabled"
         rows.append(
             f"""
             <tr>
               <td>{escape(labels[provider])}</td>
-              <td>{escape(setting.model_name if setting else "Not set")}</td>
-              <td>{escape(setting.base_url if setting and setting.base_url else "Default")}</td>
-              <td>{'Enabled' if setting and setting.is_enabled else 'Disabled'}</td>
+              <td>{escape(model_name)}</td>
+              <td>{escape(base_url)}</td>
+              <td>{escape(api_key_hint)}</td>
+              <td>{escape(status)}</td>
             </tr>
             """
         )
@@ -235,6 +247,39 @@ def settings_page(
     extra_styles = compact_content_rhythm_styles() + """
     .checkbox-label { align-items: center; display: flex; }
     .checkbox-label input { width: auto; }
+    .inline-help {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      margin-top: 12px;
+      padding: 12px 14px;
+    }
+    .inline-help summary {
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 700;
+      list-style: none;
+    }
+    .inline-help summary::-webkit-details-marker { display: none; }
+    .inline-help-body {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .inline-help-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .inline-help-links a {
+      border: 0.5px solid var(--line);
+      border-radius: 10px;
+      color: var(--accent-strong);
+      display: inline-flex;
+      min-height: 32px;
+      padding: 0 10px;
+      align-items: center;
+    }
     input, select, textarea {
       border: 0.5px solid var(--line);
       border-radius: 10px;
@@ -339,33 +384,53 @@ def settings_page(
     </section>
     <section id="ai">
       <h2>AI readiness</h2>
-      <p>AI is optional, inspectable, and disabled by default. These placeholders reserve provider configuration without storing secrets or making external calls.</p>
+      <p>AI is optional, inspectable, and disabled by default. Provider setup should stay explicit and easy to audit. Only one provider is active at a time.</p>
+      <details class="inline-help">
+        <summary>API key setup help</summary>
+        <div class="inline-help-body">
+          <p>OpenAI, Gemini, and Anthropic use API keys from their developer platforms. Consumer chat subscriptions do not configure this app by themselves.</p>
+          <p>For OpenAI, create an API key in the platform dashboard. For Gemini, create a Gemini API key in Google AI Studio. The key is stored encrypted at rest and only used for explicit generation actions.</p>
+          <div class="inline-help-links">
+            <a href="{OPENAI_BILLING_HELP_URL}" target="_blank" rel="noreferrer">ChatGPT vs API billing</a>
+            <a href="{OPENAI_API_QUICKSTART_URL}" target="_blank" rel="noreferrer">OpenAI API key quickstart</a>
+            <a href="{GEMINI_API_KEYS_URL}" target="_blank" rel="noreferrer">Gemini API key setup</a>
+            <a href="{GEMINI_API_OVERVIEW_URL}" target="_blank" rel="noreferrer">Gemini API overview</a>
+            <a href="{ANTHROPIC_API_OVERVIEW_URL}" target="_blank" rel="noreferrer">Anthropic API overview</a>
+            <a href="/help#ai-setup">Open AI setup help</a>
+          </div>
+        </div>
+      </details>
       <form method="post" action="/settings/ai-provider">
         <div class="field-grid">
           <label>
             Provider
             <select name="provider">
               <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini (AI Studio)</option>
               <option value="anthropic">Anthropic</option>
               <option value="openai_compatible">OpenAI-compatible local endpoint</option>
             </select>
           </label>
           <label>
             Label
-            <input name="label" maxlength="200" placeholder="Personal OpenAI, local Ollama, Claude">
+            <input name="label" maxlength="200" placeholder="Personal OpenAI, Gemini AI Studio, local Ollama, Claude">
           </label>
           <label>
             Base URL
-            <input name="base_url" maxlength="1000" placeholder="Optional for local/OpenAI-compatible endpoints">
+            <input name="base_url" maxlength="1000" placeholder="Optional override for OpenAI-compatible or Gemini endpoints">
           </label>
           <label>
             Model
             <input name="model_name" maxlength="200" placeholder="Model name">
           </label>
+          <label>
+            API key
+            <input name="api_key" type="password" maxlength="400" placeholder="Leave blank to keep existing key">
+          </label>
         </div>
         <label class="checkbox-label">
           <input name="is_enabled" type="checkbox" value="true">
-          Enable provider placeholder
+          Make this the active provider
         </label>
         <button type="submit">Save AI provider</button>
       </form>
@@ -375,6 +440,7 @@ def settings_page(
             <th>Provider</th>
             <th>Model</th>
             <th>Base URL</th>
+            <th>API key</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -419,7 +485,7 @@ def settings_page(
             user,
             page_title="Settings",
             title="Settings",
-            subtitle="Profile, AI placeholders, and capture tokens",
+            subtitle="Profile, AI providers, and capture tokens",
             active="settings",
             body=body,
             kicker="User context",
@@ -735,9 +801,29 @@ def help_page(user: User) -> HTMLResponse:
       <h2>Settings And Privacy</h2>
       <ul class="checklist">
         <li><strong>Profile:</strong> update target roles, locations, and constraints to guide decisions.</li>
-        <li><strong>AI placeholders:</strong> optional and inspectable. No hidden job/profile mutations.</li>
+        <li><strong>AI providers:</strong> optional and inspectable. No hidden job/profile mutations.</li>
         <li><strong>API tokens:</strong> create only what you need and revoke unused tokens promptly.</li>
       </ul>
+    </section>
+    <section id="ai-setup">
+      <h2>AI setup</h2>
+      <p>AI generation uses provider API access, not a consumer chat subscription sign-in.</p>
+      <ul class="checklist">
+        <li><strong>OpenAI:</strong> ChatGPT and the OpenAI API are separate billing systems. Create an API key in the OpenAI platform dashboard before enabling the provider here.</li>
+        <li><strong>Gemini:</strong> create a Gemini API key in Google AI Studio, then enable the Gemini provider here.</li>
+        <li><strong>Anthropic:</strong> create an API key from the Anthropic Console before enabling that provider.</li>
+        <li><strong>Local/OpenAI-compatible:</strong> use the base URL and model name for your local endpoint.</li>
+        <li><strong>Storage:</strong> provider API keys are stored encrypted at rest and are never re-displayed in full.</li>
+        <li><strong>Current product rule:</strong> AI stays user-triggered, visible, and non-mutating.</li>
+      </ul>
+      <div class="help-links">
+        <a href="{OPENAI_BILLING_HELP_URL}" target="_blank" rel="noreferrer">OpenAI billing help</a>
+        <a href="{OPENAI_API_QUICKSTART_URL}" target="_blank" rel="noreferrer">OpenAI API quickstart</a>
+        <a href="{GEMINI_API_KEYS_URL}" target="_blank" rel="noreferrer">Gemini API key setup</a>
+        <a href="{GEMINI_API_OVERVIEW_URL}" target="_blank" rel="noreferrer">Gemini API overview</a>
+        <a href="{ANTHROPIC_API_OVERVIEW_URL}" target="_blank" rel="noreferrer">Anthropic API overview</a>
+        <a href="/settings#ai">Open AI settings</a>
+      </div>
     </section>
     {admin_section}
     """
@@ -1027,6 +1113,7 @@ def settings_update_ai_provider(
     label: Annotated[str, Form()] = "",
     base_url: Annotated[str, Form()] = "",
     model_name: Annotated[str, Form()] = "",
+    api_key: Annotated[str, Form()] = "",
     is_enabled: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     try:
@@ -1037,6 +1124,7 @@ def settings_update_ai_provider(
             label=label,
             base_url=base_url,
             model_name=model_name,
+            api_key=api_key,
             is_enabled=is_enabled == "true",
         )
     except ValueError as exc:

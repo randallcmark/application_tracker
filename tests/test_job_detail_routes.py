@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -104,6 +105,37 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "Intl.DateTimeFormat" in response.text
         assert "Status changed from applied to interviewing" in response.text
         assert "Job status changed from applied to interviewing." in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_renders_description_markdown(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Markdown role",
+                company="Example Co",
+                status="saved",
+                description_raw="### Responsibilities\n* **Own delivery**\n* Support stakeholders",
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{job_uuid}")
+
+        assert response.status_code == 200
+        assert '<div class="description-markdown">' in response.text
+        assert "<h4>Responsibilities</h4>" in response.text
+        assert "<strong>Own delivery</strong>" in response.text
+        assert "<ul>" in response.text
+        assert "<pre>### Responsibilities" not in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -233,6 +265,207 @@ def test_job_detail_ai_generation_creates_visible_output(tmp_path: Path, monkeyp
             assert len(outputs) == 1
             assert outputs[0].job.uuid == job_uuid
             assert outputs[0].output_type == "fit_summary"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_ai_generation_uses_openai_provider_with_saved_key(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="OpenAI target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+        provider_response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "openai",
+                "label": "Personal OpenAI",
+                "base_url": "",
+                "model_name": "gpt-5",
+                "api_key": "sk-openai-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+        assert provider_response.status_code == 303
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps({"output_text": "Next step: tailor the resume first."}).encode("utf-8")
+
+        def fake_urlopen(req, timeout=20, context=None):
+            captured["url"] = req.full_url
+            captured["headers"] = dict(req.header_items())
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResponse()
+
+        monkeypatch.setattr("app.services.ai.request.urlopen", fake_urlopen)
+
+        response = client.post(
+            f"/jobs/{job_uuid}/ai-outputs",
+            data={"output_type": "recommendation"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_status=AI%20output%20generated" in response.headers["location"]
+        assert captured["url"] == "https://api.openai.com/v1/responses"
+        assert captured["headers"]["Authorization"] == "Bearer sk-openai-secret-1234"
+        assert captured["body"]["model"] == "gpt-5"
+
+        detail_response = client.get(response.headers["location"])
+        assert "Next step: tailor the resume first." in detail_response.text
+
+        with session_local() as db:
+            output = db.scalar(select(AiOutput))
+            assert output is not None
+            assert output.provider == "openai"
+            assert output.model_name == "gpt-5"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_ai_generation_uses_gemini_provider_with_saved_key(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Gemini target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+        provider_response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "gemini",
+                "label": "AI Studio",
+                "base_url": "",
+                "model_name": "gemini-2.5-flash",
+                "api_key": "gemini-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+        assert provider_response.status_code == 303
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "candidates": [
+                            {
+                                "content": {
+                                    "parts": [
+                                        {"text": "Strengths: matches the role well."}
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                ).encode("utf-8")
+
+        def fake_urlopen(req, timeout=20, context=None):
+            captured["url"] = req.full_url
+            captured["headers"] = dict(req.header_items())
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResponse()
+
+        monkeypatch.setattr("app.services.ai.request.urlopen", fake_urlopen)
+
+        response = client.post(
+            f"/jobs/{job_uuid}/ai-outputs",
+            data={"output_type": "fit_summary"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_status=AI%20output%20generated" in response.headers["location"]
+        assert (
+            captured["url"]
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        )
+        headers = {key.lower(): value for key, value in captured["headers"].items()}
+        assert headers["x-goog-api-key"] == "gemini-secret-1234"
+        assert captured["body"]["generationConfig"]["temperature"] == 0.2
+
+        detail_response = client.get(response.headers["location"])
+        assert "Strengths: matches the role well." in detail_response.text
+
+        with session_local() as db:
+            output = db.scalar(select(AiOutput))
+            assert output is not None
+            assert output.provider == "gemini"
+            assert output.model_name == "gemini-2.5-flash"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_renders_ai_output_markdown(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Markdown target", status="saved")
+            db.add(job)
+            db.flush()
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    output_type="fit_summary",
+                    title="AI fit summary",
+                    body="### Strengths\n* **Role alignment**\n* Remote match",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{job_uuid}")
+
+        assert response.status_code == 200
+        assert '<div class="ai-markdown">' in response.text
+        assert "<h4>Strengths</h4>" in response.text
+        assert "<strong>Role alignment</strong>" in response.text
+        assert "<ul>" in response.text
+        assert "<pre>" not in response.text
     finally:
         app.dependency_overrides.clear()
 

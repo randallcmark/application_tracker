@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,6 +13,8 @@ class AiProviderSetting(IdMixin, TimestampMixin, Base):
     label: Mapped[str | None] = mapped_column(String(200), nullable=True)
     base_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     owner = relationship("User", back_populates="ai_provider_settings")

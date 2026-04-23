@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth.users import create_local_user
+from app.db.models.ai_output import AiOutput
 from app.db.models.email_intake import EmailIntake
 from app.db.models.job import Job
 from app.main import app
@@ -40,6 +41,9 @@ def test_inbox_empty_state(tmp_path: Path, monkeypatch) -> None:
         assert "<h1>Inbox</h1>" in response.text
         assert "Inbox is clear" in response.text
         assert 'href="/focus"' in response.text
+        assert 'data-has-chip="false"' in response.text
+        assert 'data-shell-chip="context"' not in response.text
+        assert ">Board</a>" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -500,5 +504,106 @@ def test_inbox_review_page_is_owner_scoped(tmp_path: Path, monkeypatch) -> None:
         response = client.get(f"/inbox/{job_uuid}/review")
 
         assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_inbox_review_page_renders_ai_support(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        token = create_capture_token(client, session_local)
+        captured = client.post(
+            "/api/capture/jobs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"source_url": "https://jobs.example.com/ai-review", "title": "Role"},
+        )
+        job_uuid = captured.json()["uuid"]
+
+        response = client.get(f"/inbox/{job_uuid}/review")
+
+        assert response.status_code == 200
+        assert "Visible AI output" in response.text
+        assert "Generate fit summary" in response.text
+        assert "Suggest next step" in response.text
+        assert 'action="/inbox/' in response.text
+        assert 'name="output_type" value="fit_summary"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_inbox_review_ai_generation_requires_enabled_provider(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        token = create_capture_token(client, session_local)
+        captured = client.post(
+            "/api/capture/jobs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"source_url": "https://jobs.example.com/ai-missing-provider", "title": "Role"},
+        )
+        job_uuid = captured.json()["uuid"]
+
+        response = client.post(
+            f"/inbox/{job_uuid}/ai-outputs",
+            data={"output_type": "fit_summary"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_error=" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert "Enable an AI provider in Settings before generating AI output" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_inbox_review_ai_generation_creates_visible_output(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        token = create_capture_token(client, session_local)
+        captured = client.post(
+            "/api/capture/jobs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"source_url": "https://jobs.example.com/ai-success", "title": "Role"},
+        )
+        job_uuid = captured.json()["uuid"]
+
+        def fake_generate_job_ai_output(db, user, job, *, output_type, profile=None):
+            output = AiOutput(
+                owner_user_id=user.id,
+                job_id=job.id,
+                output_type=output_type,
+                title="AI fit summary",
+                body="### Strengths\n* **Clear relevance**",
+                provider="gemini",
+                model_name="gemini-flash-latest",
+            )
+            db.add(output)
+            db.flush()
+            return output
+
+        monkeypatch.setattr("app.api.routes.inbox.generate_job_ai_output", fake_generate_job_ai_output)
+
+        response = client.post(
+            f"/inbox/{job_uuid}/ai-outputs",
+            data={"output_type": "fit_summary"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_status=AI%20output%20generated" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert detail_response.status_code == 200
+        assert "AI output generated" in detail_response.text
+        assert "AI fit summary" in detail_response.text
+        assert "Clear relevance" in detail_response.text
+        assert "<strong>Clear relevance</strong>" in detail_response.text
+
+        with session_local() as db:
+            outputs = db.scalars(select(AiOutput)).all()
+            assert len(outputs) == 1
+            assert outputs[0].job.uuid == job_uuid
+            assert outputs[0].output_type == "fit_summary"
     finally:
         app.dependency_overrides.clear()

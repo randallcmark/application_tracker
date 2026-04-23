@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
+import re
 from typing import Annotated
 from urllib.parse import quote
 
@@ -161,7 +162,7 @@ def _editable_title(job: Job) -> str:
 def _editable_description(job: Job) -> str:
     raw_value = _input_value(job.description_raw)
     display = (
-        f"<pre>{escape(job.description_raw)}</pre>"
+        _render_description_markdown(job.description_raw)
         if job.description_raw
         else '<p class="empty">No description captured yet.</p>'
     )
@@ -484,6 +485,65 @@ def _ai_badge(output_type: str) -> str:
     return f'<span class="status-pill {tone}">{escape(label)}</span>'
 
 
+def _render_inline_markdown(text: str) -> str:
+    escaped = escape(text)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"<em>\1</em>", escaped)
+    return escaped
+
+
+def _render_markdown_blocks(text: str, *, class_name: str) -> str:
+    lines = text.replace("\r\n", "\n").split("\n")
+    blocks: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if line.startswith("### "):
+            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
+            i += 1
+            continue
+        if line.startswith("## "):
+            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
+            i += 1
+            continue
+        if line.startswith("# "):
+            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
+            i += 1
+            continue
+        if line.startswith(("* ", "- ")):
+            items: list[str] = []
+            while i < len(lines):
+                bullet = lines[i].strip()
+                if not bullet.startswith(("* ", "- ")):
+                    break
+                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
+                i += 1
+            blocks.append("<ul>" + "".join(items) + "</ul>")
+            continue
+        paragraph_lines: list[str] = []
+        while i < len(lines):
+            paragraph = lines[i].strip()
+            if not paragraph:
+                break
+            if paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
+                break
+            paragraph_lines.append(paragraph)
+            i += 1
+        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
+    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
+
+
+def _render_ai_markdown(text: str) -> str:
+    return _render_markdown_blocks(text, class_name="ai-markdown")
+
+
+def _render_description_markdown(text: str) -> str:
+    return _render_markdown_blocks(text, class_name="description-markdown")
+
+
 def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
     if not outputs:
         return '<p class="empty">No AI output yet. Generate a fit summary or recommendation when you want help deciding what to do next.</p>'
@@ -501,7 +561,7 @@ def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
                 {_ai_badge(output.output_type)}
               </div>
               <p class="muted">From {escape(provider)}</p>
-              <pre>{escape(output.body)}</pre>
+              {_render_ai_markdown(output.body)}
             </article>
             """
         )
@@ -1386,6 +1446,62 @@ def render_job_detail(
       display: grid;
       gap: 10px;
       padding: 16px;
+    }}
+
+    .ai-markdown {{
+      display: grid;
+      gap: 10px;
+    }}
+
+    .description-markdown {{
+      display: grid;
+      gap: 12px;
+    }}
+
+    .description-markdown h2,
+    .description-markdown h3,
+    .description-markdown h4 {{
+      margin: 0;
+    }}
+
+    .description-markdown p {{
+      margin: 0;
+    }}
+
+    .description-markdown ul {{
+      display: grid;
+      gap: 8px;
+      list-style: disc;
+      margin: 0;
+      padding-left: 22px;
+    }}
+
+    .description-markdown li {{
+      border-left: 0;
+      padding-left: 0;
+    }}
+
+    .ai-markdown h2,
+    .ai-markdown h3,
+    .ai-markdown h4 {{
+      margin: 0;
+    }}
+
+    .ai-markdown p {{
+      margin: 0;
+    }}
+
+    .ai-markdown ul {{
+      display: grid;
+      gap: 8px;
+      list-style: disc;
+      margin: 0;
+      padding-left: 22px;
+    }}
+
+    .ai-markdown li {{
+      border-left: 0;
+      padding-left: 0;
     }}
 
     .timeline-panel ol {{

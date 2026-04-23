@@ -1,20 +1,23 @@
 from datetime import datetime
 from html import escape
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
 from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
+from app.db.models.ai_output import AiOutput
 from app.db.models.email_intake import EmailIntake
 from app.db.models.job import Job
 from app.db.models.user import User
+from app.services.ai import AiExecutionError, generate_job_ai_output
 from app.services.email_intake import create_email_inbox_candidate
 from app.services.jobs import BOARD_STATUSES, create_job_note, update_job_board_state
+from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["inbox"])
 
@@ -288,9 +291,150 @@ def _provenance_summary(job: Job) -> str:
     return "<ul>" + "".join(parts) + "</ul>"
 
 
-def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HTMLResponse:
+def _ai_badge(output_type: str) -> str:
+    labels = {
+        "fit_summary": ("Fit summary", "accent"),
+        "recommendation": ("Recommendation", "success"),
+        "draft": ("Draft", "accent"),
+        "profile_observation": ("Profile", "warn"),
+        "artefact_suggestion": ("Artefact", "accent"),
+    }
+    label, tone = labels.get(output_type, ("AI output", "accent"))
+    return f'<span class="status-pill {tone}">{escape(label)}</span>'
+
+
+def _render_inline_markdown(text: str) -> str:
+    escaped = escape(text)
+    escaped = escaped.replace("**", "\u0000")
+    parts = escaped.split("\u0000")
+    if len(parts) > 1:
+        rebuilt: list[str] = []
+        for index, part in enumerate(parts):
+            if index % 2 == 1:
+                rebuilt.append(f"<strong>{part}</strong>")
+            else:
+                rebuilt.append(part)
+        escaped = "".join(rebuilt)
+    return escaped
+
+
+def _render_markdown_blocks(text: str, *, class_name: str) -> str:
+    lines = text.replace("\r\n", "\n").split("\n")
+    blocks: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if line.startswith("### "):
+            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
+            i += 1
+            continue
+        if line.startswith("## "):
+            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
+            i += 1
+            continue
+        if line.startswith("# "):
+            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
+            i += 1
+            continue
+        if line.startswith(("* ", "- ")):
+            items: list[str] = []
+            while i < len(lines):
+                bullet = lines[i].strip()
+                if not bullet.startswith(("* ", "- ")):
+                    break
+                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
+                i += 1
+            blocks.append("<ul>" + "".join(items) + "</ul>")
+            continue
+        paragraph_lines: list[str] = []
+        while i < len(lines):
+            paragraph = lines[i].strip()
+            if not paragraph or paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
+                break
+            paragraph_lines.append(paragraph)
+            i += 1
+        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
+    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
+
+
+def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
+    if not outputs:
+        return '<p class="empty">No AI output yet. Generate a fit summary or recommendation when you want help deciding whether this role is worth effort.</p>'
+    cards = []
+    for output in outputs:
+        provider = output.model_name or output.provider or "AI"
+        cards.append(
+            f"""
+            <article class="ai-output-card">
+              <div class="card-header">
+                <div>
+                  <p class="panel-micro">AI output</p>
+                  <h3>{escape(output.title or output.output_type.replace('_', ' ').title())}</h3>
+                </div>
+                {_ai_badge(output.output_type)}
+              </div>
+              <p class="meta">From {escape(provider)}</p>
+              {_render_markdown_blocks(output.body, class_name="ai-markdown")}
+            </article>
+            """
+        )
+    return '<div class="ai-output-list">' + "".join(cards) + "</div>"
+
+
+def _ai_actions(job: Job) -> str:
+    return f"""
+    <div class="ai-action-stack">
+      <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/ai-outputs">
+        <input type="hidden" name="output_type" value="fit_summary">
+        <button type="submit">Generate fit summary</button>
+      </form>
+      <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/ai-outputs">
+        <input type="hidden" name="output_type" value="recommendation">
+        <button class="secondary" type="submit">Suggest next step</button>
+      </form>
+      <p class="meta">AI only creates visible review notes. It does not accept, dismiss, or edit the candidate automatically.</p>
+    </div>
+    """
+
+
+def _flash_message(message: str, *, tone: str) -> str:
+    return f'<section class="page-panel flash flash-{escape(tone, quote=True)}"><p>{escape(message)}</p></section>'
+
+
+def _inbox_review_redirect(job_uuid: str, *, ai_status: str | None = None, ai_error: str | None = None) -> str:
+    params = []
+    if ai_status:
+        params.append(f"ai_status={quote(ai_status)}")
+    if ai_error:
+        params.append(f"ai_error={quote(ai_error)}")
+    if not params:
+        return f"/inbox/{quote(job_uuid)}/review"
+    return f"/inbox/{quote(job_uuid)}/review?" + "&".join(params)
+
+
+def render_inbox_review(
+    user: User,
+    job: Job,
+    *,
+    error: str | None = None,
+    ai_status: str | None = None,
+    ai_error: str | None = None,
+) -> HTMLResponse:
     error_block = f'<p class="error">{escape(error)}</p>' if error else ""
     source_url = _selected_source_url(job)
+    ai_outputs = [
+        output
+        for output in sorted(job.ai_outputs, key=lambda item: item.updated_at, reverse=True)
+        if output.status == "active"
+    ]
+    flash_parts = []
+    if ai_status:
+        flash_parts.append(_flash_message(ai_status, tone="success"))
+    if ai_error:
+        flash_parts.append(_flash_message(ai_error, tone="error"))
     extra_styles = compact_content_rhythm_styles() + """
     :root { --warn: #a43d2b; }
     .hint, .meta { color: var(--muted); line-height: 1.45; }
@@ -313,11 +457,42 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
     .provenance strong { font-weight: 500; }
     .provenance span, .provenance a { overflow-wrap: anywhere; }
     .error { color: var(--warn); }
+    .flash { padding: 14px 18px; }
+    .flash-success {
+      background: rgba(59, 167, 134, 0.10);
+      border-color: rgba(59, 167, 134, 0.28);
+    }
+    .flash-error {
+      background: rgba(226, 91, 76, 0.10);
+      border-color: rgba(226, 91, 76, 0.28);
+    }
+    .ai-output-list { display: grid; gap: 12px; }
+    .ai-output-card {
+      background: linear-gradient(180deg, rgba(232,239,255,0.96), rgba(244,247,255,0.98));
+      border: 1px solid var(--ai-line);
+      border-radius: var(--radius-lg);
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+    .ai-markdown { display: grid; gap: 10px; }
+    .ai-markdown h2, .ai-markdown h3, .ai-markdown h4,
+    .ai-markdown p { margin: 0; }
+    .ai-markdown ul {
+      display: grid;
+      gap: 8px;
+      list-style: disc;
+      margin: 0;
+      padding-left: 22px;
+    }
+    .ai-markdown li { border-left: 0; padding-left: 0; }
+    .ai-action-stack { display: grid; gap: 10px; }
     @media (max-width: 800px) {
       .field-grid, .actions { grid-template-columns: 1fr; }
     }
     """
     body = f"""
+    {"".join(flash_parts)}
     <section class="page-panel">
       <div class="panel-header">
         <div>
@@ -361,9 +536,27 @@ def render_inbox_review(user: User, job: Job, *, error: str | None = None) -> HT
         </div>
       </form>
     </section>
+    <section class="page-panel ai">
+      <div class="panel-header">
+        <div>
+          <p class="panel-micro">Visible AI output</p>
+          <h2>Review guidance</h2>
+        </div>
+      </div>
+      {_ai_outputs_panel(ai_outputs)}
+    </section>
     """
     aside = f"""
     <aside class="provenance">
+      <section class="page-panel soft">
+        <div class="panel-header">
+          <div>
+            <p class="panel-micro">Generate guidance</p>
+            <h2>AI review support</h2>
+          </div>
+        </div>
+        {_ai_actions(job)}
+      </section>
       <section class="page-panel soft">
         <div class="panel-header">
           <div>
@@ -469,8 +662,15 @@ def review_inbox_job(
     job_uuid: str,
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
+    ai_status: Annotated[str | None, Query()] = None,
+    ai_error: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
-    return render_inbox_review(current_user, _get_inbox_job(db, current_user, job_uuid))
+    return render_inbox_review(
+        current_user,
+        _get_inbox_job(db, current_user, job_uuid),
+        ai_status=ai_status,
+        ai_error=ai_error,
+    )
 
 
 @router.post(
@@ -508,6 +708,35 @@ def update_inbox_review(
     db.commit()
     return RedirectResponse(
         url=f"/inbox/{escape(job.uuid, quote=True)}/review",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/inbox/{job_uuid}/ai-outputs", include_in_schema=False)
+def create_inbox_ai_output(
+    job_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    output_type: Annotated[str, Form()] = "fit_summary",
+) -> RedirectResponse:
+    job = _get_inbox_job(db, current_user, job_uuid)
+    try:
+        generate_job_ai_output(
+            db,
+            current_user,
+            job,
+            output_type=output_type,
+            profile=get_user_profile(db, current_user),
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=_inbox_review_redirect(job.uuid, ai_error=str(exc)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    db.commit()
+    return RedirectResponse(
+        url=_inbox_review_redirect(job.uuid, ai_status="AI output generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

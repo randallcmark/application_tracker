@@ -199,9 +199,18 @@ def test_settings_shows_ai_readiness_placeholders(tmp_path: Path, monkeypatch) -
         assert response.status_code == 200
         assert "AI readiness" in response.text
         assert "OpenAI" in response.text
+        assert "Google Gemini (AI Studio)" in response.text
         assert "Anthropic" in response.text
         assert "OpenAI-compatible local endpoint" in response.text
         assert "disabled by default" in response.text
+        assert "API key setup help" in response.text
+        assert "Consumer chat subscriptions do not configure this app by themselves" in response.text
+        assert 'name="api_key"' in response.text
+        assert "Leave blank to keep existing key" in response.text
+        assert 'href="/help#ai-setup"' in response.text
+        assert 'href="https://help.openai.com/en/articles/9039756-billing-settings-in-chatgpt-vs-platform"' in response.text
+        assert 'href="https://platform.openai.com/docs/quickstart/using-the-api"' in response.text
+        assert 'href="https://ai.google.dev/gemini-api/docs/api-key"' in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -227,6 +236,7 @@ def test_settings_updates_ai_provider_placeholder(tmp_path: Path, monkeypatch) -
                 "label": "Local endpoint",
                 "base_url": "http://localhost:11434/v1",
                 "model_name": "local-model",
+                "api_key": "",
                 "is_enabled": "true",
             },
             follow_redirects=False,
@@ -244,6 +254,8 @@ def test_settings_updates_ai_provider_placeholder(tmp_path: Path, monkeypatch) -
             assert setting.label == "Local endpoint"
             assert setting.base_url == "http://localhost:11434/v1"
             assert setting.model_name == "local-model"
+            assert setting.api_key_encrypted is None
+            assert setting.api_key_hint is None
             assert setting.is_enabled is True
 
         settings_response = client.get("/settings")
@@ -251,6 +263,169 @@ def test_settings_updates_ai_provider_placeholder(tmp_path: Path, monkeypatch) -
         assert "local-model" in settings_response.text
         assert "http://localhost:11434/v1" in settings_response.text
         assert "Enabled" in settings_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_ai_provider_enable_disables_other_enabled_provider(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        first = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "openai",
+                "label": "Personal OpenAI",
+                "base_url": "",
+                "model_name": "gpt-5",
+                "api_key": "sk-openai-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+        assert first.status_code == 303
+
+        second = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "gemini",
+                "label": "AI Studio",
+                "base_url": "",
+                "model_name": "gemini-2.5-flash",
+                "api_key": "gemini-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+        assert second.status_code == 303
+
+        with session_local() as db:
+            settings_by_provider = {
+                setting.provider: setting for setting in db.scalars(select(AiProviderSetting)).all()
+            }
+            assert settings_by_provider["openai"].is_enabled is False
+            assert settings_by_provider["gemini"].is_enabled is True
+
+        settings_response = client.get("/settings")
+        assert settings_response.status_code == 200
+        assert "Only one provider is active at a time" in settings_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_page_handles_provider_rows_with_missing_model_name(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            db.add(
+                AiProviderSetting(
+                    owner_user_id=user.id,
+                    provider="openai",
+                    label="OpenAI",
+                    model_name=None,
+                    base_url=None,
+                    api_key_hint="sk-t...1234",
+                    is_enabled=True,
+                )
+            )
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.get("/settings")
+
+        assert response.status_code == 200
+        assert "Not set" in response.text
+        assert "sk-t...1234" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_updates_openai_provider_with_encrypted_api_key(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "openai",
+                "label": "Personal OpenAI",
+                "base_url": "",
+                "model_name": "gpt-5",
+                "api_key": "sk-test-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/settings#ai"
+
+        with session_local() as db:
+            setting = db.scalar(select(AiProviderSetting))
+
+            assert setting is not None
+            assert setting.provider == "openai"
+            assert setting.api_key_encrypted is not None
+            assert "sk-test-secret-1234" not in setting.api_key_encrypted
+            assert setting.api_key_hint == "sk-t...1234"
+
+        settings_response = client.get("/settings")
+
+        assert "sk-t...1234" in settings_response.text
+        assert "sk-test-secret-1234" not in settings_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_help_page_includes_ai_setup_guidance(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.get("/help")
+
+        assert response.status_code == 200
+        assert 'id="ai-setup"' in response.text
+        assert "AI generation uses provider API access, not a consumer chat subscription sign-in" in response.text
+        assert "ChatGPT and the OpenAI API are separate billing systems" in response.text
+        assert "create a Gemini API key in Google AI Studio" in response.text
+        assert "provider API keys are stored encrypted at rest" in response.text
+        assert 'href="/settings#ai"' in response.text
+        assert 'href="https://ai.google.dev/docs/gemini_api_overview/"' in response.text
+        assert 'href="https://docs.anthropic.com/en/api/getting-started"' in response.text
     finally:
         app.dependency_overrides.clear()
 

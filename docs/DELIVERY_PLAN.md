@@ -204,11 +204,12 @@ Test expectations:
 
 Goal: create stable places for AI outputs before enabling heavy AI features.
 
-Status: schema and settings placeholders implemented, plus the first explicit Job Workspace AI
-generation slice. The app now has owner-scoped AI provider placeholder records for OpenAI,
-Anthropic, and OpenAI-compatible endpoints, owner-scoped AI output records, and visible Job
-Workspace generation actions for fit summaries and recommendations. No secrets are stored and AI
-does not mutate workflow state.
+Status: schema and settings support are implemented for the first explicit Job Workspace AI
+generation slice. The app now has owner-scoped AI provider records for OpenAI, Anthropic, and
+OpenAI-compatible endpoints, encrypted-at-rest API key storage, owner-scoped AI output records, and
+visible Job Workspace generation actions for fit summaries and recommendations. OpenAI, Gemini, and
+OpenAI-compatible execution are available; Anthropic remains planned. AI does not mutate workflow
+state.
 
 Implementation targets:
 

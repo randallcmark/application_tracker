@@ -99,7 +99,8 @@ As of 2026-04-19, the app is verified through:
   visible AI output records.
 - First explicit AI execution slice in Job Workspace: visible AI output cards and user-triggered
   generation for fit summaries and recommendations through enabled OpenAI-compatible local
-  endpoints, with no workflow mutation.
+  endpoints, OpenAI API-key configuration, or Gemini AI Studio API-key configuration, with
+  encrypted-at-rest key storage and no workflow mutation.
 
 Known next product focus:
 
@@ -109,7 +110,7 @@ Known next product focus:
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
 - Phase 6 follow-up: extend AI output rendering to Inbox, Focus, and Artefact Library, and expand
-  provider execution beyond the first Job Workspace slice.
+  provider execution beyond the first Job Workspace slice, especially Anthropic.
 - Phase 7: scheduler and worker support.
 - Phase 8: admin, restore, and self-hosted operations.
 
@@ -119,6 +120,10 @@ Known bugs:
   timestamps now keep UTC as the stored fallback and render in the browser's local timezone.
 - Mobile portrait layouts can become hard to use, especially where text, forms, and action controls
   compete for the same vertical space.
+- The shared shell now protects Focus/Inbox/Board navigation correctly, but the contextual header
+  chip is currently hidden too aggressively and no longer appears in normal desktop cases where it
+  should. Revisit the shell overflow logic so contextual chips return as optional, lower-priority
+  information without ever displacing primary navigation.
 
 ---
 

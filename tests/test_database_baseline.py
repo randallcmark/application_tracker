@@ -98,9 +98,15 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
     ai_provider_columns = {
         column["name"] for column in inspector.get_columns("ai_provider_settings")
     }
-    assert {"owner_user_id", "provider", "base_url", "model_name", "is_enabled"}.issubset(
-        ai_provider_columns
-    )
+    assert {
+        "owner_user_id",
+        "provider",
+        "base_url",
+        "model_name",
+        "api_key_encrypted",
+        "api_key_hint",
+        "is_enabled",
+    }.issubset(ai_provider_columns)
 
     profile_columns = {column["name"] for column in inspector.get_columns("user_profiles")}
     assert {
@@ -217,6 +223,8 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
                 owner_user_id=user.id,
                 provider="openai",
                 model_name="gpt-example",
+                api_key_encrypted="sealed-value",
+                api_key_hint="sk-a...1234",
                 is_enabled=False,
             )
         )
@@ -253,3 +261,4 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         assert stored_job.artefact_links[0].artefact.purpose == "Tailored resume"
         assert stored_job.ai_outputs[0].output_type == "fit_summary"
         assert stored_job.owner.ai_provider_settings[0].provider == "openai"
+        assert stored_job.owner.ai_provider_settings[0].api_key_hint == "sk-a...1234"
