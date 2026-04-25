@@ -11,7 +11,7 @@ Status summary:
 - Artefact library and metadata groundwork: implemented.
 - Visible AI records and provider execution: implemented for job/workspace, Inbox review, and
   Focus nudge.
-- Artefact-aware AI: planned.
+- Artefact-aware AI: implemented through Phase D, with Phase E now active.
 
 ## Product Intent
 
@@ -223,6 +223,11 @@ Document context strategy:
 
 Goal: use historic outcomes to improve future suggestions.
 
+Current status:
+
+- sub-slice 1 in progress: add conservative artefact outcome-signal summaries in the service layer
+  so later prompts can consume explicit evidence instead of inferring from ad hoc counts.
+
 Implementation targets:
 
 - summarise artefact-outcome patterns conservatively;
@@ -232,6 +237,65 @@ Implementation targets:
 Expected result:
 
 - artefact suggestions improve over time using the user's own history.
+
+## Detailed Plan: Phase E Outcome-Aware Learning
+
+Phase E starts from explicit summary helpers, not from hidden scoring or automatic behaviour.
+
+### User Value
+
+When the app recommends or tailors artefacts, it should be able to say:
+
+- this artefact has prior interview-linked use;
+- this one only has thin active-history evidence;
+- this baseline has stronger offer-linked history than the alternatives;
+- there is not enough prior outcome evidence to generalise confidently.
+
+The point is not to claim causality. The point is to surface the user's own prior outcome context
+in a way that improves later suggestions.
+
+### Scope
+
+In scope for the first Phase E slice:
+
+- explicit per-artefact outcome-signal summaries;
+- conservative evidence levels;
+- strongest-signal labelling such as offer-linked or interview-linked;
+- service-layer tests for owner-scoped, non-speculative summaries.
+
+Out of scope for the first Phase E slice:
+
+- automated ranking changes beyond the current conservative shortlist scoring;
+- role-family similarity inference;
+- prompt changes that imply causal learning;
+- any hidden mutation of jobs, artefacts, or AI outputs.
+
+### Trusted Inputs
+
+Only use signals the current data model can support directly:
+
+- linked job status;
+- linked application presence;
+- linked interview event presence;
+- existing owner-scoped artefact/job/application/interview relationships;
+- explicitly stored outcome context text as supporting metadata.
+
+Do not infer more than the data can justify.
+
+### Sub-Slices
+
+1. Per-artefact outcome-signal summaries. In progress.
+2. Use those summaries consistently in artefact AI prompt contracts.
+3. Add cautious cross-artefact aggregate summaries where evidence density is meaningful.
+4. Surface later outcome-aware hints in UI only where they materially improve decisions.
+
+### Acceptance Criteria For Sub-Slice 1
+
+- the service layer exposes a first-class artefact outcome summary object;
+- the summary distinguishes strongest signal and evidence level;
+- the summary stays conservative when evidence is sparse;
+- existing artefact AI summaries incorporate the new outcome evidence text cleanly;
+- tests cover offer-linked, interview-linked, and sparse-history cases.
 
 ## Detailed Plan: Phase B Existing Artefact Suggestion
 

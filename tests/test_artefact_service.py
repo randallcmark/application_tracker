@@ -11,6 +11,7 @@ from app.services.artefacts import (
     list_candidate_artefacts_for_job,
     load_artefact_document_payload,
     load_artefact_text_excerpt,
+    summarise_artefact_outcome_signals,
     summarise_artefact_for_ai,
 )
 from tests.test_local_auth_routes import build_client
@@ -127,13 +128,54 @@ def test_summarise_artefact_for_ai_includes_outcome_signals_and_related_context(
         assert summary.is_linked_to_current_job is False
         assert summary.linked_job_count == 1
         assert summary.linked_interview_count == 1
+        assert summary.outcome_signal_summary.strongest_signal == "interview-linked"
+        assert summary.outcome_signal_summary.evidence_level == "moderate"
         assert summary.metadata_quality == "strong"
         assert "Purpose: Leadership-heavy resume" in summary.summary_text
         assert "Interview-linked jobs: 1" in summary.summary_text
+        assert "Outcome evidence: strongest signal interview-linked, evidence moderate" in summary.summary_text
         assert "Metadata quality: strong" in summary.summary_text
         assert "Already linked to current job: no" in summary.summary_text
         assert "Recent linked job titles: Platform Lead" in summary.summary_text
         assert "Notes: Strong delivery and stakeholder management evidence." in summary.summary_text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_summarise_artefact_outcome_signals_prefers_offer_history_when_present(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+
+            offer_job = Job(owner_user_id=user.id, title="Principal TPM", status="offer")
+            db.add(offer_job)
+            db.flush()
+
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=offer_job.id,
+                kind="resume",
+                purpose="Offer-winning resume",
+                filename="offer-resume.pdf",
+                storage_key="artefacts/offer-resume.pdf",
+            )
+            db.add(artefact)
+            db.commit()
+            db.refresh(artefact)
+
+            outcome_summary = summarise_artefact_outcome_signals(artefact)
+
+        assert outcome_summary.strongest_signal == "offer-linked"
+        assert outcome_summary.evidence_level == "light"
+        assert outcome_summary.offer_like_count == 1
+        assert outcome_summary.interview_like_count == 0
+        assert outcome_summary.rejection_like_count == 0
+        assert "strongest signal offer-linked" in outcome_summary.summary_text
+        assert "offer-linked jobs 1" in outcome_summary.summary_text
     finally:
         app.dependency_overrides.clear()
 

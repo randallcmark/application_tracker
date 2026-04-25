@@ -73,8 +73,23 @@ class ArtefactCandidateSummary:
     linked_offer_count: int
     linked_rejection_count: int
     linked_active_count: int
+    outcome_signal_summary: "ArtefactOutcomeSignalSummary"
     metadata_quality: str
     score: int
+    summary_text: str
+
+
+@dataclass(frozen=True)
+class ArtefactOutcomeSignalSummary:
+    linked_job_count: int
+    linked_application_count: int
+    linked_interview_event_count: int
+    interview_like_count: int
+    offer_like_count: int
+    rejection_like_count: int
+    active_like_count: int
+    strongest_signal: str
+    evidence_level: str
     summary_text: str
 
 
@@ -162,9 +177,88 @@ def _metadata_quality_label(gaps: list[str]) -> str:
     return "thin"
 
 
-def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> ArtefactCandidateSummary:
+def _outcome_evidence_level(
+    *,
+    linked_job_count: int,
+    linked_application_count: int,
+    linked_interview_event_count: int,
+) -> str:
+    evidence_points = linked_job_count + linked_application_count + linked_interview_event_count
+    if evidence_points == 0:
+        return "none"
+    if evidence_points == 1:
+        return "light"
+    if evidence_points <= 3:
+        return "moderate"
+    return "strong"
+
+
+def _strongest_outcome_signal(
+    *,
+    offer_like: int,
+    interview_like: int,
+    rejection_like: int,
+    active_like: int,
+) -> str:
+    if offer_like > 0:
+        return "offer-linked"
+    if interview_like > 0:
+        return "interview-linked"
+    if active_like > 0:
+        return "active-only"
+    if rejection_like > 0:
+        return "rejection-or-archived"
+    return "none"
+
+
+def summarise_artefact_outcome_signals(artefact: Artefact) -> ArtefactOutcomeSignalSummary:
     linked_jobs = _related_jobs_for_artefact(artefact)
     interview_like, offer_like, rejection_like, active_like = _status_counts(linked_jobs)
+    linked_application_count = 1 if artefact.application_id is not None else 0
+    linked_interview_event_count = 1 if artefact.interview_event_id is not None else 0
+    strongest_signal = _strongest_outcome_signal(
+        offer_like=offer_like,
+        interview_like=interview_like,
+        rejection_like=rejection_like,
+        active_like=active_like,
+    )
+    evidence_level = _outcome_evidence_level(
+        linked_job_count=len(linked_jobs),
+        linked_application_count=linked_application_count,
+        linked_interview_event_count=linked_interview_event_count,
+    )
+    summary_bits = [
+        f"strongest signal {strongest_signal}",
+        f"evidence {evidence_level}",
+        f"linked jobs {len(linked_jobs)}",
+        f"applications {linked_application_count}",
+        f"interviews {linked_interview_event_count}",
+        f"offer-linked jobs {offer_like}",
+        f"interview-linked jobs {interview_like}",
+        f"rejection/archived-linked jobs {rejection_like}",
+        f"active-linked jobs {active_like}",
+    ]
+    return ArtefactOutcomeSignalSummary(
+        linked_job_count=len(linked_jobs),
+        linked_application_count=linked_application_count,
+        linked_interview_event_count=linked_interview_event_count,
+        interview_like_count=interview_like,
+        offer_like_count=offer_like,
+        rejection_like_count=rejection_like,
+        active_like_count=active_like,
+        strongest_signal=strongest_signal,
+        evidence_level=evidence_level,
+        summary_text=", ".join(summary_bits),
+    )
+
+
+def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> ArtefactCandidateSummary:
+    linked_jobs = _related_jobs_for_artefact(artefact)
+    outcome_signal_summary = summarise_artefact_outcome_signals(artefact)
+    interview_like = outcome_signal_summary.interview_like_count
+    offer_like = outcome_signal_summary.offer_like_count
+    rejection_like = outcome_signal_summary.rejection_like_count
+    active_like = outcome_signal_summary.active_like_count
     is_linked_to_current_job = any(job.id == current_job.id for job in linked_jobs)
     metadata_gaps = _metadata_gaps(artefact, linked_jobs)
     metadata_quality = _metadata_quality_label(metadata_gaps)
@@ -189,6 +283,7 @@ def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> Artefa
         f"Offer-linked jobs: {offer_like}",
         f"Rejected/archived-linked jobs: {rejection_like}",
         f"Active-linked jobs: {active_like}",
+        f"Outcome evidence: {outcome_signal_summary.summary_text}",
         f"Metadata quality: {metadata_quality}",
         f"Already linked to current job: {'yes' if is_linked_to_current_job else 'no'}",
     ]
@@ -212,6 +307,7 @@ def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> Artefa
         linked_offer_count=offer_like,
         linked_rejection_count=rejection_like,
         linked_active_count=active_like,
+        outcome_signal_summary=outcome_signal_summary,
         metadata_quality=metadata_quality,
         score=score,
         summary_text=" | ".join(summary_bits),

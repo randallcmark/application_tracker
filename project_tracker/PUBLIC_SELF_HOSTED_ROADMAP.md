@@ -152,6 +152,10 @@ As of 2026-04-19, the app is verified through:
   available, reducing metadata-only fallbacks for non-text baselines.
 - Artefact AI Phase D sub-slice 6 implemented: the artefact library now shows provenance for saved
   drafts, including source draft id and baseline artefact linkage when available.
+- Job Workspace reduction work is now tracked in `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`. The first
+  reduction slice is implemented, and the next follow-on there is pane-by-pane cleanup across
+  `Application`, `Interviews`, `Follow-ups`, `Tasks`, `Notes`, and `Documents` before any later
+  utility-card redesign is reconsidered.
 
 Known next product focus:
 
@@ -160,10 +164,8 @@ Known next product focus:
 - Phase 4 follow-up: continue improving Job Workspace execution flows where external systems are
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
-- Phase 5 / Phase 6 follow-up: continue Phase C from `docs/ARTEFACT_AI_PLAN.md` with
-  extraction-aware tailoring refinement and draft-handoff preparation before Phase D generation.
-  existing artefact suggestion in Job Workspace, then continue into tailoring guidance and later
-  draft generation.
+- Phase 5 / Phase 6 follow-up: continue `docs/ARTEFACT_AI_PLAN.md` from Phase E, starting with
+  conservative outcome-aware learning helpers before broader prompt/UI changes.
 - Phase 6 follow-up: extend provider execution further, especially Anthropic, and later consider
   Artefact Library rendering once Job Workspace artefact suggestion is stable.
 - Phase 7: scheduler and worker support.

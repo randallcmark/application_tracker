@@ -77,37 +77,77 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "Senior Product Manager" in response.text
         assert "Example Co" in response.text
         assert "Own the roadmap." in response.text
-        assert "Open source" in response.text
-        assert "Open apply link" in response.text
-        assert '<form class="note-form"' in response.text
-        assert '<form class="quick-action-form"' in response.text
-        assert f'action="/jobs/{job_uuid}/interviews"' in response.text
-        assert f'action="/jobs/{job_uuid}/archive"' in response.text
-        assert f'action="/jobs/{job_uuid}/application-started"' in response.text
-        assert f'action="/jobs/{job_uuid}/blockers"' in response.text
-        assert f'action="/jobs/{job_uuid}/return-note"' in response.text
-        assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
-        assert f'action="/jobs/{job_uuid}/status"' in response.text
-        assert "Next action" in response.text
+        assert f'href="/jobs/{job_uuid}?section=application"' in response.text
+        assert f'href="/jobs/{job_uuid}?section=documents"' in response.text
+        assert "✦ Fit" in response.text
+        assert "✦ Next step" in response.text
         assert "AI Assistant" in response.text
-        assert "Generate fit summary" in response.text
-        assert "Suggest next step" in response.text
-        assert "Suggest artefacts" in response.text
+        assert "Generate fit summary" not in response.text
+        assert "Suggest next step" not in response.text
+        assert "Suggest artefacts" not in response.text
         assert "Draft tailored resume" not in response.text
-        assert "Role overview" in response.text
-        assert "Workspace tools" in response.text
-        assert "Application state and route" in response.text
-        assert "Maintenance" in response.text
+        assert "Overview" in response.text
+        assert "Workspace tools" not in response.text
+        assert "Maintenance" not in response.text
+        assert "Role &amp; notes" not in response.text
+        assert 'data-ui-component="workspace-frame"' in response.text
+        assert 'data-ui-component="overview-identity"' in response.text
         assert 'data-field="title"' in response.text
         assert 'data-field="description_raw"' in response.text
-        assert 'data-field="status"' in response.text
         assert 'id="edit-savebar"' in response.text
-        assert '<summary>Journal</summary>' in response.text
-        assert "<details class=\"timeline-panel\">" in response.text
-        assert 'class="local-time" datetime="2026-04-11T12:00:00+00:00"' in response.text
-        assert "Intl.DateTimeFormat" in response.text
-        assert "Status changed from applied to interviewing" in response.text
-        assert "Job status changed from applied to interviewing." in response.text
+
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert notes_response.status_code == 200
+        assert '<summary>Journal</summary>' in notes_response.text
+        assert "<details class=\"timeline-panel\">" in notes_response.text
+        assert 'class="local-time" datetime="2026-04-11T12:00:00+00:00"' in notes_response.text
+        assert "Intl.DateTimeFormat" in notes_response.text
+        assert "Status changed from applied to interviewing" in notes_response.text
+        assert "Job status changed from applied to interviewing." in notes_response.text
+
+        tasks_response = client.get(f"/jobs/{job_uuid}?section=tasks")
+        assert tasks_response.status_code == 200
+        assert "Tasks" in tasks_response.text
+        assert "Current focus" in tasks_response.text
+        assert "Workflow actions" in tasks_response.text
+        assert "Maintenance" in tasks_response.text
+        assert "Suggest artefacts" not in tasks_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_section_query_renders_selected_application_surface(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="section-route@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Section target",
+                company="Example Co",
+                status="saved",
+                source_url="https://jobs.example.com/source",
+                apply_url="https://jobs.example.com/apply",
+                location="Remote",
+                description_raw="Own the roadmap.",
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "section-route@example.com")
+        response = client.get(f"/jobs/{job_uuid}?section=application")
+
+        assert response.status_code == 200
+        assert 'data-ui-active-section="application"' in response.text
+        assert 'data-ui-component="workspace-frame"' in response.text
+        assert 'data-ui-component="overview-identity"' in response.text
+        assert "Application state and route" in response.text
+        assert "Open source" in response.text
+        assert "Open apply link" in response.text
+        assert f'action="/jobs/{job_uuid}/status"' in response.text
+        assert "Role overview" not in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -134,6 +174,8 @@ def test_job_detail_renders_description_markdown(tmp_path: Path, monkeypatch) ->
         response = client.get(f"/jobs/{job_uuid}")
 
         assert response.status_code == 200
+        assert 'data-ui-component="job-description-panel"' in response.text
+        assert 'data-ui-component="job-description-body"' in response.text
         assert '<div class="description-markdown">' in response.text
         assert "<h4>Responsibilities</h4>" in response.text
         assert "<strong>Own delivery</strong>" in response.text
@@ -171,6 +213,7 @@ def test_job_detail_renders_existing_ai_output(tmp_path: Path, monkeypatch) -> N
         response = client.get(f"/jobs/{job_uuid}")
 
         assert response.status_code == 200
+        assert 'data-ui-component="ai-assessment-body"' in response.text
         assert "AI fit summary" in response.text
         assert "Strengths: strong systems background." in response.text
         assert "local-model" in response.text
@@ -218,7 +261,7 @@ def test_job_detail_renders_shortlisted_artefact_links_for_artefact_suggestion(
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
         assert "Shortlisted artefacts" in response.text
@@ -277,7 +320,7 @@ def test_job_detail_renders_selected_artefact_link_for_tailoring_guidance(
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
         assert "Selected artefact" in response.text
@@ -317,7 +360,7 @@ def test_job_detail_renders_draft_action_for_job_artefacts(tmp_path: Path, monke
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
         assert "Draft tailored resume" in response.text
@@ -1075,7 +1118,7 @@ def test_job_detail_renders_save_draft_action_for_draft_outputs(tmp_path: Path, 
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
         assert "Save as artefact" in response.text
@@ -1389,7 +1432,7 @@ def test_job_detail_renders_ai_output_markdown(tmp_path: Path, monkeypatch) -> N
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=notes")
 
         assert response.status_code == 200
         assert '<div class="ai-markdown">' in response.text
@@ -1491,7 +1534,7 @@ def test_job_detail_shows_collapsed_email_provenance(tmp_path: Path, monkeypatch
 
         login(client, "jobseeker@example.com")
 
-        response = client.get(f"/jobs/{job_uuid}")
+        response = client.get(f"/jobs/{job_uuid}?section=notes")
 
         assert response.status_code == 200
         assert "<summary>Capture provenance</summary>" in response.text
@@ -1547,9 +1590,9 @@ def test_job_detail_note_form_adds_note_and_redirects(tmp_path: Path, monkeypatc
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=notes"
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "Prep" in detail_response.text
@@ -1618,13 +1661,14 @@ def test_job_detail_edit_form_updates_job_and_redirects(tmp_path: Path, monkeypa
             assert job.source_url is None
             assert job.description_clean == "Corrected description."
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "Corrected role" in detail_response.text
         assert "Corrected description." in detail_response.text
-        assert "Status changed from saved to interested" in detail_response.text
-        assert "Job edited" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Status changed from saved to interested" in notes_response.text
+        assert "Job edited" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -1720,7 +1764,7 @@ def test_job_detail_mark_applied_form_creates_application_and_redirects(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=application"
 
         with session_local() as db:
             application = db.scalar(select(Application))
@@ -1732,11 +1776,12 @@ def test_job_detail_mark_applied_form_creates_application_and_redirects(
             assert job is not None
             assert job.status == "applied"
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "Submitted through ATS." in detail_response.text
-        assert "Marked applied" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Marked applied" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -1764,7 +1809,7 @@ def test_job_detail_status_form_updates_status_and_journal(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=application"
 
         with session_local() as db:
             job = db.scalar(select(Job).where(Job.uuid == job_uuid))
@@ -1773,10 +1818,11 @@ def test_job_detail_status_form_updates_status_and_journal(
             assert job.status == "preparing"
             assert job.archived_at is None
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
-        assert "Status changed from interested to preparing" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Status changed from interested to preparing" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -1832,7 +1878,7 @@ def test_job_detail_application_started_moves_status_and_records_note(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=follow-ups"
 
         with session_local() as db:
             job = db.scalar(select(Job).where(Job.uuid == job_uuid))
@@ -1841,10 +1887,11 @@ def test_job_detail_application_started_moves_status_and_records_note(
             assert job.status == "preparing"
             assert any(note.subject == "Application started" for note in job.communications)
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
         assert detail_response.status_code == 200
-        assert "Status changed from interested to preparing" in detail_response.text
         assert "Application started" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Status changed from interested to preparing" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -1872,7 +1919,7 @@ def test_job_detail_blocker_form_adds_note_with_optional_follow_up(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=follow-ups"
 
         with session_local() as db:
             blocker_note = db.scalar(
@@ -1882,7 +1929,7 @@ def test_job_detail_blocker_form_adds_note_with_optional_follow_up(
             assert blocker_note.notes == "Waiting for referral confirmation."
             assert blocker_note.follow_up_at is not None
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
         assert detail_response.status_code == 200
         assert "Blocker recorded" in detail_response.text
         assert "Waiting for referral confirmation." in detail_response.text
@@ -1944,7 +1991,7 @@ def test_job_detail_return_note_form_adds_note_and_follow_up(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=follow-ups"
 
         with session_local() as db:
             return_note = db.scalar(select(Communication).where(Communication.subject == "Return note"))
@@ -1952,7 +1999,7 @@ def test_job_detail_return_note_form_adds_note_and_follow_up(
             assert return_note.notes == "Completed the external form and uploaded portfolio links."
             assert return_note.follow_up_at is not None
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
         assert detail_response.status_code == 200
         assert "Return note" in detail_response.text
         assert "Completed the external form and uploaded portfolio links." in detail_response.text
@@ -2011,7 +2058,7 @@ def test_job_detail_archive_form_archives_job_and_redirects(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=notes"
 
         with session_local() as db:
             job = db.scalar(select(Job).where(Job.uuid == job_uuid))
@@ -2020,11 +2067,12 @@ def test_job_detail_archive_form_archives_job_and_redirects(
             assert job.status == "archived"
             assert job.archived_at is not None
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "Archived" in detail_response.text
-        assert "No longer relevant." in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "No longer relevant." in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -2054,7 +2102,7 @@ def test_job_detail_upload_artefact_form_stores_and_downloads_file(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=documents"
 
         with session_local() as db:
             artefact = db.scalar(select(Artefact))
@@ -2064,11 +2112,12 @@ def test_job_detail_upload_artefact_form_stores_and_downloads_file(
             assert artefact.kind == "cover_letter"
             artefact_uuid = artefact.uuid
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "cover-letter.txt" in detail_response.text
-        assert "Artefact uploaded" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Artefact uploaded" in notes_response.text
 
         download_response = client.get(f"/jobs/{job_uuid}/artefacts/{artefact_uuid}")
 
@@ -2136,7 +2185,7 @@ def test_job_detail_unarchive_form_restores_job_and_redirects(
 
         login(client, "jobseeker@example.com")
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(f"/jobs/{job_uuid}?section=tasks")
 
         assert detail_response.status_code == 200
         assert f'action="/jobs/{job_uuid}/unarchive"' in detail_response.text
@@ -2148,7 +2197,7 @@ def test_job_detail_unarchive_form_restores_job_and_redirects(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=notes"
 
         with session_local() as db:
             job = db.scalar(select(Job).where(Job.uuid == job_uuid))
@@ -2157,11 +2206,12 @@ def test_job_detail_unarchive_form_restores_job_and_redirects(
             assert job.status == "interested"
             assert job.archived_at is None
 
-        restored_response = client.get(f"/jobs/{job_uuid}")
+        restored_response = client.get(response.headers["location"])
 
         assert restored_response.status_code == 200
-        assert "Status changed from archived to interested" in restored_response.text
         assert "Worth another look." in restored_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Status changed from archived to interested" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -2223,7 +2273,7 @@ def test_job_detail_schedule_interview_form_creates_interview_and_redirects(
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=interviews"
 
         with session_local() as db:
             job = db.scalar(select(Job).where(Job.uuid == job_uuid))
@@ -2235,12 +2285,13 @@ def test_job_detail_schedule_interview_form_creates_interview_and_redirects(
             assert interview.stage == "Hiring manager"
             assert interview.location == "Video call"
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(response.headers["location"])
 
         assert detail_response.status_code == 200
         assert "Hiring manager" in detail_response.text
         assert "Review product examples." in detail_response.text
-        assert "Interview scheduled: Hiring manager" in detail_response.text
+        notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
+        assert "Interview scheduled: Hiring manager" in notes_response.text
     finally:
         app.dependency_overrides.clear()
 

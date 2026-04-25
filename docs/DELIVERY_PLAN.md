@@ -170,6 +170,16 @@ Test expectations:
 - UI smoke tests for status movement, external actions, inline editing, and journal collapse.
 - API tests for any new job action routes.
 
+Follow-on reduction work for the current dense Job Workspace surface is now
+tracked separately in `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`. That document
+defines the resumable implementation plan for:
+
+- left-rail-driven single-surface section switching;
+- moving Quick Actions into an overlay utility panel;
+- constraining long AI/job-description content;
+- removing duplicate role summary blocks;
+- later pane-by-pane cleanup and any future utility-card reassessment.
+
 ## Phase 5: Artefact Library
 
 Goal: make files reusable assets rather than passive attachments.
@@ -181,9 +191,10 @@ without copying the file. Application/interview-level reuse, extraction, and AI 
 planned follow-on work.
 
 Detailed resumable planning for AI-assisted artefact selection, tailoring, draft generation, and
-outcome-aware learning now lives in `docs/ARTEFACT_AI_PLAN.md`. The next recommended slice is
-Phase B from that document: existing artefact suggestion in Job Workspace before tailoring or
-generation. Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
+outcome-aware learning now lives in `docs/ARTEFACT_AI_PLAN.md`. Phase B through Phase D are now
+implemented for the first intended slices, and the active next recommended slice is Phase E
+sub-slice 1: conservative artefact outcome-signal summaries in the service layer before broader
+outcome-aware prompt changes. Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
 shortlist and compact AI summary helpers, and sub-slice 2 is now implemented in the AI service
 layer: a dedicated `artefact_suggestion` prompt contract and generation entry point. Sub-slice 3 is
 also now implemented: Job Workspace exposes `Suggest artefacts` and renders visible
@@ -215,6 +226,8 @@ document context layer now also supports DOCX extraction plus best-effort host-b
 for legacy Word/RTF and PDF files when available. A narrow Gemini-backed `provider_document` path
 now also exists for draft generation when no extracted text is available but a supported binary
 artefact can be passed directly, reducing unnecessary metadata-only fallbacks on non-text files.
+Phase E is now starting with conservative per-artefact outcome-signal summaries so later prompts
+can use explicit evidence rather than inferring from ad hoc counts.
 
 Implementation targets:
 

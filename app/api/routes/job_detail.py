@@ -860,6 +860,23 @@ def _workspace_section(
     """
 
 
+WORKSPACE_SECTION_ORDER = (
+    "overview",
+    "application",
+    "interviews",
+    "follow-ups",
+    "tasks",
+    "notes",
+    "documents",
+)
+
+
+def _normalize_workspace_section(section: str | None) -> str:
+    if section in WORKSPACE_SECTION_ORDER:
+        return section
+    return "overview"
+
+
 def _workspace_stat_count(value: int | str, label: str) -> str:
     return (
         '<div class="workspace-stat">'
@@ -883,7 +900,7 @@ def _follow_up_events(job: Job) -> list[Communication]:
     )
 
 
-def _workspace_anchor_nav(job: Job, artefacts: list[Artefact], events: list[Communication]) -> str:
+def _workspace_anchor_nav(job: Job, artefacts: list[Artefact], events: list[Communication], active_section: str) -> str:
     follow_up_count = len(_follow_up_events(job))
     items = [
         ("overview", "Overview", ""),
@@ -898,8 +915,9 @@ def _workspace_anchor_nav(job: Job, artefacts: list[Artefact], events: list[Comm
     for target, label, count in items:
         badge = f'<span class="workspace-nav-count">{escape(count)}</span>' if count else ""
         rendered.append(
-            f'<a class="workspace-nav-link{" active" if target == "overview" else ""}" '
-            f'href="#{escape(target, quote=True)}" data-ui-nav="{escape(target, quote=True)}">'
+            f'<a class="workspace-nav-link{" active" if target == active_section else ""}" '
+            f'href="/jobs/{escape(job.uuid, quote=True)}?section={escape(target, quote=True)}" '
+            f'data-ui-nav="{escape(target, quote=True)}">'
             f"<span>{escape(label)}</span>{badge}</a>"
         )
     return '<nav class="workspace-anchor-nav" data-ui-component="section-nav">' + "".join(rendered) + "</nav>"
@@ -907,20 +925,26 @@ def _workspace_anchor_nav(job: Job, artefacts: list[Artefact], events: list[Comm
 
 def _workspace_quick_actions(job: Job) -> str:
     actions = [
-        ("Log interview", "#interviews"),
-        ("Add follow-up", "#follow-ups"),
-        ("Upload document", "#documents"),
-        ("Create AI draft", "#documents"),
+        ("Log interview", f"/jobs/{job.uuid}?section=interviews"),
+        ("Add follow-up", f"/jobs/{job.uuid}?section=follow-ups"),
+        ("Upload document", f"/jobs/{job.uuid}?section=documents"),
+        ("Create AI draft", f"/jobs/{job.uuid}?section=documents"),
     ]
     rendered = "".join(
         f'<a class="workspace-quick-link" href="{escape(url, quote=True)}"><span>{escape(label)}</span><span>›</span></a>'
         for label, url in actions
     )
     return (
-        '<section class="workspace-side-card" data-ui-component="quick-actions">'
+        '<details class="workspace-quick-actions" data-ui-component="quick-actions-overlay">'
+        '<summary class="workspace-quick-trigger" data-ui-component="quick-actions-trigger">'
+        '<span>Quick Actions</span><span>⌄</span>'
+        '</summary>'
+        '<div class="workspace-quick-panel" data-ui-component="quick-actions-panel">'
         '<div class="workspace-side-heading">Quick Actions</div>'
+        '<p class="muted">Use these utility actions without adding permanent page height.</p>'
         f"{rendered}"
-        "</section>"
+        "</div>"
+        "</details>"
     )
 
 
@@ -949,7 +973,7 @@ def _workspace_score_card(job: Job, artefacts: list[Artefact]) -> str:
     )
     return f"""
     <section class="workspace-side-card" data-ui-component="workspace-score">
-      <div class="workspace-side-heading">Workspace Health</div>
+      <div class="workspace-side-heading">Readiness</div>
       <div class="workspace-score-card">
         <div class="workspace-score-ring" style="--score:{percent};">
           <span>{percent}</span>
@@ -963,28 +987,10 @@ def _workspace_score_card(job: Job, artefacts: list[Artefact]) -> str:
     """
 
 
-def _workspace_summary_card(job: Job, events: list[Communication]) -> str:
-    latest_application = max(job.applications, key=lambda item: item.applied_at or datetime.min.replace(tzinfo=UTC), default=None)
-    applied_line = (
-        f"Applied {_value(latest_application.applied_at)}"
-        if latest_application and latest_application.applied_at
-        else f"Status updated {_value(job.updated_at)}"
-    )
+def _workspace_back_link_card() -> str:
     return f"""
-    <section class="workspace-side-card" data-ui-component="job-summary">
+    <section class="workspace-side-card workspace-back-card" data-ui-component="job-summary">
       <a class="workspace-back-link" href="/board">← Back to Board</a>
-      <div class="workspace-summary">
-        <div class="workspace-summary-logo">{escape((job.company or job.title or '?')[:1].upper())}</div>
-        <div>
-          <p class="muted">{escape(job.company or 'Company not set')}</p>
-          <div class="workspace-summary-title">{escape(job.title)}</div>
-          <p class="muted">{escape(job.location or 'Location not set')} · {escape(job.remote_policy or 'Working pattern not set')}</p>
-        </div>
-      </div>
-      <div class="workspace-summary-status">
-        {_stage_pill(job.status)}
-      </div>
-      <p class="muted">{escape(applied_line)}</p>
     </section>
     """
 
@@ -1112,11 +1118,28 @@ def _next_up_summary(job: Job, ai_outputs: list[AiOutput]) -> str:
     """
 
 
+def _workspace_identity_header(job: Job) -> str:
+    meta_parts = [
+        job.company or "Company not set",
+        job.location or "Location not set",
+        job.remote_policy or None,
+        _salary_range(job) if job.salary_min is not None or job.salary_max is not None else None,
+    ]
+    meta = " · ".join(escape(part) for part in meta_parts if part)
+    return f"""
+    <div class="workspace-identity-head" data-ui-component="overview-identity">
+      <div>
+        <div class="workspace-identity-title">{_editable_title(job)}</div>
+        <p class="muted">{meta}</p>
+      </div>
+      <div class="workspace-identity-status">{_stage_pill(job.status)}</div>
+    </div>
+    """
+
+
 def _workspace_overview_section(job: Job, ai_outputs: list[AiOutput]) -> str:
     tags = [
-        job.remote_policy,
         job.source,
-        f"{job.salary_currency} salary" if job.salary_currency else None,
         "Inbox candidate" if job.intake_state == "needs_review" else "Active work",
     ]
     chips = "".join(f'<span class="workspace-chip">{escape(tag)}</span>' for tag in tags if tag)
@@ -1131,25 +1154,20 @@ def _workspace_overview_section(job: Job, ai_outputs: list[AiOutput]) -> str:
             "</div>"
         )
     body = f"""
-    <div class="workspace-info-grid" data-ui-component="job-kv-grid">
-      {_workspace_stat_count(job.company or 'Not set', 'Company')}
-      {_workspace_stat_count(job.title, 'Role')}
-      {_workspace_stat_count(job.location or 'Not set', 'Location')}
-      {_workspace_stat_count(_salary_range(job), 'Target Salary')}
-      {_workspace_stat_count(job.remote_policy or 'Not set', 'Job Type')}
-    </div>
     {_application_progress(job)}
     {_next_up_summary(job, ai_outputs)}
     <div class="workspace-detail-copy">
-      <div class="workspace-text-block">
+      <div class="workspace-text-block workspace-constrained-panel" data-ui-component="job-description-panel">
         <h3>Role &amp; Notes</h3>
-        {_editable_description(job)}
+        <div class="workspace-constrained-body job-description-body" data-ui-component="job-description-body">
+          {_editable_description(job)}
+        </div>
       </div>
       <div class="workspace-chip-row">{chips}</div>
       {insight_block}
     </div>
     """
-    return _workspace_section(section_id="overview", kicker="Overview", title="Role overview", body=body)
+    return _workspace_section(section_id="overview", kicker="Overview", title="Overview", body=body)
 
 
 def _workspace_role_notes_section(job: Job) -> str:
@@ -1559,7 +1577,9 @@ def _workspace_ai_assessment(ai_outputs: list[AiOutput]) -> str:
       <div class="workspace-side-heading">Overall Assessment</div>
       {_ai_badge(fit_output.output_type)}
       <p class="muted">From {escape(fit_output.model_name or fit_output.provider or "AI")}</p>
-      {_render_ai_markdown(fit_output.body)}
+      <div class="workspace-constrained-body ai-assessment-body" data-ui-component="ai-assessment-body">
+        {_render_ai_markdown(fit_output.body)}
+      </div>
     </section>
     """
 
@@ -1592,40 +1612,60 @@ def _workspace_ai_sidebar(job: Job, ai_outputs: list[AiOutput], artefact_lookup:
 
 def _workspace_tools_section(job: Job, artefacts: list[Artefact]) -> str:
     body = f"""
-    {_next_action(job)}
-    <div class="workspace-three-up">
+    <div class="workspace-two-up" data-ui-component="tasks-workbench">
       <div class="workspace-subpanel">
-        <h3>Application tools</h3>
-        {_mark_applied_form(job)}
-        {_status_transition_form(job)}
+        <h3>Current focus</h3>
+        {_next_action(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Interview tools</h3>
+        <h3>Workflow actions</h3>
+        {_mark_applied_form(job)}
+        {_status_transition_form(job)}
         {_schedule_interview_form(job)}
         {_application_started_form(job)}
+      </div>
+    </div>
+    <div class="workspace-three-up">
+      <div class="workspace-subpanel">
+        <h3>Follow-through</h3>
+        {_blocker_form(job)}
+        {_return_note_form(job)}
       </div>
       <div class="workspace-subpanel" id="workspace-tools">
         <h3>Maintenance</h3>
         {_archive_form(job)}
         {_unarchive_form(job)}
       </div>
-    </div>
-    <div class="workspace-three-up">
       <div class="workspace-subpanel">
-        <h3>AI guidance</h3>
-        {_ai_actions(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Artefact selection</h3>
-        {_artefact_ai_action(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Readiness</h3>
-        {_readiness(job, artefacts)}
+        <h3>Document work</h3>
+        <p class="muted">Go to Documents when you need uploads, existing artefacts, or local AI drafting.</p>
+        <a class="button-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents</a>
       </div>
     </div>
     """
-    return _workspace_section(section_id="tasks", kicker="Tasks", title="Workspace tools", body=body)
+    return _workspace_section(section_id="tasks", kicker="Tasks", title="Tasks", body=body)
+
+
+def _workspace_utility_strip(job: Job, artefacts: list[Artefact]) -> str:
+    done, total = _workspace_readiness_score(job, artefacts)
+    return f"""
+    <section class="workspace-panel workspace-utility-strip" data-ui-component="utility-strip">
+      <div class="workspace-utility-readiness">
+        <span class="workspace-ai-pill">Ready {done}/{total}</span>
+        <span class="muted">Key inputs in place for the next move.</span>
+      </div>
+      <div class="workspace-utility-actions">
+        <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+          <input type="hidden" name="output_type" value="fit_summary">
+          <button class="outline compact" type="submit">✦ Fit</button>
+        </form>
+        <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+          <input type="hidden" name="output_type" value="recommendation">
+          <button class="outline compact" type="submit">✦ Next step</button>
+        </form>
+      </div>
+    </section>
+    """
 
 
 def _next_action(job: Job) -> str:
@@ -1956,7 +1996,9 @@ def render_job_detail(
     available_artefacts: list[Artefact] | None = None,
     ai_status: str | None = None,
     ai_error: str | None = None,
+    active_section: str = "overview",
 ) -> str:
+    active_section = _normalize_workspace_section(active_section)
     events = sorted(
         job.communications,
         key=lambda event: event.occurred_at or event.created_at,
@@ -2059,6 +2101,44 @@ def render_job_detail(
       border-color: rgba(226,91,76,0.28);
     }}
     .workspace-side-card {{ padding: 16px; }}
+    .workspace-quick-actions {{
+      position: relative;
+    }}
+    .workspace-quick-trigger {{
+      align-items: center;
+      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
+      color: var(--ink);
+      cursor: pointer;
+      display: flex;
+      font-weight: 800;
+      justify-content: space-between;
+      list-style: none;
+      min-height: 46px;
+      padding: 0 16px;
+    }}
+    .workspace-quick-trigger::-webkit-details-marker {{ display: none; }}
+    .workspace-quick-actions[open] .workspace-quick-trigger {{
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
+    }}
+    .workspace-quick-panel {{
+      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.99));
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      display: grid;
+      gap: 10px;
+      left: 0;
+      margin-top: 8px;
+      padding: 16px;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      z-index: 8;
+    }}
     .workspace-back-link {{
       color: var(--muted);
       display: inline-flex;
@@ -2067,30 +2147,9 @@ def render_job_detail(
       margin-bottom: 14px;
       text-decoration: none;
     }}
-    .workspace-summary {{
-      display: grid;
-      gap: 12px;
-      grid-template-columns: 48px 1fr;
-      align-items: center;
+    .workspace-back-card {{
+      padding: 12px 16px;
     }}
-    .workspace-summary-logo {{
-      align-items: center;
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      display: inline-flex;
-      font-size: 1.2rem;
-      font-weight: 800;
-      height: 48px;
-      justify-content: center;
-      width: 48px;
-    }}
-    .workspace-summary-title {{
-      font-size: 1rem;
-      font-weight: 800;
-      margin-bottom: 4px;
-    }}
-    .workspace-summary-status {{ margin: 14px 0 10px; }}
     .workspace-anchor-nav {{
       display: grid;
       gap: 4px;
@@ -2105,6 +2164,10 @@ def render_job_detail(
       min-height: 38px;
       padding: 0 12px;
       text-decoration: none;
+    }}
+    .workspace-quick-link {{
+      background: rgba(112, 87, 232, 0.03);
+      border: 1px solid rgba(112, 87, 232, 0.08);
     }}
     .workspace-nav-link.active {{
       background: rgba(112, 87, 232, 0.08);
@@ -2155,15 +2218,8 @@ def render_job_detail(
     }}
     .workspace-center-top {{
       display: grid;
-      gap: 16px;
+      gap: 14px;
     }}
-    .workspace-page-head {{
-      align-items: center;
-      display: flex;
-      gap: 16px;
-      justify-content: space-between;
-    }}
-    .workspace-page-title {{ font-size: 1.9rem; line-height: 1.05; overflow-wrap: anywhere; }}
     .workspace-page-actions,
     .workspace-inline-actions,
     .workspace-split-actions {{
@@ -2171,16 +2227,6 @@ def render_job_detail(
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
-    }}
-    .workspace-hero-status {{
-      align-items: center;
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      display: inline-flex;
-      gap: 8px;
-      min-height: 42px;
-      padding: 0 14px;
     }}
     .button-link {{
       align-items: center;
@@ -2212,23 +2258,22 @@ def render_job_detail(
       gap: 16px;
       min-width: 0;
     }}
-    .workspace-info-grid {{
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+    .workspace-identity-head {{
+      align-items: start;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
     }}
-    .workspace-stat {{
-      border-left: 1px solid var(--line-soft);
-      display: grid;
-      gap: 6px;
-      padding-left: 16px;
+    .workspace-identity-title {{
+      font-size: 1.45rem;
+      line-height: 1.08;
+      margin: 0 0 6px;
+      overflow-wrap: anywhere;
     }}
-    .workspace-stat:first-child {{
-      border-left: 0;
-      padding-left: 0;
+    .workspace-identity-status {{
+      display: inline-flex;
+      flex-shrink: 0;
     }}
-    .workspace-stat strong {{ font-size: 1rem; overflow-wrap: anywhere; }}
-    .workspace-stat span {{ color: var(--muted); font-size: 0.78rem; }}
     .workspace-progress-card {{ display: grid; gap: 14px; padding: 18px; }}
     .workspace-progress-head {{
       align-items: center;
@@ -2342,6 +2387,20 @@ def render_job_detail(
     }}
     .workspace-subpanel h3 {{ font-size: 1rem; }}
     .workspace-detail-copy {{ display: grid; gap: 14px; }}
+    .workspace-constrained-panel {{
+      min-width: 0;
+    }}
+    .workspace-constrained-body {{
+      max-height: 260px;
+      min-width: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }}
+    .job-description-body {{
+      border-top: 1px solid #f0f1f6;
+      margin-top: 8px;
+      padding-top: 12px;
+    }}
     .workspace-chip-row, .artefact-actions {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
     .workspace-chip {{
       align-items: center;
@@ -2374,6 +2433,24 @@ def render_job_detail(
       display: flex;
       gap: 10px;
       min-height: 42px;
+      padding: 0 12px;
+    }}
+    .workspace-utility-strip {{
+      align-items: center;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      padding: 14px 16px;
+    }}
+    .workspace-utility-readiness,
+    .workspace-utility-actions {{
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    button.compact {{
+      min-height: 34px;
       padding: 0 12px;
     }}
     .workspace-ai-pill {{
@@ -2534,6 +2611,9 @@ def render_job_detail(
     .workspace-rail-panel.emphasis {{
       background: linear-gradient(180deg, rgba(246,242,255,0.98), rgba(251,249,255,0.98));
       border-color: rgba(112, 87, 232, 0.18);
+    }}
+    .ai-assessment-body {{
+      max-height: 320px;
     }}
     .workspace-help-list {{ display: grid; gap: 12px; }}
     .workspace-help-item {{
@@ -2783,7 +2863,6 @@ def render_job_detail(
     .timeline-panel ol {{ margin-top: 12px; }}
     @media (max-width: 1360px) {{
       .workspace-grid {{ grid-template-columns: 220px minmax(0, 1fr) 300px; }}
-      .workspace-info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
     }}
     @media (max-width: 1080px) {{
       .workspace-grid {{ grid-template-columns: 1fr; }}
@@ -2814,6 +2893,11 @@ def render_job_detail(
         align-items: start;
         flex-direction: column;
       }}
+      .workspace-identity-head,
+      .workspace-utility-strip {{
+        align-items: start;
+        flex-direction: column;
+      }}
       .workspace-page-actions,
       .workspace-inline-actions,
       .workspace-split-actions,
@@ -2829,6 +2913,10 @@ def render_job_detail(
       }}
       .editable-heading .editable-control {{ font-size: 1.5rem; }}
       .description-editor {{ min-height: 280px; }}
+      .workspace-constrained-body,
+      .ai-assessment-body {{
+        max-height: 220px;
+      }}
       .workspace-artefact-item,
       .workspace-local-ai-body {{
         grid-template-columns: 1fr;
@@ -2836,6 +2924,9 @@ def render_job_detail(
       .workspace-ai-menu-body {{
         position: static;
         width: 100%;
+      }}
+      .workspace-quick-panel {{
+        position: static;
       }}
       .savebar {{
         bottom: 12px;
@@ -2849,38 +2940,32 @@ def render_job_detail(
       .savebar button {{ width: 100%; }}
     }}
     """
+    section_map = {
+        "overview": _workspace_overview_section(job, ai_outputs),
+        "application": _workspace_application_section(job),
+        "interviews": _workspace_interviews_section(job),
+        "follow-ups": _workspace_follow_ups_section(job),
+        "tasks": _workspace_tasks_section(job, artefacts),
+        "notes": _workspace_notes_section(job, events, artefacts),
+        "documents": _workspace_artefacts_section(job, artefacts, available_artefacts, ai_outputs, artefact_lookup),
+    }
     body = f"""
     {(_flash_message(ai_status, tone="success") if ai_status else "")}
     {(_flash_message(ai_error, tone="error") if ai_error else "")}
-    <div class="workspace-grid v2" data-ui="job-workspace">
+    <div class="workspace-grid v2" data-ui="job-workspace" data-ui-active-section="{escape(active_section, quote=True)}">
       <aside class="workspace-left-rail" data-ui-component="left-rail">
-        {_workspace_summary_card(job, events)}
-        {_workspace_anchor_nav(job, artefacts, events)}
-        {_workspace_quick_actions(job)}
+        {_workspace_back_link_card()}
+        {_workspace_anchor_nav(job, artefacts, events, active_section)}
         {_workspace_score_card(job, artefacts)}
+        {_workspace_quick_actions(job)}
       </aside>
       <section class="workspace-center" data-ui-component="main-column">
-        <div class="workspace-center-top">
-          <div class="workspace-page-head" data-ui-component="workspace-header">
-            <div>
-              <p class="eyebrow">Job Workspace</p>
-              {_editable_title(job)}
-            </div>
-            <div class="workspace-page-actions">
-              <div class="workspace-hero-status">{_stage_pill(job.status)}<span class="muted">⌄</span></div>
-              <button class="outline" type="button" disabled>☆</button>
-              <button class="outline" type="button" disabled>⋯</button>
-            </div>
-          </div>
+        <div class="workspace-center-top" data-ui-component="workspace-frame">
+          {_workspace_identity_header(job)}
+          {_workspace_utility_strip(job, artefacts)}
         </div>
-        {_workspace_overview_section(job, ai_outputs)}
-        {_workspace_role_notes_section(job)}
-        {_workspace_artefacts_section(job, artefacts, available_artefacts, ai_outputs, artefact_lookup)}
-        {_workspace_notes_section(job, events, artefacts)}
-        {_workspace_tools_section(job, artefacts)}
-        {_workspace_application_section(job)}
-        {_workspace_interviews_section(job)}
-        {_workspace_follow_ups_section(job)}
+        {section_map[active_section]}
+        {_workspace_tools_section(job, artefacts) if active_section == "tasks" else ""}
       </section>
       {_workspace_ai_sidebar(job, ai_outputs, artefact_lookup)}
     </div>
@@ -3030,15 +3115,25 @@ def render_job_detail(
         actions=(("Add job", "/jobs/new", "add-job"),),
         body=body,
         kicker="Execution surface",
-        goal=f"<span>Company:</span> <strong>{escape(job.company or 'Not set')}</strong> | <span>{escape(job.status)}</span>",
+        goal=None,
         container="standard",
         extra_styles=extra_styles,
         scripts=scripts,
+        show_hero=False,
     )
 
 
-def _job_detail_redirect(job_uuid: str, *, ai_status: str | None = None, ai_error: str | None = None) -> str:
+def _job_detail_redirect(
+    job_uuid: str,
+    *,
+    section: str | None = None,
+    ai_status: str | None = None,
+    ai_error: str | None = None,
+) -> str:
     params = []
+    normalized_section = _normalize_workspace_section(section)
+    if normalized_section != "overview":
+        params.append(f"section={quote(normalized_section)}")
     if ai_status:
         params.append(f"ai_status={quote(ai_status)}")
     if ai_error:
@@ -3117,6 +3212,7 @@ def job_detail(
     current_user: Annotated[User, Depends(get_current_user)],
     ai_status: Annotated[str | None, Query()] = None,
     ai_error: Annotated[str | None, Query()] = None,
+    section: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     return HTMLResponse(
@@ -3125,6 +3221,7 @@ def job_detail(
             available_artefacts=list_user_unlinked_artefacts_for_job(db, current_user, job),
             ai_status=ai_status,
             ai_error=ai_error,
+            active_section=section or "overview",
         )
     )
 
@@ -3156,7 +3253,7 @@ async def edit_job_form(
     record_job_status_change(db, job, old_status=old_status, new_status=new_status)
     create_job_note(db, job, subject="Job edited", notes="Job details were updated.")
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="overview"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/jobs/{job_uuid}/artefacts/{artefact_uuid}", include_in_schema=False)
@@ -3202,7 +3299,7 @@ def create_job_note_form(
         follow_up_at=_parse_follow_up_date(follow_up_at),
     )
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="notes"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/status", include_in_schema=False)
@@ -3221,7 +3318,7 @@ def update_job_status_form(
     update_job_board_state(job, status=new_status)
     record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="application"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/mark-applied", include_in_schema=False)
@@ -3243,7 +3340,7 @@ def mark_job_applied_form(
     update_job_board_state(job, status="applied")
     record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="application"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/application-started", include_in_schema=False)
@@ -3261,7 +3358,7 @@ def mark_application_started_form(
     note_text = notes.strip() or "Started work on the external application flow."
     create_job_note(db, job, subject="Application started", notes=note_text)
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="follow-ups"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/blockers", include_in_schema=False)
@@ -3285,7 +3382,7 @@ def record_job_blocker_form(
         follow_up_at=_parse_follow_up_date(follow_up_at),
     )
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="follow-ups"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/return-note", include_in_schema=False)
@@ -3309,7 +3406,7 @@ def record_return_note_form(
         follow_up_at=_parse_follow_up_date(follow_up_at),
     )
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="follow-ups"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/ai-outputs", include_in_schema=False)
@@ -3331,13 +3428,13 @@ def create_job_ai_output_route(
     except AiExecutionError as exc:
         db.rollback()
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="overview", ai_error=str(exc)),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, ai_status="AI output generated"),
+        url=_job_detail_redirect(job.uuid, section="overview", ai_status="AI output generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3359,13 +3456,13 @@ def create_job_artefact_suggestion_route(
     except AiExecutionError as exc:
         db.rollback()
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, ai_status="Artefact suggestion generated"),
+        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Artefact suggestion generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3403,13 +3500,13 @@ def create_job_artefact_tailoring_guidance_route(
     except AiExecutionError as exc:
         db.rollback()
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, ai_status="Tailoring guidance generated"),
+        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Tailoring guidance generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3461,13 +3558,13 @@ def create_job_artefact_draft_route(
     except AiExecutionError as exc:
         db.rollback()
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, ai_status="Draft generated"),
+        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Draft generated"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3540,7 +3637,7 @@ def save_job_draft_as_artefact_route(
     }
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, ai_status="Draft saved as artefact"),
+        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Draft saved as artefact"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3579,7 +3676,7 @@ def schedule_interview_form(
         update_job_board_state(job, status="interviewing")
         record_job_status_change(db, job, old_status=old_status, new_status=job.status)
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="interviews"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/archive", include_in_schema=False)
@@ -3601,7 +3698,7 @@ def archive_job_form(
             notes=notes.strip(),
         )
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="notes"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/artefacts", include_in_schema=False)
@@ -3631,7 +3728,7 @@ def upload_job_artefact_form(
     )
     create_job_note(db, job, subject="Artefact uploaded", notes=f"Uploaded {artefact.filename}.")
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="documents"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/artefact-links", include_in_schema=False)
@@ -3648,7 +3745,7 @@ def link_existing_artefact_form(
     link_artefact_to_job(db, current_user, job, artefact)
     create_job_note(db, job, subject="Artefact attached", notes=f"Attached {artefact.filename}.")
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="documents"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/jobs/{job_uuid}/unarchive", include_in_schema=False)
@@ -3678,4 +3775,4 @@ def unarchive_job_form(
             notes=notes.strip(),
         )
     db.commit()
-    return RedirectResponse(url=f"/jobs/{job.uuid}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_job_detail_redirect(job.uuid, section="notes"), status_code=status.HTTP_303_SEE_OTHER)

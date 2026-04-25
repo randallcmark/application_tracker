@@ -937,6 +937,7 @@ def render_shell_page(
     goal: str | None = None,
     kicker: str | None = None,
     hero_variant: HeroVariant = "standard",
+    show_hero: bool = True,
 ) -> str:
     return f"""<!doctype html>
 <html lang="en">
@@ -958,7 +959,7 @@ def render_shell_page(
       {app_header(user, active=active, actions=actions, goal=goal)}
       <div class="app-content-shell {container}">
         <section class="page-main {container}">
-          {render_page_hero(title=title, subtitle=subtitle, kicker=kicker, hero_variant=hero_variant)}
+          {render_page_hero(title=title, subtitle=subtitle, kicker=kicker, hero_variant=hero_variant) if show_hero else ""}
           {body}
         </section>
         {f'<aside class="page-aside">{aside}</aside>' if aside else ""}
