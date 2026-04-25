@@ -89,15 +89,15 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert f'action="/jobs/{job_uuid}/artefacts"' in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
         assert "Next action" in response.text
-        assert "Visible AI output" in response.text
+        assert "AI Assistant" in response.text
         assert "Generate fit summary" in response.text
         assert "Suggest next step" in response.text
         assert "Suggest artefacts" in response.text
         assert "Draft tailored resume" not in response.text
         assert "Role overview" in response.text
-        assert "Application readiness" in response.text
-        assert "External workflow" in response.text
-        assert "Move status" in response.text
+        assert "Workspace tools" in response.text
+        assert "Application state and route" in response.text
+        assert "Maintenance" in response.text
         assert 'data-field="title"' in response.text
         assert 'data-field="description_raw"' in response.text
         assert 'data-field="status"' in response.text
@@ -174,6 +174,7 @@ def test_job_detail_renders_existing_ai_output(tmp_path: Path, monkeypatch) -> N
         assert "AI fit summary" in response.text
         assert "Strengths: strong systems background." in response.text
         assert "local-model" in response.text
+        assert "Overall Assessment" in response.text
     finally:
         app.dependency_overrides.clear()
 
