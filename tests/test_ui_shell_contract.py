@@ -27,6 +27,8 @@ def assert_primary_shell_contract(html: str) -> None:
     assert ">Boar</a>" not in html
     assert 'aria-label="User menu"' in html
     assert 'class="shell-topbar-action"' in html
+    assert 'class="user-menu"' in html
+    assert 'class="user-menu-panel"' in html
     assert 'data-shell-hero="shared"' in html
     assert 'data-hero-variant="standard"' in html
     assert '.app-topbar[data-chip-state="hidden"] .header-context' in html
@@ -141,5 +143,28 @@ def test_shell_responsive_contract_emits_protected_nav_rules(tmp_path: Path, mon
         assert "@media (max-width: 860px)" in response.text
         assert "overflow-x: auto;" in response.text
         assert 'setState("hidden");' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_shell_contract_pins_user_menu_as_overlay(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="overlay@example.com", password="password")
+            db.commit()
+        login(client, "overlay@example.com")
+
+        response = client.get("/inbox")
+
+        assert response.status_code == 200
+        html = response.text
+        assert ".user-menu {" in html
+        assert "position: relative;" in html
+        assert ".user-menu-panel {" in html
+        assert "position: absolute;" in html
+        assert "top: 100%;" in html
+        assert "right: 0;" in html
+        assert "z-index: 50;" in html
     finally:
         app.dependency_overrides.clear()

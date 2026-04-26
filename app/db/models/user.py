@@ -26,3 +26,4 @@ class User(IdMixin, TimestampMixin, Base):
     email_intakes = relationship("EmailIntake", back_populates="owner")
     ai_provider_settings = relationship("AiProviderSetting", back_populates="owner")
     ai_outputs = relationship("AiOutput", back_populates="owner")
+    competency_evidence = relationship("CompetencyEvidence", back_populates="owner")

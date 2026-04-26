@@ -1,6 +1,7 @@
+import base64
 import json
 import ssl
-import base64
+import re
 from urllib import error, request
 
 import certifi
@@ -100,7 +101,50 @@ def list_user_ai_outputs(db: Session, user: User) -> list[AiOutput]:
 
 
 class AiExecutionError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, diagnostics: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
+
+def _ai_debug_value(value: object) -> str | None:
+    if value in (None, "", False):
+        return None
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value).strip()
+    return text or None
+
+
+def _ai_debug_summary(exc: AiExecutionError) -> str:
+    if not exc.diagnostics:
+        return ""
+    ordered_keys = (
+        "action",
+        "provider",
+        "model",
+        "content_mode",
+        "document_attached",
+        "prompt_chars",
+        "timeout_seconds",
+        "job_uuid",
+        "artefact_uuid",
+    )
+    parts: list[str] = []
+    for key in ordered_keys:
+        value = _ai_debug_value(exc.diagnostics.get(key))
+        if value is not None:
+            parts.append(f"{key}={value}")
+    return " | ".join(parts)
+
+
+def _with_ai_diagnostics(exc: AiExecutionError, **diagnostics: object) -> AiExecutionError:
+    merged = dict(exc.diagnostics)
+    for key, value in diagnostics.items():
+        if value is not None:
+            merged[key] = value
+    return AiExecutionError(str(exc), diagnostics=merged)
 
 
 def _provider_label(setting: AiProviderSetting) -> str:
@@ -181,6 +225,16 @@ def _url_error_message(setting: AiProviderSetting, exc: error.URLError) -> str:
 def _timeout_error_message(setting: AiProviderSetting) -> str:
     provider = _provider_label(setting)
     return f"{provider} timed out before returning a response. Try again or reduce the request size."
+
+
+def _provider_timeout_seconds(
+    setting: AiProviderSetting,
+    *,
+    document_attached: bool = False,
+) -> int:
+    if setting.provider == "gemini":
+        return 60 if document_attached else 30
+    return 20
 
 
 def get_enabled_ai_provider(db: Session, user: User) -> AiProviderSetting | None:
@@ -283,17 +337,37 @@ def _build_artefact_suggestion_prompt(
     profile: UserProfile | None,
     job: Job,
     candidates: list[ArtefactCandidateSummary],
+    candidate_analyses: list[AiOutput] | None = None,
 ) -> tuple[str, str]:
     title = "AI artefact suggestion"
+    analyses_by_uuid: dict[str, AiOutput] = {}
+    for analysis in candidate_analyses or []:
+        source_context = analysis.source_context or {}
+        artefact_uuid = source_context.get("artefact_uuid")
+        if isinstance(artefact_uuid, str) and artefact_uuid:
+            analyses_by_uuid[artefact_uuid] = analysis
     if candidates:
-        candidate_block = "\n\n".join(
-            (
-                f"Candidate {index + 1}:\n"
-                f"{candidate.summary_text}\n"
-                f"Outcome signals:\n{candidate.outcome_signal_summary.summary_text}"
+        candidate_rows: list[str] = []
+        for index, candidate in enumerate(candidates):
+            analysis = analyses_by_uuid.get(candidate.artefact_uuid)
+            analysis_block = ""
+            if analysis is not None:
+                blocks: list[str] = []
+                if analysis.body:
+                    blocks.append(f"Candidate analysis {index + 1}:\n{analysis.body}")
+                index_summary = _artefact_index_summary(analysis.source_context or {})
+                if index_summary:
+                    blocks.append(f"Candidate analysis index {index + 1}:\n{index_summary}")
+                analysis_block = "\n" + "\n\n".join(blocks) if blocks else ""
+            candidate_rows.append(
+                (
+                    f"Candidate {index + 1}:\n"
+                    f"{candidate.summary_text}\n"
+                    f"Outcome signals:\n{candidate.outcome_signal_summary.summary_text}"
+                    f"{analysis_block}"
+                )
             )
-            for index, candidate in enumerate(candidates)
-        )
+        candidate_block = "\n\n".join(candidate_rows)
     else:
         candidate_block = "No existing artefacts are available for this user."
     prompt = (
@@ -347,6 +421,367 @@ def _infer_job_artefact_requirements(job: Job) -> dict[str, object]:
     }
 
 
+_SECTION_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("summary", r"\b(summary|profile|professional summary)\b"),
+    ("experience", r"\b(experience|employment|work experience|professional experience)\b"),
+    ("skills", r"\b(skills|technical skills|core skills)\b"),
+    ("education", r"\b(education|academic background)\b"),
+    ("certifications", r"\b(certifications|certificates|licenses)\b"),
+    ("projects", r"\b(projects|selected projects)\b"),
+    ("achievements", r"\b(achievements|accomplishments|key achievements)\b"),
+)
+
+_SENIORITY_TERMS: tuple[str, ...] = (
+    "staff",
+    "senior staff",
+    "principal",
+    "lead",
+    "senior",
+    "manager",
+    "director",
+    "head",
+    "vp",
+    "executive",
+)
+
+_TOOLING_DOMAIN_TERMS: tuple[str, ...] = (
+    "aws",
+    "azure",
+    "gcp",
+    "google cloud",
+    "kubernetes",
+    "terraform",
+    "gitlab",
+    "github",
+    "jira",
+    "ci/cd",
+    "distributed systems",
+    "cloud infrastructure",
+    "platform",
+    "security",
+    "devsecops",
+    "product",
+    "analytics",
+    "python",
+    "sql",
+)
+
+_ACCOMPLISHMENT_TERMS: tuple[str, ...] = (
+    "delivered",
+    "launched",
+    "increased",
+    "reduced",
+    "improved",
+    "scaled",
+    "saved",
+    "optimized",
+    "grew",
+    "built",
+    "led",
+    "drove",
+    "shipped",
+)
+
+
+def _normalise_artefact_text(
+    artefact: Artefact,
+    artefact_summary: ArtefactCandidateSummary,
+    *,
+    extracted_text: str | None,
+) -> str:
+    parts = [
+        artefact.filename or "",
+        artefact.kind or "",
+        artefact.purpose or "",
+        artefact.version_label or "",
+        artefact.notes or "",
+        artefact.outcome_context or "",
+        artefact_summary.summary_text,
+        extracted_text or "",
+    ]
+    return "\n".join(part for part in parts if part).lower()
+
+
+def _detect_artefact_sections(text: str) -> list[str]:
+    detected: list[str] = []
+    for label, pattern in _SECTION_PATTERNS:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            detected.append(label)
+    return detected
+
+
+def _estimate_accomplishment_density(text: str) -> str:
+    if not text.strip():
+        return "unknown"
+    signals = sum(1 for term in _ACCOMPLISHMENT_TERMS if term in text)
+    metric_hits = len(re.findall(r"(\d+%|\$\d+|\d+x|\d+\+)", text))
+    score = signals + metric_hits
+    if score >= 6:
+        return "high"
+    if score >= 3:
+        return "moderate"
+    return "low"
+
+
+def _extract_ranked_terms(text: str, candidates: tuple[str, ...], *, limit: int) -> list[str]:
+    found: list[str] = []
+    for term in candidates:
+        if term in text and term not in found:
+            found.append(term)
+        if len(found) >= limit:
+            break
+    return found
+
+
+def _build_requirement_coverage_hints(
+    artefact: Artefact,
+    requirement_info: dict[str, object],
+) -> list[str]:
+    required = [str(item) for item in requirement_info.get("required", []) if isinstance(item, str)]
+    optional = [str(item) for item in requirement_info.get("optional", []) if isinstance(item, str)]
+    kind = (artefact.kind or "").replace("_", " ").strip().lower()
+    hints: list[str] = []
+    if kind and kind in required:
+        hints.append(f"matches required artefact type: {kind}")
+    elif required:
+        hints.append("job requests additional artefacts beyond this baseline: " + ", ".join(required))
+    if kind and kind in optional:
+        hints.append(f"matches optional supporting artefact type: {kind}")
+    elif optional:
+        hints.append("job mentions optional supporting artefacts: " + ", ".join(optional))
+    if not hints:
+        hints.append("no explicit extra artefact requirement detected")
+    return hints[:3]
+
+
+def _build_artefact_structured_index(
+    artefact: Artefact,
+    artefact_summary: ArtefactCandidateSummary,
+    *,
+    extracted_text: str | None,
+    requirement_info: dict[str, object],
+) -> dict[str, object]:
+    text = _normalise_artefact_text(
+        artefact,
+        artefact_summary,
+        extracted_text=extracted_text,
+    )
+    return {
+        "detected_sections": _detect_artefact_sections(text),
+        "accomplishment_density": _estimate_accomplishment_density(text),
+        "seniority_indicators": _extract_ranked_terms(text, _SENIORITY_TERMS, limit=5),
+        "tooling_or_domain_mentions": _extract_ranked_terms(text, _TOOLING_DOMAIN_TERMS, limit=8),
+        "requirement_coverage_hints": _build_requirement_coverage_hints(artefact, requirement_info),
+    }
+
+
+def _artefact_index_summary(index: dict[str, object] | None) -> str:
+    if not index:
+        return ""
+    rows: list[str] = []
+    sections = index.get("detected_sections")
+    if isinstance(sections, list) and sections:
+        rows.append("Detected sections: " + ", ".join(str(item) for item in sections))
+    density = index.get("accomplishment_density")
+    if isinstance(density, str) and density:
+        rows.append("Accomplishment density: " + density)
+    seniority = index.get("seniority_indicators")
+    if isinstance(seniority, list) and seniority:
+        rows.append("Seniority indicators: " + ", ".join(str(item) for item in seniority))
+    tooling = index.get("tooling_or_domain_mentions")
+    if isinstance(tooling, list) and tooling:
+        rows.append("Tooling/domain mentions: " + ", ".join(str(item) for item in tooling))
+    hints = index.get("requirement_coverage_hints")
+    if isinstance(hints, list) and hints:
+        rows.append("Requirement coverage hints: " + "; ".join(str(item) for item in hints))
+    return "\n".join(rows)
+
+
+def _artefact_requirement_strategy_summary(
+    *,
+    artefact: Artefact | None,
+    requirement_info: dict[str, object],
+    draft_kind: str | None = None,
+) -> str:
+    required = [str(item) for item in requirement_info.get("required", []) if isinstance(item, str)]
+    optional = [str(item) for item in requirement_info.get("optional", []) if isinstance(item, str)]
+    baseline_kind = ((artefact.kind or "") if artefact is not None else "").replace("_", " ").strip().lower()
+    draft_kind_label = (draft_kind or "").replace("_draft", "").replace("_", " ").strip().lower()
+    lines: list[str] = []
+    if required:
+        lines.append("Required or explicitly requested artefacts: " + ", ".join(required))
+    else:
+        lines.append("No explicit extra artefact requirement detected in the job text.")
+    if optional:
+        lines.append("Optional or supplementary artefacts mentioned: " + ", ".join(optional))
+    if baseline_kind:
+        if baseline_kind in required:
+            lines.append(f"Selected baseline matches a required artefact type: {baseline_kind}")
+        elif required:
+            lines.append(
+                "Selected baseline does not satisfy all explicitly requested artefact types by itself; "
+                "guide the user on what should exist alongside it."
+            )
+    if draft_kind_label:
+        if draft_kind_label in required:
+            lines.append(f"The requested draft type directly satisfies one explicit job requirement: {draft_kind_label}")
+        elif required:
+            lines.append(
+                "The requested draft type should stay consistent with the explicitly requested submission pack: "
+                + ", ".join(required)
+            )
+    return "\n".join(lines)
+
+
+def _draft_evidence_allocation_summary(
+    *,
+    draft_kind: str,
+    requirement_info: dict[str, object],
+) -> str:
+    required = [str(item) for item in requirement_info.get("required", []) if isinstance(item, str)]
+    lines: list[str] = []
+    if draft_kind == "resume_draft":
+        lines.append("Keep the resume focused on concrete role-relevant evidence, impact, scope, and skills.")
+        if "supporting statement" in required:
+            lines.append(
+                "Do not overload the resume with long criteria-by-criteria narrative that belongs in the supporting statement."
+            )
+        if "cover letter" in required:
+            lines.append(
+                "Do not spend resume space on motivational opening/closing language that belongs in the cover letter."
+            )
+    elif draft_kind == "cover_letter_draft":
+        lines.append("Use the cover letter for concise role motivation, fit framing, and a small number of high-signal examples.")
+        if "supporting statement" in required:
+            lines.append(
+                "Do not turn the cover letter into a full criteria response if a supporting statement is also requested."
+            )
+    elif draft_kind == "supporting_statement_draft":
+        lines.append("Use the supporting statement for explicit criteria coverage, fuller examples, and structured narrative evidence.")
+        lines.append("Do not merely repeat resume bullets; expand them into context, actions, and outcomes where relevant.")
+    elif draft_kind == "attestation_draft":
+        lines.append("Keep the attestation factual and declarative, using concise supporting evidence rather than broad narrative.")
+    return "\n".join(lines)
+
+
+def _draft_section_emphasis_summary(
+    *,
+    draft_kind: str,
+    artefact_analysis: AiOutput | None,
+) -> str:
+    if artefact_analysis is None:
+        return ""
+    source_context = artefact_analysis.source_context or {}
+    sections = source_context.get("detected_sections")
+    accomplishment_density = source_context.get("accomplishment_density")
+    seniority = source_context.get("seniority_indicators")
+    tooling = source_context.get("tooling_or_domain_mentions")
+
+    section_list = [str(item) for item in sections] if isinstance(sections, list) else []
+    seniority_list = [str(item) for item in seniority] if isinstance(seniority, list) else []
+    tooling_list = [str(item) for item in tooling] if isinstance(tooling, list) else []
+
+    lines: list[str] = []
+    if draft_kind == "resume_draft":
+        if accomplishment_density == "high":
+            lines.append("Foreground quantified outcomes and impact bullets in the main evidence sections.")
+        elif accomplishment_density in {"low", "unknown"}:
+            lines.append("Keep claims restrained where quantified outcomes are thin; avoid overstating impact.")
+        if "summary" in section_list:
+            lines.append("Preserve a concise professional summary rather than expanding it into a long narrative block.")
+        if "experience" in section_list:
+            lines.append("Keep the experience section focused on the strongest role-relevant delivery evidence.")
+        if "skills" in section_list and tooling_list:
+            lines.append("Use the skills area to foreground the strongest relevant tooling/domain terms: " + ", ".join(tooling_list[:4]))
+        elif "skills" in section_list:
+            lines.append("Use the skills area to foreground the strongest role-relevant tools and domains.")
+    elif draft_kind == "cover_letter_draft":
+        if seniority_list:
+            lines.append("Use the role-fit section to foreground seniority signals such as " + ", ".join(seniority_list[:3]) + ".")
+        if accomplishment_density in {"low", "unknown"}:
+            lines.append("Keep example claims brief and careful where outcome evidence is limited.")
+    elif draft_kind == "supporting_statement_draft":
+        if accomplishment_density == "high":
+            lines.append("Expand the strongest evidence into fuller STAR-style or criteria-led examples.")
+        if tooling_list:
+            lines.append("Thread the most relevant tooling/domain terms into the example sections: " + ", ".join(tooling_list[:4]))
+    elif draft_kind == "attestation_draft":
+        lines.append("Keep section content compact and factual; do not expand into multi-paragraph narrative unless the evidence clearly supports it.")
+
+    return "\n".join(lines)
+
+
+def _evidence_phrasing_guidance(
+    *,
+    artefact_analysis: AiOutput | None,
+    content_mode: str,
+    context_kind: str,
+) -> str:
+    source_context = artefact_analysis.source_context or {} if artefact_analysis is not None else {}
+    accomplishment_density = source_context.get("accomplishment_density")
+    sections = source_context.get("detected_sections")
+    section_list = [str(item) for item in sections] if isinstance(sections, list) else []
+
+    lines: list[str] = [
+        "Prefer direct, specific claims that are supported by the baseline artefact or verified analysis context.",
+        "Do not invent quantified outcomes, scope, tools, or seniority signals that are not evidenced.",
+    ]
+    if content_mode == "metadata_only":
+        lines.append(
+            "Because verified document text is unavailable, keep phrasing cautious and avoid implying exact wording or evidence that has not been seen."
+        )
+    elif content_mode == "provider_document":
+        lines.append(
+            "Treat the provider-readable document as the primary source of truth, but still avoid inflating vague responsibility statements into unsupported achievements."
+        )
+    else:
+        lines.append("Use the verified extracted text as the anchor for any stronger wording.")
+
+    if accomplishment_density == "high":
+        lines.append("Where the source clearly supports outcomes, use confident but precise impact phrasing.")
+    elif accomplishment_density == "moderate":
+        lines.append("Blend outcome language with role-scope language; do not overstate impact where the evidence is mixed.")
+    else:
+        lines.append("Where evidence is thin or mostly responsibility-based, use measured wording and mark gaps explicitly instead of polishing them into strengths.")
+
+    if "achievements" not in section_list and "projects" not in section_list and context_kind == "draft":
+        lines.append("Do not force an achievements-heavy tone if the baseline appears to rely more on experience/responsibility structure than explicit achievement sections.")
+    return "\n".join(lines)
+
+
+def _submission_pack_coordination_summary(
+    *,
+    draft_kind: str | None,
+    requirement_info: dict[str, object],
+) -> str:
+    required = [str(item) for item in requirement_info.get("required", []) if isinstance(item, str)]
+    optional = [str(item) for item in requirement_info.get("optional", []) if isinstance(item, str)]
+    lines: list[str] = []
+    if required:
+        lines.append("Explicit submission pack requirements: " + ", ".join(required))
+    if optional:
+        lines.append("Optional or supplementary pack elements: " + ", ".join(optional))
+    if not required and not optional:
+        lines.append("No multi-document requirement is explicit in the job text; keep the submission pack focused and avoid unnecessary duplication.")
+    if draft_kind == "resume_draft":
+        if "cover letter" in required:
+            lines.append("Keep motivation and narrative framing out of the resume when a cover letter is also part of the pack.")
+        if "supporting statement" in required:
+            lines.append("Leave longer criteria-by-criteria explanation to the supporting statement and keep the resume evidence-led.")
+    elif draft_kind == "cover_letter_draft":
+        if "supporting statement" in required:
+            lines.append("Use the cover letter for concise framing and reserve fuller criteria evidence for the supporting statement.")
+        if "resume" in required or not required:
+            lines.append("Do not duplicate the resume bullet structure; use the letter to connect the evidence to role motivation.")
+    elif draft_kind == "supporting_statement_draft":
+        lines.append("Use this document to carry the densest requirement-by-requirement evidence so the other documents can stay tighter.")
+    elif draft_kind == "attestation_draft":
+        lines.append("Keep this document factual and supportive of the wider pack rather than repeating the narrative from other artefacts.")
+    else:
+        lines.append("Coordinate the submission pack so each artefact carries a distinct job-appropriate role.")
+    return "\n".join(lines)
+
+
 def _prepare_artefact_analysis_context(
     artefact: Artefact,
     *,
@@ -371,6 +806,7 @@ def _build_artefact_analysis_prompt(
     content_mode: str,
     extracted_text: str | None = None,
     requirement_summary: str,
+    structured_index: dict[str, object] | None = None,
 ) -> tuple[str, str]:
     title = "AI artefact analysis"
     content_block = "Verified artefact text is unavailable. Analyze from metadata and job context only."
@@ -378,6 +814,10 @@ def _build_artefact_analysis_prompt(
         content_block = f"Verified extracted artefact text:\n{extracted_text}"
     elif content_mode == "provider_document":
         content_block = "A provider-readable document payload is attached. Use it as the primary artefact content source."
+    structured_index_block = ""
+    index_summary = _artefact_index_summary(structured_index)
+    if index_summary:
+        structured_index_block = f"\n\nPrecomputed structured signals:\n{index_summary}"
     prompt = (
         "Analyze one artefact against one job. "
         "Use markdown sections titled 'Artefact type and structure', 'What this artefact emphasizes', "
@@ -393,6 +833,7 @@ def _build_artefact_analysis_prompt(
         f"Outcome signals:\n{artefact_summary.outcome_signal_summary.summary_text}\n\n"
         f"Content mode: {content_mode}\n"
         f"{content_block}"
+        f"{structured_index_block}"
     )
     return title, prompt
 
@@ -405,14 +846,44 @@ def _build_artefact_tailoring_prompt(
     artefact_summary: ArtefactCandidateSummary,
     extracted_text: str | None = None,
     prior_suggestion: AiOutput | None = None,
+    artefact_analysis: AiOutput | None = None,
+    requirement_strategy_summary: str | None = None,
+    evidence_phrasing_summary: str | None = None,
+    submission_pack_coordination_summary: str | None = None,
+    generation_brief_summary: str | None = None,
 ) -> tuple[str, str]:
     title = "AI tailoring guidance"
     prior_context = ""
     if prior_suggestion is not None and prior_suggestion.body:
         prior_context = f"\n\nPrior artefact suggestion:\n{prior_suggestion.body}"
+    analysis_context = ""
+    if artefact_analysis is not None:
+        analysis_parts: list[str] = []
+        if artefact_analysis.body:
+            analysis_parts.append(f"Artefact analysis:\n{artefact_analysis.body}")
+        index_summary = _artefact_index_summary(artefact_analysis.source_context or {})
+        if index_summary:
+            analysis_parts.append(f"Artefact analysis index:\n{index_summary}")
+        analysis_context = "\n\n" + "\n\n".join(analysis_parts) if analysis_parts else ""
     extracted_text_block = ""
     if extracted_text:
         extracted_text_block = f"\n\nExtracted artefact text (verified excerpt):\n{extracted_text}"
+    requirement_strategy_block = ""
+    if requirement_strategy_summary:
+        requirement_strategy_block = f"\n\nSubmission strategy:\n{requirement_strategy_summary}"
+    evidence_phrasing_block = ""
+    if evidence_phrasing_summary:
+        evidence_phrasing_block = f"\n\nEvidence phrasing guidance:\n{evidence_phrasing_summary}"
+    pack_coordination_block = ""
+    if submission_pack_coordination_summary:
+        pack_coordination_block = f"\n\nSubmission pack coordination:\n{submission_pack_coordination_summary}"
+    generation_brief_block = ""
+    if generation_brief_summary:
+        generation_brief_block = (
+            "\n\nUser generation brief:\n"
+            f"{generation_brief_summary}\n"
+            "Use this brief to shape emphasis and tone, but do not invent evidence or claims that are not supported."
+        )
     prompt = (
         "You are providing tailoring guidance for one selected artefact against one job. "
         "Use markdown sections titled 'Keep', 'Strengthen', 'De-emphasise or remove', "
@@ -424,7 +895,7 @@ def _build_artefact_tailoring_prompt(
         f"Job:\n{_job_context(job)}\n\n"
         f"Selected artefact:\n{artefact_summary.summary_text}\n"
         f"Outcome signals:\n{artefact_summary.outcome_signal_summary.summary_text}"
-        f"{extracted_text_block}{prior_context}"
+        f"{analysis_context}{requirement_strategy_block}{pack_coordination_block}{evidence_phrasing_block}{generation_brief_block}{extracted_text_block}{prior_context}"
     )
     return title, prompt
 
@@ -485,6 +956,13 @@ def _build_artefact_draft_prompt(
     extracted_text: str | None = None,
     tailoring_guidance: AiOutput | None = None,
     prior_suggestion: AiOutput | None = None,
+    artefact_analysis: AiOutput | None = None,
+    requirement_strategy_summary: str | None = None,
+    evidence_allocation_summary: str | None = None,
+    section_emphasis_summary: str | None = None,
+    evidence_phrasing_summary: str | None = None,
+    submission_pack_coordination_summary: str | None = None,
+    generation_brief_summary: str | None = None,
 ) -> tuple[str, str]:
     title, instruction = _draft_request(draft_kind)
     content_block = "Baseline artefact content is unavailable. Reason from metadata only."
@@ -496,6 +974,37 @@ def _build_artefact_draft_prompt(
     prior_block = ""
     if prior_suggestion is not None and prior_suggestion.body:
         prior_block = f"\n\nPrior artefact suggestion:\n{prior_suggestion.body}"
+    analysis_block = ""
+    if artefact_analysis is not None:
+        analysis_parts: list[str] = []
+        if artefact_analysis.body:
+            analysis_parts.append(f"Artefact analysis:\n{artefact_analysis.body}")
+        index_summary = _artefact_index_summary(artefact_analysis.source_context or {})
+        if index_summary:
+            analysis_parts.append(f"Artefact analysis index:\n{index_summary}")
+        analysis_block = "\n\n" + "\n\n".join(analysis_parts) if analysis_parts else ""
+    requirement_strategy_block = ""
+    if requirement_strategy_summary:
+        requirement_strategy_block = f"\n\nSubmission strategy:\n{requirement_strategy_summary}"
+    evidence_allocation_block = ""
+    if evidence_allocation_summary:
+        evidence_allocation_block = f"\n\nEvidence allocation guidance:\n{evidence_allocation_summary}"
+    section_emphasis_block = ""
+    if section_emphasis_summary:
+        section_emphasis_block = f"\n\nSection emphasis guidance:\n{section_emphasis_summary}"
+    evidence_phrasing_block = ""
+    if evidence_phrasing_summary:
+        evidence_phrasing_block = f"\n\nEvidence phrasing guidance:\n{evidence_phrasing_summary}"
+    pack_coordination_block = ""
+    if submission_pack_coordination_summary:
+        pack_coordination_block = f"\n\nSubmission pack coordination:\n{submission_pack_coordination_summary}"
+    generation_brief_block = ""
+    if generation_brief_summary:
+        generation_brief_block = (
+            "\n\nUser generation brief:\n"
+            f"{generation_brief_summary}\n"
+            "Use this brief to shape emphasis and tone, but do not invent evidence or claims that are not supported."
+        )
     prompt = (
         f"{instruction}\n\n"
         f"User profile:\n{_profile_context(profile)}\n\n"
@@ -504,10 +1013,47 @@ def _build_artefact_draft_prompt(
         f"Outcome signals:\n{artefact_summary.outcome_signal_summary.summary_text}\n\n"
         f"Content mode: {content_mode}\n"
         f"{content_block}"
+        f"{analysis_block}"
+        f"{requirement_strategy_block}"
+        f"{pack_coordination_block}"
+        f"{evidence_allocation_block}"
+        f"{section_emphasis_block}"
+        f"{evidence_phrasing_block}"
+        f"{generation_brief_block}"
         f"{tailoring_block}"
         f"{prior_block}"
     )
     return title, prompt
+
+
+def _normalize_generation_brief(generation_brief: dict[str, str] | None) -> dict[str, str] | None:
+    if not generation_brief:
+        return None
+    cleaned = {
+        key: value.strip()
+        for key, value in generation_brief.items()
+        if isinstance(value, str) and value.strip()
+    }
+    return cleaned or None
+
+
+def _generation_brief_summary(generation_brief: dict[str, str] | None) -> str | None:
+    cleaned = _normalize_generation_brief(generation_brief)
+    if cleaned is None:
+        return None
+    labels = {
+        "focus_areas": "Focus areas",
+        "must_include": "Must include",
+        "avoid": "Avoid or de-emphasise",
+        "tone": "Tone or positioning",
+        "extra_context": "Extra context",
+    }
+    lines = []
+    for key in ("focus_areas", "must_include", "avoid", "tone", "extra_context"):
+        value = cleaned.get(key)
+        if value:
+            lines.append(f"- {labels[key]}: {value}")
+    return "\n".join(lines) if lines else None
 
 
 def _infer_missing_artefacts(job: Job) -> list[str]:
@@ -608,7 +1154,7 @@ def _call_openai_compatible(setting: AiProviderSetting, prompt: str) -> str:
     )
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     try:
-        with request.urlopen(req, timeout=20, context=ssl_context) as response:
+        with request.urlopen(req, timeout=_provider_timeout_seconds(setting), context=ssl_context) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         raise AiExecutionError(_http_error_message(setting, exc)) from exc
@@ -658,7 +1204,7 @@ def _call_openai(setting: AiProviderSetting, prompt: str) -> str:
     )
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     try:
-        with request.urlopen(req, timeout=20, context=ssl_context) as response:
+        with request.urlopen(req, timeout=_provider_timeout_seconds(setting), context=ssl_context) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         raise AiExecutionError(_http_error_message(setting, exc)) from exc
@@ -736,7 +1282,11 @@ def _call_gemini(
     )
     ssl_context = ssl.create_default_context(cafile=certifi.where())
     try:
-        with request.urlopen(req, timeout=20, context=ssl_context) as response:
+        with request.urlopen(
+            req,
+            timeout=_provider_timeout_seconds(setting, document_attached=document is not None),
+            context=ssl_context,
+        ) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         raise AiExecutionError(_http_error_message(setting, exc)) from exc
@@ -767,16 +1317,34 @@ def _execute_prompt(
     prompt: str,
     *,
     document: dict[str, object] | None = None,
+    action: str | None = None,
+    content_mode: str | None = None,
+    job_uuid: str | None = None,
+    artefact_uuid: str | None = None,
 ) -> str:
-    if setting.provider == "openai_compatible":
-        return _call_openai_compatible(setting, prompt)
-    if setting.provider == "gemini":
-        return _call_gemini(setting, prompt, document=document)
-    if setting.provider == "openai":
-        return _call_openai(setting, prompt)
-    raise AiExecutionError(
-        "Anthropic execution is not implemented yet. Use OpenAI, Gemini, or an OpenAI-compatible endpoint."
-    )
+    try:
+        if setting.provider == "openai_compatible":
+            return _call_openai_compatible(setting, prompt)
+        if setting.provider == "gemini":
+            return _call_gemini(setting, prompt, document=document)
+        if setting.provider == "openai":
+            return _call_openai(setting, prompt)
+        raise AiExecutionError(
+            "Anthropic execution is not implemented yet. Use OpenAI, Gemini, or an OpenAI-compatible endpoint."
+        )
+    except AiExecutionError as exc:
+        raise _with_ai_diagnostics(
+            exc,
+            action=action,
+            provider=setting.provider,
+            model=setting.model_name,
+            content_mode=content_mode,
+            document_attached=document is not None,
+            prompt_chars=len(prompt),
+            timeout_seconds=_provider_timeout_seconds(setting, document_attached=document is not None),
+            job_uuid=job_uuid,
+            artefact_uuid=artefact_uuid,
+        ) from exc
 
 
 def generate_job_ai_output(
@@ -798,7 +1366,12 @@ def generate_job_ai_output(
         job=job,
         surface=surface,
     )
-    body = _execute_prompt(setting, prompt)
+    body = _execute_prompt(
+        setting,
+        prompt,
+        action=output_type,
+        job_uuid=job.uuid,
+    )
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -858,12 +1431,38 @@ def generate_job_artefact_suggestion(
     if setting is None:
         raise AiExecutionError("Enable an AI provider in Settings before generating AI output")
 
+    analysis_targets = {candidate.artefact_uuid for candidate in candidates[:3]}
+    artefacts = list(
+        db.scalars(
+            select(Artefact).where(
+                Artefact.owner_user_id == user.id,
+                Artefact.uuid.in_(analysis_targets),
+            )
+        )
+    )
+    analyses = [
+        build_job_artefact_analysis(
+            db,
+            user,
+            job,
+            artefact,
+            profile=profile,
+            persist=False,
+        )
+        for artefact in artefacts
+    ]
     title, prompt = _build_artefact_suggestion_prompt(
         profile=profile,
         job=job,
         candidates=candidates,
+        candidate_analyses=analyses,
     )
-    body = _execute_prompt(setting, prompt)
+    body = _execute_prompt(
+        setting,
+        prompt,
+        action="artefact_suggestion",
+        job_uuid=job.uuid,
+    )
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -907,6 +1506,12 @@ def build_job_artefact_analysis(
         artefact,
         setting=setting,
     )
+    structured_index = _build_artefact_structured_index(
+        artefact,
+        artefact_summary,
+        extracted_text=extracted_text,
+        requirement_info=requirement_info,
+    )
     title, prompt = _build_artefact_analysis_prompt(
         profile=profile,
         job=job,
@@ -914,8 +1519,17 @@ def build_job_artefact_analysis(
         content_mode=content_mode,
         extracted_text=extracted_text,
         requirement_summary=str(requirement_info["summary_text"]),
+        structured_index=structured_index,
     )
-    body = _execute_prompt(setting, prompt, document=document_payload)
+    body = _execute_prompt(
+        setting,
+        prompt,
+        document=document_payload,
+        action="artefact_analysis",
+        content_mode=content_mode,
+        job_uuid=job.uuid,
+        artefact_uuid=artefact.uuid,
+    )
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -936,6 +1550,12 @@ def build_job_artefact_analysis(
             "inferred_requirement_summary": requirement_info["summary_text"],
             "required_artefact_types": requirement_info["required"],
             "optional_artefact_types": requirement_info["optional"],
+            "structured_analysis_v": 1,
+            "detected_sections": structured_index["detected_sections"],
+            "accomplishment_density": structured_index["accomplishment_density"],
+            "seniority_indicators": structured_index["seniority_indicators"],
+            "tooling_or_domain_mentions": structured_index["tooling_or_domain_mentions"],
+            "requirement_coverage_hints": structured_index["requirement_coverage_hints"],
         },
     )
     if persist:
@@ -970,10 +1590,22 @@ def generate_job_artefact_tailoring_guidance(
     *,
     profile: UserProfile | None = None,
     prior_suggestion: AiOutput | None = None,
+    generation_brief: dict[str, str] | None = None,
 ) -> AiOutput:
     artefact_summary = summarise_artefact_for_ai(artefact, current_job=job)
     extracted_text = load_artefact_text_excerpt(artefact)
     used_extracted_text = bool(extracted_text)
+    requirement_info = _infer_job_artefact_requirements(job)
+    requirement_strategy_summary = _artefact_requirement_strategy_summary(
+        artefact=artefact,
+        requirement_info=requirement_info,
+    )
+    submission_pack_coordination_summary = _submission_pack_coordination_summary(
+        draft_kind=None,
+        requirement_info=requirement_info,
+    )
+    generation_brief = _normalize_generation_brief(generation_brief)
+    generation_brief_summary = _generation_brief_summary(generation_brief)
     if artefact_summary.metadata_quality == "thin" and not used_extracted_text:
         output = AiOutput(
             owner_user_id=user.id,
@@ -999,6 +1631,7 @@ def generate_job_artefact_tailoring_guidance(
                 "metadata_quality": artefact_summary.metadata_quality,
                 "local_fallback": True,
                 "draft_handoff_contract": "artefact_draft_seed_v1",
+                "generation_brief": generation_brief,
                 **(
                     {"artefact_suggestion_output_id": prior_suggestion.id}
                     if prior_suggestion is not None
@@ -1014,6 +1647,19 @@ def generate_job_artefact_tailoring_guidance(
     if setting is None:
         raise AiExecutionError("Enable an AI provider in Settings before generating AI output")
 
+    artefact_analysis = build_job_artefact_analysis(
+        db,
+        user,
+        job,
+        artefact,
+        profile=profile,
+        persist=False,
+    )
+    evidence_phrasing_summary = _evidence_phrasing_guidance(
+        artefact_analysis=artefact_analysis,
+        content_mode="extracted_text" if used_extracted_text else "metadata_only",
+        context_kind="tailoring",
+    )
     title, prompt = _build_artefact_tailoring_prompt(
         profile=profile,
         job=job,
@@ -1021,8 +1667,20 @@ def generate_job_artefact_tailoring_guidance(
         artefact_summary=artefact_summary,
         extracted_text=extracted_text,
         prior_suggestion=prior_suggestion,
+        artefact_analysis=artefact_analysis,
+        requirement_strategy_summary=requirement_strategy_summary,
+        evidence_phrasing_summary=evidence_phrasing_summary,
+        submission_pack_coordination_summary=submission_pack_coordination_summary,
+        generation_brief_summary=generation_brief_summary,
     )
-    body = _execute_prompt(setting, prompt)
+    body = _execute_prompt(
+        setting,
+        prompt,
+        action="tailoring_guidance",
+        content_mode="extracted_text" if used_extracted_text else "metadata_only",
+        job_uuid=job.uuid,
+        artefact_uuid=artefact.uuid,
+    )
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -1042,6 +1700,10 @@ def generate_job_artefact_tailoring_guidance(
             "used_extracted_text": used_extracted_text,
             "metadata_quality": artefact_summary.metadata_quality,
             "draft_handoff_contract": "artefact_draft_seed_v1",
+            "inferred_requirement_summary": requirement_info["summary_text"],
+            "required_artefact_types": requirement_info["required"],
+            "optional_artefact_types": requirement_info["optional"],
+            "generation_brief": generation_brief,
         },
     )
     db.add(output)
@@ -1059,6 +1721,7 @@ def generate_job_artefact_draft(
     profile: UserProfile | None = None,
     tailoring_guidance: AiOutput | None = None,
     prior_suggestion: AiOutput | None = None,
+    generation_brief: dict[str, str] | None = None,
 ) -> AiOutput:
     setting = get_enabled_ai_provider(db, user)
     if setting is None:
@@ -1066,6 +1729,20 @@ def generate_job_artefact_draft(
 
     artefact_summary = summarise_artefact_for_ai(artefact, current_job=job)
     extracted_text = load_artefact_text_excerpt(artefact)
+    requirement_info = _infer_job_artefact_requirements(job)
+    requirement_strategy_summary = _artefact_requirement_strategy_summary(
+        artefact=artefact,
+        requirement_info=requirement_info,
+        draft_kind=draft_kind,
+    )
+    evidence_allocation_summary = _draft_evidence_allocation_summary(
+        draft_kind=draft_kind,
+        requirement_info=requirement_info,
+    )
+    submission_pack_coordination_summary = _submission_pack_coordination_summary(
+        draft_kind=draft_kind,
+        requirement_info=requirement_info,
+    )
     document_payload = None
     content_mode = "extracted_text" if extracted_text else "metadata_only"
     if extracted_text is None and setting.provider == "gemini":
@@ -1074,6 +1751,25 @@ def generate_job_artefact_draft(
             mime_type, raw = provider_document
             document_payload = {"mime_type": mime_type, "data": raw}
             content_mode = "provider_document"
+    artefact_analysis = build_job_artefact_analysis(
+        db,
+        user,
+        job,
+        artefact,
+        profile=profile,
+        persist=False,
+    )
+    generation_brief = _normalize_generation_brief(generation_brief)
+    generation_brief_summary = _generation_brief_summary(generation_brief)
+    section_emphasis_summary = _draft_section_emphasis_summary(
+        draft_kind=draft_kind,
+        artefact_analysis=artefact_analysis,
+    )
+    evidence_phrasing_summary = _evidence_phrasing_guidance(
+        artefact_analysis=artefact_analysis,
+        content_mode=content_mode,
+        context_kind="draft",
+    )
     title, prompt = _build_artefact_draft_prompt(
         profile=profile,
         job=job,
@@ -1083,8 +1779,23 @@ def generate_job_artefact_draft(
         extracted_text=extracted_text,
         tailoring_guidance=tailoring_guidance,
         prior_suggestion=prior_suggestion,
+        artefact_analysis=artefact_analysis,
+        requirement_strategy_summary=requirement_strategy_summary,
+        evidence_allocation_summary=evidence_allocation_summary,
+        section_emphasis_summary=section_emphasis_summary,
+        evidence_phrasing_summary=evidence_phrasing_summary,
+        submission_pack_coordination_summary=submission_pack_coordination_summary,
+        generation_brief_summary=generation_brief_summary,
     )
-    body = _execute_prompt(setting, prompt, document=document_payload)
+    body = _execute_prompt(
+        setting,
+        prompt,
+        document=document_payload,
+        action=draft_kind,
+        content_mode=content_mode,
+        job_uuid=job.uuid,
+        artefact_uuid=artefact.uuid,
+    )
     output = AiOutput(
         owner_user_id=user.id,
         job_id=job.id,
@@ -1107,6 +1818,10 @@ def generate_job_artefact_draft(
             "metadata_quality": artefact_summary.metadata_quality,
             "tailoring_guidance_output_id": tailoring_guidance.id if tailoring_guidance is not None else None,
             "artefact_suggestion_output_id": prior_suggestion.id if prior_suggestion is not None else None,
+            "inferred_requirement_summary": requirement_info["summary_text"],
+            "required_artefact_types": requirement_info["required"],
+            "optional_artefact_types": requirement_info["optional"],
+            "generation_brief": generation_brief,
         },
     )
     db.add(output)

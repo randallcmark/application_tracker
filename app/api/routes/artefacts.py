@@ -22,6 +22,7 @@ router = APIRouter(tags=["artefacts"])
 
 _DRAFT_OUTPUT_ID_RE = re.compile(r"Saved from AI draft output #(\d+)\.")
 _BASELINE_UUID_RE = re.compile(r"Baseline artefact UUID: ([0-9a-f-]+)\.")
+_GENERATION_BRIEF_RE = re.compile(r"Generation brief: (.+?)\.")
 
 
 def _value(value: object) -> str:
@@ -61,6 +62,9 @@ def _artefact_provenance(artefact: Artefact, artefact_lookup: dict[str, Artefact
             )
         else:
             items.append(f"<li>Baseline artefact UUID: {escape(baseline_uuid)}</li>")
+    brief_match = _GENERATION_BRIEF_RE.search(notes)
+    if brief_match:
+        items.append(f"<li>Generation brief: {escape(brief_match.group(1))}</li>")
     if not items:
         return ""
     return (

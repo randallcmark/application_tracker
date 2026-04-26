@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
+import logging
 import re
 from typing import Annotated
 from urllib.parse import quote
@@ -22,6 +23,7 @@ from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.ai import (
     AiExecutionError,
+    _ai_debug_summary,
     generate_job_artefact_analysis,
     generate_job_ai_output,
     generate_job_artefact_draft,
@@ -51,6 +53,7 @@ from app.services.profiles import get_user_profile
 from app.storage.provider import get_storage_provider
 
 router = APIRouter(tags=["job-detail"])
+logger = logging.getLogger(__name__)
 
 
 def _value(value: object) -> str:
@@ -640,7 +643,7 @@ def _artefact_analysis_links(
         requirement_note = f"<p class=\"muted\">{escape(requirement_summary)}</p>"
     return (
         '<div class="ai-output-links">'
-        '<p class="muted">Analyzed artefact</p>'
+        '<p class="muted">Analysed artefact</p>'
         '<ul>'
         f'<li><a href="/artefacts/{escape(artefact.uuid, quote=True)}/download">{escape(artefact.filename)}</a>'
         f' <span class="muted">({escape(artefact.kind)})</span>{content_note}</li>'
@@ -753,12 +756,33 @@ def _ai_actions(job: Job) -> str:
     """
 
 
-def _flash_message(message: str, *, tone: str) -> str:
+def _flash_message(message: str, *, tone: str, detail: str | None = None) -> str:
+    detail_html = f'<p class="flash-detail">{escape(detail)}</p>' if detail else ""
     return f"""
     <section class="workspace-panel flash flash-{escape(tone, quote=True)}">
       <p>{escape(message)}</p>
+      {detail_html}
     </section>
     """
+
+
+def _log_ai_route_error(
+    *,
+    route_action: str,
+    section: str,
+    job: Job,
+    exc: AiExecutionError,
+) -> str | None:
+    debug_detail = _ai_debug_summary(exc) or None
+    logger.warning(
+        "AI action failed: route_action=%s section=%s job_uuid=%s error=%s diagnostics=%s",
+        route_action,
+        section,
+        job.uuid,
+        str(exc),
+        exc.diagnostics,
+    )
+    return debug_detail
 
 
 def _artefact(job: Job, artefact: Artefact) -> str:
@@ -1243,9 +1267,9 @@ def _workspace_application_section(job: Job) -> str:
     </div>
     """
     body = f"""
-    <div class="workspace-two-up">
+    <div class="workspace-two-up" data-ui-component="application-workbench">
       <div class="workspace-subpanel">
-        <h3>What this opportunity is</h3>
+        <h3>Submission essentials</h3>
         <dl class="overview-grid">
           {_editable_text("Company", "company", job.company)}
           {_editable_text("Location", "location", job.location)}
@@ -1256,7 +1280,7 @@ def _workspace_application_section(job: Job) -> str:
         </dl>
       </div>
       <div class="workspace-subpanel">
-        <h3>Workflow</h3>
+        <h3>Workflow route</h3>
         <dl>
           {_editable_select("Status", "status", job.status)}
           {_field("Board position", job.board_position)}
@@ -1268,15 +1292,15 @@ def _workspace_application_section(job: Job) -> str:
     </div>
     <div class="workspace-three-up">
       <div class="workspace-subpanel">
-        <h3>Applications</h3>
+        <h3>Submission history</h3>
         {_applications(job.applications)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Move status</h3>
+        <h3>Advance state</h3>
         {_status_transition_form(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Mark applied</h3>
+        <h3>Record submission</h3>
         {_mark_applied_form(job)}
       </div>
     </div>
@@ -1284,7 +1308,7 @@ def _workspace_application_section(job: Job) -> str:
     return _workspace_section(
         section_id="application",
         kicker="Application",
-        title="Application state and route",
+        title="Submission route",
         body=body,
         actions=actions,
     )
@@ -1318,8 +1342,148 @@ def _latest_artefact_ai_output(outputs: list[AiOutput], artefacts: list[Artefact
     return None
 
 
-def _artefact_local_ai_workspace(job: Job, output: AiOutput | None, artefact_lookup: dict[str, Artefact]) -> str:
-    if output is None:
+def _normalize_local_ai_tab(value: str | None) -> str | None:
+    valid = {"analyse", "tailor", "draft", "compare"}
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in valid else None
+
+
+def _normalize_generation_brief_action(value: str | None) -> str | None:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in {"tailor", "draft"} else None
+
+
+def _normalize_draft_kind(value: str | None) -> str:
+    normalized = (value or "").strip()
+    if normalized in {
+        "resume_draft",
+        "cover_letter_draft",
+        "supporting_statement_draft",
+        "attestation_draft",
+    }:
+        return normalized
+    return "resume_draft"
+
+
+def _generation_brief_fields(
+    *,
+    focus_areas: str = "",
+    must_include: str = "",
+    avoid: str = "",
+    tone: str = "",
+    extra_context: str = "",
+) -> dict[str, str]:
+    return {
+        "focus_areas": focus_areas,
+        "must_include": must_include,
+        "avoid": avoid,
+        "tone": tone,
+        "extra_context": extra_context,
+    }
+
+
+def _generation_brief_summary(source_context: dict[str, object] | None) -> str:
+    if not source_context:
+        return ""
+    brief = source_context.get("generation_brief")
+    if not isinstance(brief, dict):
+        return ""
+    labels = {
+        "focus_areas": "Focus",
+        "must_include": "Must include",
+        "avoid": "Avoid",
+        "tone": "Tone",
+        "extra_context": "Context",
+    }
+    parts = []
+    for key in ("focus_areas", "must_include", "avoid", "tone", "extra_context"):
+        value = brief.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(f"{labels[key]}: {value.strip()}")
+    if not parts:
+        return ""
+    return '<p class="muted">Brief used: ' + " | ".join(escape(part) for part in parts) + "</p>"
+
+
+def _generation_brief_items(source_context: dict[str, object] | None) -> list[tuple[str, str]]:
+    if not source_context:
+        return []
+    brief = source_context.get("generation_brief")
+    if not isinstance(brief, dict):
+        return []
+    labels = {
+        "focus_areas": "Focus areas",
+        "must_include": "Must include",
+        "avoid": "Avoid or de-emphasise",
+        "tone": "Tone or positioning",
+        "extra_context": "Extra context",
+    }
+    items: list[tuple[str, str]] = []
+    for key in ("focus_areas", "must_include", "avoid", "tone", "extra_context"):
+        value = brief.get(key)
+        if isinstance(value, str) and value.strip():
+            items.append((labels[key], value.strip()))
+    return items
+
+
+def _local_ai_metadata_panel(output: AiOutput, source_context: dict[str, object]) -> str:
+    metadata_rows: list[str] = []
+    prompt_contract = source_context.get("prompt_contract")
+    if isinstance(prompt_contract, str) and prompt_contract:
+        metadata_rows.append(f"<div><dt>Prompt contract</dt><dd>{escape(prompt_contract)}</dd></div>")
+    content_mode = source_context.get("content_mode")
+    if isinstance(content_mode, str) and content_mode:
+        metadata_rows.append(f"<div><dt>Content mode</dt><dd>{escape(content_mode)}</dd></div>")
+    draft_kind = source_context.get("draft_kind")
+    if isinstance(draft_kind, str) and draft_kind:
+        metadata_rows.append(f"<div><dt>Draft kind</dt><dd>{escape(draft_kind)}</dd></div>")
+    saved_artefact_uuid = source_context.get("saved_artefact_uuid")
+    if isinstance(saved_artefact_uuid, str) and saved_artefact_uuid:
+        metadata_rows.append(f"<div><dt>Saved artefact</dt><dd>{escape(saved_artefact_uuid)}</dd></div>")
+    brief_items = _generation_brief_items(source_context)
+    if brief_items:
+        metadata_rows.extend(
+            f"<div><dt>{escape(label)}</dt><dd>{escape(value)}</dd></div>" for label, value in brief_items
+        )
+    if not metadata_rows:
+        return ""
+    return (
+        '<details class="workspace-ai-metadata" data-ui-component="ai-generation-metadata">'
+        "<summary>Generation metadata</summary>"
+        '<dl class="workspace-ai-metadata-grid">'
+        + "".join(metadata_rows)
+        + "</dl></details>"
+    )
+
+
+def _local_ai_tab_label(tab: str) -> str:
+    return {
+        "analyse": "Analyse",
+        "tailor": "Tailor",
+        "draft": "Draft",
+        "compare": "Compare",
+    }[tab]
+
+
+def _local_ai_output_tab(output_type: str) -> str | None:
+    return {
+        "artefact_analysis": "analyse",
+        "tailoring_guidance": "tailor",
+        "draft": "draft",
+        "artefact_suggestion": "compare",
+    }.get(output_type)
+
+
+def _artefact_local_ai_workspace(
+    job: Job,
+    outputs: list[AiOutput],
+    artefact_lookup: dict[str, Artefact],
+    *,
+    selected_artefact_uuid: str | None = None,
+    selected_tab: str | None = None,
+) -> str:
+    outputs = [output for output in outputs if _local_ai_output_tab(output.output_type) is not None]
+    if not outputs:
         body = """
         <div class="workspace-ai-generate-box">
           <div class="workspace-ai-generate-title">Start AI work from an artefact</div>
@@ -1339,22 +1503,50 @@ def _artefact_local_ai_workspace(job: Job, output: AiOutput | None, artefact_loo
         </section>
         """
 
-    source_context = output.source_context or {}
-    tab_map = {
-        "artefact_analysis": "Analyze",
-        "tailoring_guidance": "Tailor",
-        "draft": "Draft",
-        "artefact_suggestion": "Compare",
+    outputs_by_artefact: dict[str, list[AiOutput]] = {}
+    generic_outputs: list[AiOutput] = []
+    artefact_by_id = {artefact.id: artefact for artefact in artefact_lookup.values()}
+    sole_artefact_uuid = next(iter(artefact_lookup.keys()), None) if len(artefact_lookup) == 1 else None
+    for output in outputs:
+        source_context = output.source_context or {}
+        artefact_uuid = source_context.get("artefact_uuid")
+        resolved_uuid: str | None = artefact_uuid if isinstance(artefact_uuid, str) else None
+        if resolved_uuid not in artefact_lookup and output.artefact_id is not None:
+            resolved_uuid = artefact_by_id.get(output.artefact_id).uuid if output.artefact_id in artefact_by_id else None
+        if resolved_uuid not in artefact_lookup:
+            resolved_uuid = sole_artefact_uuid
+        if resolved_uuid in artefact_lookup:
+            outputs_by_artefact.setdefault(resolved_uuid, []).append(output)
+        else:
+            generic_outputs.append(output)
+    if not outputs_by_artefact and not generic_outputs:
+        return ""
+
+    default_output = outputs[0]
+    default_artefact_uuid = str((default_output.source_context or {}).get("artefact_uuid") or "")
+    active_artefact_uuid = selected_artefact_uuid if selected_artefact_uuid in outputs_by_artefact else default_artefact_uuid
+    using_generic_outputs = active_artefact_uuid not in outputs_by_artefact
+    artefact_outputs = outputs_by_artefact.get(active_artefact_uuid, generic_outputs or outputs)
+    output_by_tab = {
+        tab: item
+        for item in artefact_outputs
+        if (tab := _local_ai_output_tab(item.output_type)) is not None
     }
-    active_tab = tab_map.get(output.output_type, "Draft")
-    artefact_name = "Current selection"
-    if output.artefact_id is not None:
-        matching = next((item for item in artefact_lookup.values() if item.id == output.artefact_id), None)
-        if matching is not None:
-            artefact_name = matching.filename
+    active_tab = selected_tab if selected_tab in output_by_tab else (_local_ai_output_tab(artefact_outputs[0].output_type) or "draft")
+    output = output_by_tab.get(active_tab, artefact_outputs[0])
+
+    source_context = output.source_context or {}
+    artefact_name = artefact_lookup.get(active_artefact_uuid).filename if active_artefact_uuid in artefact_lookup else "Workspace"
     tabs = "".join(
-        f'<div class="workspace-local-ai-tab{" active" if label == active_tab else ""}">{escape(label)}</div>'
-        for label in ("Analyze", "Tailor", "Improve", "Draft", "Compare", "Score")
+        (
+            f'<a class="workspace-local-ai-tab{" active" if tab == active_tab else ""}" '
+            f'href="/jobs/{escape(job.uuid, quote=True)}?section=documents'
+            f'{"&ai_artefact=" + quote(active_artefact_uuid) if not using_generic_outputs and active_artefact_uuid else ""}&ai_tab={tab}">'
+            f"{escape(_local_ai_tab_label(tab))}</a>"
+        )
+        if tab in output_by_tab
+        else f'<div class="workspace-local-ai-tab unavailable">{escape(_local_ai_tab_label(tab))}</div>'
+        for tab in ("analyse", "tailor", "draft", "compare")
     )
     actions = []
     if output.output_type == "draft":
@@ -1379,16 +1571,14 @@ def _artefact_local_ai_workspace(job: Job, output: AiOutput | None, artefact_loo
     elif output.output_type == "artefact_suggestion":
         links = _artefact_suggestion_links(output, artefact_lookup)
     provider_line = f'<p class="muted">From {escape(output.model_name or output.provider or "AI")}</p>'
+    brief_line = _generation_brief_summary(source_context)
+    metadata_panel = _local_ai_metadata_panel(output, source_context)
     body = f"""
-    <div class="workspace-ai-side">
-      <div class="workspace-ai-generate-box">
-        <div class="workspace-ai-generate-title">{escape(output.title or 'AI output')}</div>
-        <p class="muted">This local workspace keeps artefact-specific AI output attached to the document instead of the global page rail.</p>
-      </div>
-    </div>
     <div class="workspace-ai-results">
       <div class="workspace-ai-results-title">{escape(output.title or output.output_type.replace('_', ' ').title())}</div>
       {provider_line}
+      {brief_line}
+      {metadata_panel}
       {_render_ai_markdown(output.body)}
       {content_note}
       {links}
@@ -1404,6 +1594,75 @@ def _artefact_local_ai_workspace(job: Job, output: AiOutput | None, artefact_loo
       <div class="workspace-local-ai-body">{body}</div>
       <div class="workspace-local-ai-foot">{"".join(actions)}</div>
     </section>
+    """
+
+
+def _generation_brief_modal(
+    job: Job,
+    artefact: Artefact | None,
+    *,
+    action: str | None,
+    draft_kind: str = "resume_draft",
+    fields: dict[str, str] | None = None,
+) -> str:
+    if artefact is None or action not in {"tailor", "draft"}:
+        return ""
+    fields = fields or _generation_brief_fields()
+    draft_kind = _normalize_draft_kind(draft_kind)
+    title = "Tailor with optional brief" if action == "tailor" else "Draft with optional brief"
+    submit_label = "Generate tailoring guidance" if action == "tailor" else "Generate draft"
+    target = (
+        f"/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/tailoring-guidance"
+        if action == "tailor"
+        else f"/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/drafts"
+    )
+    kind_input = (
+        ""
+        if action == "tailor"
+        else f'<input type="hidden" name="draft_kind" value="{escape(draft_kind, quote=True)}">'
+    )
+    cancel_href = _job_detail_redirect(
+        job.uuid,
+        section="documents",
+        ai_artefact=artefact.uuid,
+        ai_tab="tailor" if action == "tailor" else "draft",
+    )
+    return f"""
+    <div class="workspace-modal-backdrop" data-ui-component="generation-brief-modal">
+      <section class="workspace-modal-card">
+        <div class="workspace-modal-head">
+          <div>
+            <div class="workspace-modal-title">{escape(title)}</div>
+            <p class="muted">Optional guidance can steer emphasis, tone, and examples. Leave everything blank to use the current default AI behaviour.</p>
+          </div>
+          <a class="button-link" href="{escape(cancel_href, quote=True)}">Close</a>
+        </div>
+        <form class="workspace-brief-form" method="post" action="{target}">
+          {kind_input}
+          <label>Focus areas
+            <textarea name="focus_areas" rows="3" placeholder="Specific accomplishments, competencies, or themes to foreground">{escape(fields.get("focus_areas", ""))}</textarea>
+          </label>
+          <label>Must include
+            <textarea name="must_include" rows="3" placeholder="Skills, tools, role requirements, or examples that must appear">{escape(fields.get("must_include", ""))}</textarea>
+          </label>
+          <label>Avoid or de-emphasise
+            <textarea name="avoid" rows="2" placeholder="Material to keep brief, downplay, or leave out">{escape(fields.get("avoid", ""))}</textarea>
+          </label>
+          <div class="inline-fields brief-inline-fields">
+            <label>Tone or positioning
+              <input type="text" name="tone" value="{escape(fields.get("tone", ""), quote=True)}" placeholder="Concise, assertive, leadership-focused, formal">
+            </label>
+            <label>Extra context
+              <input type="text" name="extra_context" value="{escape(fields.get("extra_context", ""), quote=True)}" placeholder="Anything specific for this role or application">
+            </label>
+          </div>
+          <div class="workspace-modal-actions">
+            <button type="submit">{escape(submit_label)}</button>
+            <button class="outline" type="submit" name="skip_brief" value="1">Generate without brief</button>
+          </div>
+        </form>
+      </section>
+    </div>
     """
 
 
@@ -1431,28 +1690,14 @@ def _workspace_artefact_item(job: Job, artefact: Artefact) -> str:
         <details class="workspace-ai-menu">
           <summary class="action-btn ai">✦ AI ⌄</summary>
           <div class="workspace-ai-menu-body">
-            <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/tailoring-guidance">
-              <button class="outline" type="submit">Tailor</button>
-            </form>
+            <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=tailor&brief_action=tailor">Tailor</a>
             <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/analysis">
-              <button class="outline" type="submit">Analyze</button>
+              <button class="outline" type="submit">Analyse</button>
             </form>
-            <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/drafts">
-              <input type="hidden" name="draft_kind" value="resume_draft">
-              <button class="outline" type="submit">Draft tailored resume</button>
-            </form>
-            <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/drafts">
-              <input type="hidden" name="draft_kind" value="cover_letter_draft">
-              <button class="outline" type="submit">Draft cover letter</button>
-            </form>
-            <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/drafts">
-              <input type="hidden" name="draft_kind" value="supporting_statement_draft">
-              <button class="outline" type="submit">Draft supporting statement</button>
-            </form>
-            <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/drafts">
-              <input type="hidden" name="draft_kind" value="attestation_draft">
-              <button class="outline" type="submit">Draft attestation</button>
-            </form>
+            <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=draft&brief_action=draft&brief_draft_kind=resume_draft">Draft tailored resume</a>
+            <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=draft&brief_action=draft&brief_draft_kind=cover_letter_draft">Draft cover letter</a>
+            <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=draft&brief_action=draft&brief_draft_kind=supporting_statement_draft">Draft supporting statement</a>
+            <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=draft&brief_action=draft&brief_draft_kind=attestation_draft">Draft attestation</a>
           </div>
         </details>
       </div>
@@ -1466,6 +1711,9 @@ def _workspace_artefacts_section(
     available_artefacts: list[Artefact],
     ai_outputs: list[AiOutput],
     artefact_lookup: dict[str, Artefact],
+    *,
+    selected_artefact_uuid: str | None = None,
+    selected_ai_tab: str | None = None,
 ) -> str:
     artefact_list = "".join(_workspace_artefact_item(job, artefact) for artefact in artefacts)
     if not artefact_list:
@@ -1474,7 +1722,7 @@ def _workspace_artefacts_section(
     <div class="workspace-artefact-list" data-ui-component="artefact-list">
       {artefact_list}
     </div>
-    {_artefact_local_ai_workspace(job, _latest_artefact_ai_output(ai_outputs, artefacts), artefact_lookup)}
+    {_artefact_local_ai_workspace(job, ai_outputs, artefact_lookup, selected_artefact_uuid=selected_artefact_uuid, selected_tab=selected_ai_tab)}
     <div class="workspace-support-tools">
       <details>
         <summary>Document tools</summary>
@@ -1501,18 +1749,18 @@ def _workspace_artefacts_section(
 
 def _workspace_interviews_section(job: Job) -> str:
     body = f"""
-    <div class="workspace-two-up">
+    <div class="workspace-two-up" data-ui-component="interviews-workbench">
       <div class="workspace-subpanel">
-        <h3>Interviews</h3>
+        <h3>Upcoming conversations</h3>
         {_interviews(job.interviews)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Schedule Interview</h3>
+        <h3>Plan next interview</h3>
         {_schedule_interview_form(job)}
       </div>
     </div>
     """
-    return _workspace_section(section_id="interviews", kicker="Interviews", title="Conversation planning", body=body)
+    return _workspace_section(section_id="interviews", kicker="Interviews", title="Interview loop", body=body)
 
 
 def _follow_up_list(job: Job) -> str:
@@ -1533,26 +1781,26 @@ def _follow_up_list(job: Job) -> str:
 
 def _workspace_follow_ups_section(job: Job) -> str:
     body = f"""
-    <div class="workspace-three-up">
+    <div class="workspace-three-up" data-ui-component="follow-ups-workbench">
       <div class="workspace-subpanel">
-        <h3>Scheduled follow-ups</h3>
+        <h3>Follow-up queue</h3>
         {_follow_up_list(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Application started</h3>
+        <h3>Start application</h3>
         {_application_started_form(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Blockers</h3>
+        <h3>Surface blockers</h3>
         {_blocker_form(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Return note</h3>
+        <h3>Queue return note</h3>
         {_return_note_form(job)}
       </div>
     </div>
     """
-    return _workspace_section(section_id="follow-ups", kicker="Follow-ups", title="External workflow and return path", body=body)
+    return _workspace_section(section_id="follow-ups", kicker="Follow-ups", title="Follow-up queue", body=body)
 
 
 def _workspace_tasks_section(job: Job, artefacts: list[Artefact]) -> str:
@@ -1649,7 +1897,7 @@ def _workspace_ai_sidebar(job: Job, ai_outputs: list[AiOutput], artefact_lookup:
           <div class="workspace-help-item"><strong>Tailor your resume</strong><span>›</span></div>
           <div class="workspace-help-item"><strong>Prepare for interviews</strong><span>›</span></div>
           <div class="workspace-help-item"><strong>Draft follow-up email</strong><span>›</span></div>
-          <div class="workspace-help-item"><strong>Analyze role fit</strong><span>›</span></div>
+          <div class="workspace-help-item"><strong>Analyse role fit</strong><span>›</span></div>
         </div>
         <p class="muted">AI uses your job, artefacts, and profile information to generate insights.</p>
       </section>
@@ -2043,7 +2291,12 @@ def render_job_detail(
     available_artefacts: list[Artefact] | None = None,
     ai_status: str | None = None,
     ai_error: str | None = None,
+    ai_debug: str | None = None,
     active_section: str = "overview",
+    selected_ai_artefact_uuid: str | None = None,
+    selected_ai_tab: str | None = None,
+    generation_brief_action: str | None = None,
+    generation_brief_draft_kind: str | None = None,
 ) -> str:
     active_section = _normalize_workspace_section(active_section)
     events = sorted(
@@ -2060,6 +2313,9 @@ def render_job_detail(
         for output in sorted(job.ai_outputs, key=lambda item: item.updated_at, reverse=True)
         if output.status == "active"
     ]
+    brief_action = _normalize_generation_brief_action(generation_brief_action)
+    brief_draft_kind = _normalize_draft_kind(generation_brief_draft_kind)
+    brief_artefact = artefact_lookup.get(selected_ai_artefact_uuid) if brief_action else None
 
     extra_styles = f"""
     h1, h2, h3, p {{ margin: 0; }}
@@ -2080,6 +2336,7 @@ def render_job_detail(
       background: #ffffff;
       border: 0.5px solid var(--line);
       color: var(--ink);
+      text-decoration: none;
     }}
     button.outline:hover, .button-link:hover {{ background: #f3f4f9; }}
     input, select, textarea {{
@@ -2139,6 +2396,13 @@ def render_job_detail(
       box-shadow: var(--shadow-md);
     }}
     .flash {{ margin-bottom: 18px; padding: 18px 20px; }}
+    .flash-detail {{
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+      margin-top: 8px;
+      overflow-wrap: anywhere;
+    }}
     .flash-success {{
       background: linear-gradient(180deg, rgba(234,244,238,0.98), rgba(244,249,246,0.98));
       border-color: rgba(59,167,134,0.28);
@@ -2679,7 +2943,8 @@ def render_job_detail(
       border: 1px solid var(--line);
       border-radius: 16px;
       display: grid;
-      overflow: hidden;
+      overflow: visible;
+      position: relative;
     }}
     .workspace-artefact-item {{
       align-items: center;
@@ -2689,8 +2954,17 @@ def render_job_detail(
       gap: 16px;
       grid-template-columns: minmax(0, 1fr) auto;
       padding: 14px 16px;
+      position: relative;
     }}
     .workspace-artefact-item:first-child {{ border-top: 0; }}
+    .workspace-artefact-item:first-child {{
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+    }}
+    .workspace-artefact-item:last-child {{
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+    }}
     .workspace-artefact-left {{
       align-items: center;
       display: grid;
@@ -2755,6 +3029,9 @@ def render_job_detail(
     .workspace-ai-menu {{
       position: relative;
     }}
+    .workspace-ai-menu[open] {{
+      z-index: 12;
+    }}
     .workspace-ai-menu > summary {{
       list-style: none;
       cursor: pointer;
@@ -2767,12 +3044,20 @@ def render_job_detail(
       box-shadow: var(--shadow-md);
       display: grid;
       gap: 8px;
-      margin-top: 8px;
       padding: 10px;
       position: absolute;
+      top: calc(100% + 8px);
       right: 0;
       width: 220px;
-      z-index: 2;
+      z-index: 13;
+    }}
+    .menu-link {{
+      align-items: center;
+      border-radius: 10px;
+      display: flex;
+      justify-content: flex-start;
+      min-height: 38px;
+      padding: 0 12px;
     }}
     .workspace-local-ai {{
       background: linear-gradient(180deg, #fcfbff, #faf8ff);
@@ -2806,10 +3091,15 @@ def render_job_detail(
     }}
     .workspace-local-ai-tab {{
       color: var(--text-muted);
+      display: inline-flex;
       font-size: 0.82rem;
       font-weight: 700;
       padding: 14px 0 12px;
       position: relative;
+      text-decoration: none;
+    }}
+    .workspace-local-ai-tab.unavailable {{
+      opacity: 0.45;
     }}
     .workspace-local-ai-tab.active {{
       color: var(--accent-strong);
@@ -2828,7 +3118,7 @@ def render_job_detail(
       align-items: start;
       display: grid;
       gap: 16px;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 1fr;
       padding: 16px;
     }}
     .workspace-local-ai-body.inactive {{
@@ -2847,15 +3137,89 @@ def render_job_detail(
       gap: 10px;
       padding: 14px;
     }}
+    .workspace-ai-results {{
+      max-height: 360px;
+      overflow: auto;
+    }}
     .workspace-ai-generate-title,
     .workspace-ai-results-title {{
       font-weight: 800;
+    }}
+    .workspace-ai-metadata {{
+      border-top: 1px solid #ece7ff;
+      padding-top: 10px;
+    }}
+    .workspace-ai-metadata > summary {{
+      color: var(--accent-strong);
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }}
+    .workspace-ai-metadata-grid {{
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 10px 0 0;
+    }}
+    .workspace-ai-metadata-grid dt {{
+      color: var(--muted);
+      font-size: 0.74rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
+    .workspace-ai-metadata-grid dd {{
+      margin: 4px 0 0;
+      overflow-wrap: anywhere;
     }}
     .workspace-local-ai-foot {{
       display: flex;
       gap: 10px;
       justify-content: flex-end;
       padding: 0 16px 16px;
+    }}
+    .workspace-modal-backdrop {{
+      align-items: center;
+      background: rgba(17, 24, 39, 0.38);
+      display: flex;
+      inset: 0;
+      justify-content: center;
+      padding: 20px;
+      position: fixed;
+      z-index: 80;
+    }}
+    .workspace-modal-card {{
+      background: #fff;
+      border: 0.5px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
+      display: grid;
+      gap: 16px;
+      max-width: 760px;
+      padding: 18px;
+      width: min(100%, 760px);
+    }}
+    .workspace-modal-head {{
+      align-items: flex-start;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+    }}
+    .workspace-modal-title {{
+      font-size: 1.02rem;
+      font-weight: 700;
+    }}
+    .workspace-brief-form {{
+      display: grid;
+      gap: 12px;
+    }}
+    .brief-inline-fields {{
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }}
+    .workspace-modal-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
     }}
     .workspace-support-tools details > summary {{
       color: var(--accent-strong);
@@ -2972,6 +3336,13 @@ def render_job_detail(
         position: static;
         width: 100%;
       }}
+      .workspace-modal-backdrop {{
+        align-items: stretch;
+        padding: 10px;
+      }}
+      .brief-inline-fields {{
+        grid-template-columns: 1fr;
+      }}
       .workspace-quick-panel {{
         position: static;
       }}
@@ -2994,11 +3365,19 @@ def render_job_detail(
         "follow-ups": _workspace_follow_ups_section(job),
         "tasks": _workspace_tasks_section(job, artefacts),
         "notes": _workspace_notes_section(job, events, artefacts),
-        "documents": _workspace_artefacts_section(job, artefacts, available_artefacts, ai_outputs, artefact_lookup),
+        "documents": _workspace_artefacts_section(
+            job,
+            artefacts,
+            available_artefacts,
+            ai_outputs,
+            artefact_lookup,
+            selected_artefact_uuid=selected_ai_artefact_uuid,
+            selected_ai_tab=_normalize_local_ai_tab(selected_ai_tab),
+        ),
     }
     body = f"""
     {(_flash_message(ai_status, tone="success") if ai_status else "")}
-    {(_flash_message(ai_error, tone="error") if ai_error else "")}
+    {(_flash_message(ai_error, tone="error", detail=ai_debug) if ai_error else "")}
     <div class="workspace-grid" data-ui="job-workspace" data-ui-active-section="{escape(active_section, quote=True)}">
       <aside class="workspace-left-rail" data-ui-component="left-rail">
         {_workspace_back_link_card()}
@@ -3021,6 +3400,12 @@ def render_job_detail(
       <button id="save-inline-edits" type="button">Save</button>
       <button id="cancel-inline-edits" class="secondary" type="button">Cancel</button>
     </div>
+    {_generation_brief_modal(
+        job,
+        brief_artefact,
+        action=brief_action,
+        draft_kind=brief_draft_kind,
+    )}
     """
     scripts = f"""
   <script>
@@ -3176,6 +3561,9 @@ def _job_detail_redirect(
     section: str | None = None,
     ai_status: str | None = None,
     ai_error: str | None = None,
+    ai_debug: str | None = None,
+    ai_artefact: str | None = None,
+    ai_tab: str | None = None,
 ) -> str:
     params = []
     normalized_section = _normalize_workspace_section(section)
@@ -3185,8 +3573,57 @@ def _job_detail_redirect(
         params.append(f"ai_status={quote(ai_status)}")
     if ai_error:
         params.append(f"ai_error={quote(ai_error)}")
+    if ai_debug:
+        params.append(f"ai_debug={quote(ai_debug)}")
+    if ai_artefact:
+        params.append(f"ai_artefact={quote(ai_artefact)}")
+    normalized_tab = _normalize_local_ai_tab(ai_tab)
+    if normalized_tab:
+        params.append(f"ai_tab={quote(normalized_tab)}")
     suffix = f"?{'&'.join(params)}" if params else ""
     return f"/jobs/{job_uuid}{suffix}"
+
+
+def _submitted_generation_brief(
+    *,
+    skip_brief: str = "",
+    focus_areas: str = "",
+    must_include: str = "",
+    avoid: str = "",
+    tone: str = "",
+    extra_context: str = "",
+) -> dict[str, str] | None:
+    if (skip_brief or "").strip():
+        return None
+    cleaned = {
+        "focus_areas": focus_areas.strip(),
+        "must_include": must_include.strip(),
+        "avoid": avoid.strip(),
+        "tone": tone.strip(),
+        "extra_context": extra_context.strip(),
+    }
+    return {key: value for key, value in cleaned.items() if value} or None
+
+
+def _generation_brief_notes(source_context: dict[str, object]) -> str:
+    brief = source_context.get("generation_brief")
+    if not isinstance(brief, dict):
+        return ""
+    labels = {
+        "focus_areas": "Focus areas",
+        "must_include": "Must include",
+        "avoid": "Avoid or de-emphasise",
+        "tone": "Tone or positioning",
+        "extra_context": "Extra context",
+    }
+    parts = []
+    for key in ("focus_areas", "must_include", "avoid", "tone", "extra_context"):
+        value = brief.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(f"{labels[key]}={value.strip()}")
+    if not parts:
+        return ""
+    return " Generation brief: " + " | ".join(parts) + "."
 
 
 @router.get("/jobs/new", response_class=HTMLResponse)
@@ -3259,6 +3696,11 @@ def job_detail(
     current_user: Annotated[User, Depends(get_current_user)],
     ai_status: Annotated[str | None, Query()] = None,
     ai_error: Annotated[str | None, Query()] = None,
+    ai_debug: Annotated[str | None, Query()] = None,
+    ai_artefact: Annotated[str | None, Query()] = None,
+    ai_tab: Annotated[str | None, Query()] = None,
+    brief_action: Annotated[str | None, Query()] = None,
+    brief_draft_kind: Annotated[str | None, Query()] = None,
     section: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
@@ -3268,7 +3710,12 @@ def job_detail(
             available_artefacts=list_user_unlinked_artefacts_for_job(db, current_user, job),
             ai_status=ai_status,
             ai_error=ai_error,
+            ai_debug=ai_debug,
             active_section=section or "overview",
+            selected_ai_artefact_uuid=ai_artefact,
+            selected_ai_tab=ai_tab,
+            generation_brief_action=brief_action,
+            generation_brief_draft_kind=brief_draft_kind,
         )
     )
 
@@ -3474,8 +3921,9 @@ def create_job_ai_output_route(
         )
     except AiExecutionError as exc:
         db.rollback()
+        ai_debug = _log_ai_route_error(route_action=output_type, section="overview", job=job, exc=exc)
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, section="overview", ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="overview", ai_error=str(exc), ai_debug=ai_debug),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -3502,14 +3950,15 @@ def create_job_artefact_suggestion_route(
         )
     except AiExecutionError as exc:
         db.rollback()
+        ai_debug = _log_ai_route_error(route_action="artefact_suggestion", section="documents", job=job, exc=exc)
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
+            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc), ai_debug=ai_debug, ai_tab="compare"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Artefact suggestion generated"),
+        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Artefact suggestion generated", ai_tab="compare"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3520,6 +3969,12 @@ def create_job_artefact_tailoring_guidance_route(
     artefact_uuid: str,
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
+    focus_areas: Annotated[str, Form()] = "",
+    must_include: Annotated[str, Form()] = "",
+    avoid: Annotated[str, Form()] = "",
+    tone: Annotated[str, Form()] = "",
+    extra_context: Annotated[str, Form()] = "",
+    skip_brief: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
@@ -3543,17 +3998,39 @@ def create_job_artefact_tailoring_guidance_route(
             artefact,
             profile=get_user_profile(db, current_user),
             prior_suggestion=prior_suggestion,
+            generation_brief=_submitted_generation_brief(
+                skip_brief=skip_brief,
+                focus_areas=focus_areas,
+                must_include=must_include,
+                avoid=avoid,
+                tone=tone,
+                extra_context=extra_context,
+            ),
         )
     except AiExecutionError as exc:
         db.rollback()
+        ai_debug = _log_ai_route_error(route_action="tailoring_guidance", section="documents", job=job, exc=exc)
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
+            url=_job_detail_redirect(
+                job.uuid,
+                section="documents",
+                ai_error=str(exc),
+                ai_debug=ai_debug,
+                ai_artefact=artefact.uuid,
+                ai_tab="tailor",
+            ),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Tailoring guidance generated"),
+        url=_job_detail_redirect(
+            job.uuid,
+            section="documents",
+            ai_status="Tailoring guidance generated",
+            ai_artefact=artefact.uuid,
+            ai_tab="tailor",
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3579,14 +4056,28 @@ def create_job_artefact_analysis_route(
         )
     except AiExecutionError as exc:
         db.rollback()
+        ai_debug = _log_ai_route_error(route_action="artefact_analysis", section="documents", job=job, exc=exc)
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
+            url=_job_detail_redirect(
+                job.uuid,
+                section="documents",
+                ai_error=str(exc),
+                ai_debug=ai_debug,
+                ai_artefact=artefact.uuid,
+                ai_tab="analyse",
+            ),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Artefact analysis generated"),
+        url=_job_detail_redirect(
+            job.uuid,
+            section="documents",
+            ai_status="Artefact analysis generated",
+            ai_artefact=artefact.uuid,
+            ai_tab="analyse",
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3598,6 +4089,12 @@ def create_job_artefact_draft_route(
     db: DbSession,
     current_user: Annotated[User, Depends(get_current_user)],
     draft_kind: Annotated[str, Form()] = "resume_draft",
+    focus_areas: Annotated[str, Form()] = "",
+    must_include: Annotated[str, Form()] = "",
+    avoid: Annotated[str, Form()] = "",
+    tone: Annotated[str, Form()] = "",
+    extra_context: Annotated[str, Form()] = "",
+    skip_brief: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
@@ -3634,17 +4131,39 @@ def create_job_artefact_draft_route(
             profile=get_user_profile(db, current_user),
             tailoring_guidance=tailoring_guidance,
             prior_suggestion=prior_suggestion,
+            generation_brief=_submitted_generation_brief(
+                skip_brief=skip_brief,
+                focus_areas=focus_areas,
+                must_include=must_include,
+                avoid=avoid,
+                tone=tone,
+                extra_context=extra_context,
+            ),
         )
     except AiExecutionError as exc:
         db.rollback()
+        ai_debug = _log_ai_route_error(route_action=draft_kind, section="documents", job=job, exc=exc)
         return RedirectResponse(
-            url=_job_detail_redirect(job.uuid, section="documents", ai_error=str(exc)),
+            url=_job_detail_redirect(
+                job.uuid,
+                section="documents",
+                ai_error=str(exc),
+                ai_debug=ai_debug,
+                ai_artefact=artefact.uuid,
+                ai_tab="draft",
+            ),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     db.commit()
     return RedirectResponse(
-        url=_job_detail_redirect(job.uuid, section="documents", ai_status="Draft generated"),
+        url=_job_detail_redirect(
+            job.uuid,
+            section="documents",
+            ai_status="Draft generated",
+            ai_artefact=artefact.uuid,
+            ai_tab="draft",
+        ),
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -3704,6 +4223,7 @@ def save_job_draft_as_artefact_route(
     notes = f"Saved from AI draft output #{output.id}."
     if isinstance(baseline_uuid, str) and baseline_uuid:
         notes += f" Baseline artefact UUID: {baseline_uuid}."
+    notes += _generation_brief_notes(source_context if isinstance(source_context, dict) else {})
     update_artefact_metadata(
         artefact,
         purpose=output.title or "AI draft",

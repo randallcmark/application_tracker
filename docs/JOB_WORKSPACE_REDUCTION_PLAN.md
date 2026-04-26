@@ -198,6 +198,12 @@ Before returning here, complete pane-specific cleanup for:
 - `Notes`
 - `Documents`
 
+Current checkpoint:
+
+- first pane-cleanup pass implemented for `Application`, `Interviews`, and `Follow-ups`;
+- these panes now use calmer titles, clearer workflow grouping, and explicit workbench markers;
+- remaining follow-on panes are `Tasks`, `Notes`, and `Documents`.
+
 Any later utility-card work should start from the stabilised shared workspace
 frame rather than from the older pre-reduction page structure.
 

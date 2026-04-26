@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import io
 from pathlib import Path
+import re
 import shutil
 import subprocess
 from typing import Iterable
@@ -57,6 +58,55 @@ PROVIDER_DOCUMENT_CONTENT_TYPES = {
     "application/vnd.oasis.opendocument.text",
 }
 
+COMMON_JOB_WORDS = {
+    "with",
+    "from",
+    "that",
+    "this",
+    "your",
+    "will",
+    "have",
+    "into",
+    "for",
+    "role",
+    "team",
+    "teams",
+    "experience",
+    "manager",
+    "management",
+    "program",
+    "technical",
+}
+
+JOB_REQUIREMENT_TYPES = {
+    "cover_letter": ("cover letter",),
+    "supporting_statement": ("supporting statement", "personal statement"),
+    "writing_sample": ("writing sample",),
+    "portfolio": ("portfolio",),
+    "attestation": ("attestation",),
+}
+
+FIT_DOMAIN_TERMS = (
+    "aws",
+    "azure",
+    "gcp",
+    "platform",
+    "cloud",
+    "infrastructure",
+    "distributed systems",
+    "security",
+    "devsecops",
+    "kubernetes",
+    "terraform",
+    "gitlab",
+    "jira",
+    "product",
+    "analytics",
+    "delivery",
+)
+
+SENIORITY_TERMS = ("staff", "principal", "lead", "senior", "director", "head", "vp")
+
 
 @dataclass(frozen=True)
 class ArtefactCandidateSummary:
@@ -75,6 +125,7 @@ class ArtefactCandidateSummary:
     linked_active_count: int
     outcome_signal_summary: "ArtefactOutcomeSignalSummary"
     metadata_quality: str
+    fit_score: int
     score: int
     summary_text: str
 
@@ -177,6 +228,94 @@ def _metadata_quality_label(gaps: list[str]) -> str:
     return "thin"
 
 
+def _infer_job_artefact_types(job: Job) -> tuple[list[str], list[str]]:
+    text = "\n".join(part for part in (job.title or "", job.description_raw or "") if part).lower()
+    required: list[str] = []
+    optional: list[str] = []
+    for kind, phrases in JOB_REQUIREMENT_TYPES.items():
+        if any(phrase in text for phrase in phrases):
+            if kind == "portfolio":
+                optional.append(kind)
+            else:
+                required.append(kind)
+    return required, optional
+
+
+def _job_keyword_tokens(job: Job) -> set[str]:
+    text = "\n".join(part for part in (job.title or "", job.company or "", job.description_raw or "") if part).lower()
+    return {
+        token
+        for token in re.findall(r"[a-z][a-z0-9\-/]{3,}", text)
+        if token not in COMMON_JOB_WORDS
+    }
+
+
+def _artefact_fit_text(artefact: Artefact) -> str:
+    extracted_text = load_artefact_text_excerpt(artefact) or ""
+    parts = [
+        artefact.kind or "",
+        artefact.filename or "",
+        artefact.purpose or "",
+        artefact.version_label or "",
+        artefact.notes or "",
+        artefact.outcome_context or "",
+        extracted_text[:4000],
+    ]
+    return "\n".join(part for part in parts if part).lower()
+
+
+def _fit_overlap_score(job: Job, artefact_text: str) -> int:
+    keywords = _job_keyword_tokens(job)
+    if not keywords:
+        return 0
+    overlap = sum(1 for token in keywords if token in artefact_text)
+    return min(overlap, 8) * 2
+
+
+def _fit_domain_score(job_text: str, artefact_text: str) -> int:
+    score = 0
+    for term in FIT_DOMAIN_TERMS:
+        if term in job_text and term in artefact_text:
+            score += 3
+    return min(score, 18)
+
+
+def _fit_seniority_score(job_text: str, artefact_text: str) -> int:
+    matches = sum(1 for term in SENIORITY_TERMS if term in job_text and term in artefact_text)
+    return min(matches, 3) * 3
+
+
+def _fit_requirement_score(
+    artefact: Artefact,
+    *,
+    required_types: list[str],
+    optional_types: list[str],
+) -> int:
+    kind = (artefact.kind or "").strip().lower()
+    if kind in required_types:
+        return 30
+    if kind in {"resume", "cv"}:
+        return 18
+    if kind in optional_types:
+        return 12
+    return 0
+
+
+def _artefact_fit_score(artefact: Artefact, *, current_job: Job) -> int:
+    job_text = "\n".join(part for part in (current_job.title or "", current_job.description_raw or "") if part).lower()
+    artefact_text = _artefact_fit_text(artefact)
+    required_types, optional_types = _infer_job_artefact_types(current_job)
+    score = _fit_requirement_score(
+        artefact,
+        required_types=required_types,
+        optional_types=optional_types,
+    )
+    score += _fit_overlap_score(current_job, artefact_text)
+    score += _fit_domain_score(job_text, artefact_text)
+    score += _fit_seniority_score(job_text, artefact_text)
+    return score
+
+
 def _outcome_evidence_level(
     *,
     linked_job_count: int,
@@ -262,6 +401,7 @@ def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> Artefa
     is_linked_to_current_job = any(job.id == current_job.id for job in linked_jobs)
     metadata_gaps = _metadata_gaps(artefact, linked_jobs)
     metadata_quality = _metadata_quality_label(metadata_gaps)
+    fit_score = _artefact_fit_score(artefact, current_job=current_job)
     score = _artefact_score(
         artefact,
         current_job=current_job,
@@ -285,6 +425,7 @@ def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> Artefa
         f"Active-linked jobs: {active_like}",
         f"Outcome evidence: {outcome_signal_summary.summary_text}",
         f"Metadata quality: {metadata_quality}",
+        f"Fit score: {fit_score}",
         f"Already linked to current job: {'yes' if is_linked_to_current_job else 'no'}",
     ]
     if metadata_gaps:
@@ -309,6 +450,7 @@ def summarise_artefact_for_ai(artefact: Artefact, *, current_job: Job) -> Artefa
         linked_active_count=active_like,
         outcome_signal_summary=outcome_signal_summary,
         metadata_quality=metadata_quality,
+        fit_score=fit_score,
         score=score,
         summary_text=" | ".join(summary_bits),
     )
@@ -337,6 +479,7 @@ def list_candidate_artefacts_for_job(
     summaries = [summarise_artefact_for_ai(artefact, current_job=job) for artefact in artefacts]
     summaries.sort(
         key=lambda item: (
+            item.fit_score,
             item.score,
             item.linked_offer_count,
             item.linked_interview_count,

@@ -81,6 +81,44 @@ Expected result:
 - the system can describe what an artefact emphasizes, what evidence it contains, what is missing,
   and how well it appears to match a given vacancy.
 
+Current status:
+
+- Phase A1 implemented: explicit visible `artefact_analysis` output now exists, along with
+  job-text requirement inference and the `extracted_text` / `provider_document` / `metadata_only`
+  context ladder;
+- Phase A2 implemented: hidden `artefact_analysis` helper output is now reused by artefact
+  suggestion, tailoring guidance, and draft generation without persisting extra records;
+- Phase A3 implemented: `artefact_analysis` now carries lightweight structured indexing in
+  `source_context`, including detected sections, accomplishment density, seniority indicators,
+  tooling/domain mentions, and requirement coverage hints. Downstream prompts now consume both the
+  qualitative analysis body and the compact index summary;
+- Phase A follow-on implemented: shortlist generation now uses deterministic fit reasoning before
+  prompt-time AI, including requirement-type matching, job/content overlap, domain-term overlap,
+  and seniority-signal overlap;
+- Phase A follow-on implemented: tailoring guidance and draft generation now include an explicit
+  submission-strategy layer based on inferred required/optional artefact expectations, so baseline
+  advice no longer treats every artefact as a self-sufficient submission pack;
+- Phase A follow-on implemented: draft generation now also includes explicit evidence-allocation
+  guidance so resume, cover-letter, supporting-statement, and attestation outputs handle
+  multi-document submission packs with clearer document-role boundaries;
+- Phase A follow-on implemented: draft generation now also includes deterministic section-emphasis
+  guidance derived from analysis/index signals so generated sections can foreground, keep brief, or
+  omit content more deliberately;
+- Phase A follow-on implemented: tailoring guidance and draft generation now include explicit
+  evidence-phrasing guidance so supported claims can be phrased more strongly while thin evidence
+  stays cautious instead of inflated;
+- Phase A follow-on implemented: tailoring guidance and draft generation now include submission-pack
+  coordination guidance so resume, cover letter, supporting statement, and attestation outputs can
+  better divide responsibilities across one application pack;
+- Phase G1 implemented: generative artefact-local actions now support an optional structured user
+  generation brief, so tailoring and draft flows can be steered toward specific accomplishments,
+  must-include requirements, tone, and de-emphasis areas without turning evaluative actions into
+  prompt-engineering forms;
+- Phase A is now complete for the intended first analysis foundation slice. The next recommended
+  work is to deepen optimization quality with these signals inside generated examples, richer
+  repository-backed accomplishment grounding, and later pack-level orchestration, rather than just
+  broadening indexing.
+
 ### Phase B: Existing Artefact Suggestion
 
 Goal: for one job, recommend which existing artefacts should be reused or adapted.
@@ -237,6 +275,32 @@ Document context strategy:
    - use artefact metadata, tailoring guidance, and job context when no text extraction exists;
    - drafts from this mode must remain more cautious and scaffold-like.
 
+### Phase G: Guided Generation And Competency Evidence
+
+Goal: improve generated artefacts with user steering and reusable accomplishment evidence.
+
+Current status:
+
+- G1 implemented: artefact-local `Tailor` and `Draft ...` actions support an optional structured
+  generation brief.
+- G2 implemented: generated outputs expose brief metadata locally and carry brief provenance into
+  saved artefacts.
+- G3 in progress: competency evidence / STAR planning is tracked in
+  `docs/COMPETENCY_EVIDENCE_PLAN.md`, with the first implementation slice focused on a user-owned
+  evidence foundation.
+
+Implementation targets:
+
+- guided generation briefs for short-term steering;
+- reusable competency evidence records for long-term grounding;
+- STAR-shaped refinement workflows;
+- opt-in evidence reuse in cover letters, supporting statements, attestations, and interview prep.
+
+Expected result:
+
+- users can build a reusable evidence library and selectively feed those examples into artefact
+  generation without turning every job or artefact into duplicated notes.
+
 ### Phase E: Outcome-Aware Refinement
 
 Goal: use historic outcomes as secondary supporting context after analysis-first reasoning is
@@ -322,6 +386,20 @@ Use markdown sections titled:
 - `Best next improvements`
 
 Keep the output qualitative. No scoring badge in the first slice.
+
+Current implementation note:
+
+- the first foundation slice is now complete:
+  - visible `artefact_analysis` records exist for explicit user-triggered analysis;
+  - hidden analysis reuse exists for suggestion, tailoring, and drafting;
+  - lightweight structured indexing is now attached to analysis `source_context` and reused
+    downstream without new schema.
+
+Next recommended step:
+
+- make artefact-analysis findings influence more of the generated structure itself, not just the
+  actual text content quality itself, especially around better evidence phrasing and stronger
+  distinction between supported claims and thin-evidence scaffolding.
 
 ## Detailed Plan: Phase E Outcome-Aware Learning
 
@@ -1119,3 +1197,52 @@ When resuming this work in a future session:
 3. If Phase B, begin with the deterministic shortlist/service layer before UI work.
 4. Keep AI output visible and non-mutating.
 5. Update this document and `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md` when a slice lands.
+
+## Detailed Plan: Phase G Guided Generation Briefs
+
+This phase adds optional user direction to generative artefact workflows without cluttering
+evaluative actions.
+
+### User Value
+
+The user should be able to steer `Tailor` and `Draft ...` actions toward:
+
+- specific accomplishments or competencies;
+- must-include skills, tools, or requirements;
+- material to de-emphasise or avoid;
+- a preferred tone or positioning;
+- extra role-specific context.
+
+When no brief is supplied, generation should behave exactly as it does today.
+
+### Scope
+
+In scope for the first slice:
+
+- artefact-local `Tailor` and `Draft ...` actions in Job Workspace;
+- a compact modal/overlay that appears only for those generative actions;
+- optional structured brief fields;
+- prompt integration that steers emphasis without relaxing evidence constraints;
+- persisted source context so generated output remains inspectable.
+
+Out of scope for the first slice:
+
+- `Analyse`, `Compare`, `Fit summary`, or other evaluative one-click actions;
+- raw prompt override text areas;
+- a persistent competency repository or STAR bank;
+- generation-time mutation of stored artefacts.
+
+### Structured Brief Fields
+
+- `Focus areas`
+- `Must include`
+- `Avoid or de-emphasise`
+- `Tone or positioning`
+- `Extra context`
+
+### Implementation Order
+
+1. G1: optional generation-brief modal and prompt/source-context integration. Implemented.
+2. G2: make brief use more visible in generated output metadata and later export flows. Implemented.
+3. G3: add a reusable competency / STAR evidence repository.
+4. G4: let generation use both artefact baselines and evidence-repository context together.

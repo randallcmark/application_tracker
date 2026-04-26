@@ -13,13 +13,16 @@ from app.db.models.artefact import Artefact
 from app.db.models.user import User
 from app.main import app
 from app.services.ai import (
+    _ai_debug_summary,
     _call_gemini,
     _build_artefact_analysis_prompt,
     _build_artefact_draft_prompt,
     _build_artefact_tailoring_prompt,
     _build_artefact_suggestion_prompt,
     _build_job_prompt,
+    _execute_prompt,
     _http_error_message,
+    _provider_timeout_seconds,
     _timeout_error_message,
     _url_error_message,
     AiExecutionError,
@@ -134,6 +137,13 @@ def test_timeout_error_message_maps_provider_timeouts() -> None:
     assert "reduce the request size" in message
 
 
+def test_provider_timeout_seconds_are_provider_and_payload_aware() -> None:
+    assert _provider_timeout_seconds(_setting("openai")) == 20
+    assert _provider_timeout_seconds(_setting("openai_compatible")) == 20
+    assert _provider_timeout_seconds(_setting("gemini")) == 30
+    assert _provider_timeout_seconds(_setting("gemini"), document_attached=True) == 60
+
+
 def test_build_job_prompt_uses_focus_specific_recommendation_instruction() -> None:
     profile = UserProfile(target_roles="Technical Program Manager", target_locations="Remote UK")
     job = Job(
@@ -178,11 +188,16 @@ def test_build_artefact_suggestion_prompt_includes_candidate_summaries() -> None
     profile = UserProfile(target_roles="Technical Program Manager")
     job = Job(title="Staff TPM", status="saved", description_raw="Lead cross-functional delivery.")
     candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Linked jobs: 2")
+    analysis = AiOutput(
+        body="### How well this fits the vacancy\n* Strong platform alignment",
+        source_context={"artefact_uuid": "artefact-1"},
+    )
 
     title, prompt = _build_artefact_suggestion_prompt(
         profile=profile,
         job=job,
         candidates=[candidate],
+        candidate_analyses=[analysis],
     )
 
     assert title == "AI artefact suggestion"
@@ -190,6 +205,8 @@ def test_build_artefact_suggestion_prompt_includes_candidate_summaries() -> None
     assert "Candidate 1:" in prompt
     assert "Kind: resume | Filename: tpm-resume.pdf" in prompt
     assert "Outcome signals:" in prompt
+    assert "Candidate analysis 1:" in prompt
+    assert "How well this fits the vacancy" in prompt
     assert "strongest signal interview-linked, evidence moderate" in prompt
     assert "Target roles: Technical Program Manager" in prompt
     assert "Title: Staff TPM" in prompt
@@ -223,6 +240,13 @@ def test_build_artefact_analysis_prompt_includes_requirement_and_content_mode_co
         artefact_summary=candidate,
         content_mode="metadata_only",
         requirement_summary="Required or explicitly requested: cover letter, supporting statement",
+        structured_index={
+            "detected_sections": ["summary", "experience", "skills"],
+            "accomplishment_density": "moderate",
+            "seniority_indicators": ["staff", "lead"],
+            "tooling_or_domain_mentions": ["aws", "platform"],
+            "requirement_coverage_hints": ["job requests additional artefacts beyond this baseline: cover letter, supporting statement"],
+        },
     )
 
     assert title == "AI artefact analysis"
@@ -231,6 +255,8 @@ def test_build_artefact_analysis_prompt_includes_requirement_and_content_mode_co
     assert "cover letter, supporting statement" in prompt
     assert "Outcome signals:" in prompt
     assert "Content mode: metadata_only" in prompt
+    assert "Precomputed structured signals:" in prompt
+    assert "Detected sections: summary, experience, skills" in prompt
     assert "reasoning from metadata and job context only" in prompt.lower()
 
 
@@ -264,10 +290,28 @@ def test_generate_job_artefact_suggestion_stores_visible_output(tmp_path: Path, 
             db.commit()
             user_id = user.id
             job_id = job.id
+            artefact_uuid = artefact.uuid
 
-        def fake_execute_prompt(setting, prompt):
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(
+                body="### How well this fits the vacancy\n* Strong platform alignment",
+                source_context={
+                    "artefact_uuid": artefact_uuid,
+                    "detected_sections": ["experience", "skills"],
+                    "accomplishment_density": "high",
+                    "tooling_or_domain_mentions": ["aws", "platform"],
+                    "requirement_coverage_hints": ["job requests additional artefacts beyond this baseline: cover letter"],
+                },
+            ),
+        )
+
+        def fake_execute_prompt(setting, prompt, **kwargs):
             assert "Candidate artefacts:" in prompt
             assert "tpm-resume.pdf" in prompt
+            assert "Candidate analysis 1:" in prompt
+            assert "Candidate analysis index 1:" in prompt
+            assert "Detected sections: experience, skills" in prompt
             return "### Best starting artefact\n* **tpm-resume.pdf**"
 
         monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
@@ -328,13 +372,15 @@ def test_build_job_artefact_analysis_can_run_without_persisting_output(
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
+            artefact_uuid = artefact.uuid
 
         monkeypatch.setattr(
             "app.services.ai.load_artefact_text_excerpt",
             lambda artefact: "# Resume\n\nPlatform delivery evidence",
         )
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Inferred artefact requirements:" in prompt
             assert "cover letter" in prompt
             return "### Artefact type and structure\n* Resume baseline"
@@ -358,6 +404,10 @@ def test_build_job_artefact_analysis_can_run_without_persisting_output(
             assert output.source_context["prompt_contract"] == "artefact_analysis_v1"
             assert output.source_context["used_extracted_text"] is True
             assert "cover letter" in output.source_context["inferred_requirement_summary"]
+            assert output.source_context["structured_analysis_v"] == 1
+            assert output.source_context["accomplishment_density"] in {"low", "moderate", "high"}
+            assert isinstance(output.source_context["detected_sections"], list)
+            assert isinstance(output.source_context["requirement_coverage_hints"], list)
             stored = db.scalars(select(AiOutput).where(AiOutput.output_type == "artefact_analysis")).all()
             assert stored == []
     finally:
@@ -404,7 +454,7 @@ def test_generate_job_artefact_analysis_stores_visible_output(tmp_path: Path, mo
             lambda artefact: ("application/pdf", b"%PDF-sample"),
         )
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Content mode: provider_document" in prompt
             assert "writing sample" in prompt
             assert document is not None
@@ -425,6 +475,8 @@ def test_generate_job_artefact_analysis_stores_visible_output(tmp_path: Path, mo
             assert output.source_context["prompt_contract"] == "artefact_analysis_v1"
             assert output.source_context["content_mode"] == "provider_document"
             assert "writing sample" in output.source_context["inferred_requirement_summary"]
+            assert output.source_context["structured_analysis_v"] == 1
+            assert isinstance(output.source_context["requirement_coverage_hints"], list)
 
             stored = db.get(AiOutput, output.id)
             assert stored is not None
@@ -471,7 +523,7 @@ def test_generate_job_artefact_suggestion_uses_local_fallback_when_no_candidates
 
 def test_build_artefact_tailoring_prompt_uses_selected_artefact_context() -> None:
     profile = UserProfile(target_roles="Technical Program Manager")
-    job = Job(title="Staff TPM", status="saved", description_raw="Lead delivery.")
+    job = Job(title="Staff TPM", status="saved", description_raw="Lead delivery. Please provide a supporting statement.")
     artefact = Artefact(
         kind="resume",
         purpose="TPM resume",
@@ -480,6 +532,14 @@ def test_build_artefact_tailoring_prompt_uses_selected_artefact_context() -> Non
     )
     candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
     prior = AiOutput(body="### Best starting artefact\n* **tpm-resume.pdf**")
+    analysis = AiOutput(
+        body="### Evidence strength\n* Strong quantified delivery evidence",
+        source_context={
+            "detected_sections": ["experience", "skills"],
+            "accomplishment_density": "high",
+            "seniority_indicators": ["staff", "lead"],
+        },
+    )
 
     title, prompt = _build_artefact_tailoring_prompt(
         profile=profile,
@@ -487,6 +547,15 @@ def test_build_artefact_tailoring_prompt_uses_selected_artefact_context() -> Non
         artefact=artefact,
         artefact_summary=candidate,
         prior_suggestion=prior,
+        artefact_analysis=analysis,
+        requirement_strategy_summary=(
+            "Required or explicitly requested artefacts: supporting statement\n"
+            "Selected baseline does not satisfy all explicitly requested artefact types by itself; "
+            "guide the user on what should exist alongside it."
+        ),
+        evidence_phrasing_summary="Use cautious wording where evidence is thin and stronger wording only where the source supports it.",
+        submission_pack_coordination_summary="Use the supporting statement for denser criteria evidence so the resume can stay evidence-led.",
+        generation_brief_summary="- Focus areas: Emphasise cross-functional delivery and platform migrations\n- Must include: stakeholder leadership",
     )
 
     assert title == "AI tailoring guidance"
@@ -494,6 +563,15 @@ def test_build_artefact_tailoring_prompt_uses_selected_artefact_context() -> Non
     assert "Selected artefact:" in prompt
     assert "Filename: tpm-resume.pdf" in prompt
     assert "Outcome signals:" in prompt
+    assert "Artefact analysis:" in prompt
+    assert "Artefact analysis index:" in prompt
+    assert "Detected sections: experience, skills" in prompt
+    assert "Submission strategy:" in prompt
+    assert "Submission pack coordination:" in prompt
+    assert "Evidence phrasing guidance:" in prompt
+    assert "User generation brief:" in prompt
+    assert "platform migrations" in prompt
+    assert "supporting statement" in prompt
     assert "Prior artefact suggestion:" in prompt
     assert "Target roles: Technical Program Manager" in prompt
 
@@ -503,6 +581,14 @@ def test_build_artefact_draft_prompt_includes_content_mode_and_tailoring_guidanc
     job = Job(title="Staff TPM", status="saved", description_raw="Lead delivery.")
     candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
     tailoring = AiOutput(body="### Keep\n* **Programme delivery**")
+    analysis = AiOutput(
+        body="### What this artefact emphasizes\n* Platform delivery leadership",
+        source_context={
+            "detected_sections": ["summary", "experience"],
+            "accomplishment_density": "moderate",
+            "tooling_or_domain_mentions": ["platform", "aws"],
+        },
+    )
 
     title, prompt = _build_artefact_draft_prompt(
         profile=profile,
@@ -512,19 +598,39 @@ def test_build_artefact_draft_prompt_includes_content_mode_and_tailoring_guidanc
         content_mode="extracted_text",
         extracted_text="# Resume\n\nPlatform delivery",
         tailoring_guidance=tailoring,
+        artefact_analysis=analysis,
+        requirement_strategy_summary="No explicit extra artefact requirement detected in the job text.",
+        evidence_allocation_summary="Keep the resume focused on concrete role-relevant evidence, impact, scope, and skills.",
+        section_emphasis_summary=(
+            "Preserve a concise professional summary rather than expanding it into a long narrative block.\n"
+            "Use the skills area to foreground the strongest relevant tooling/domain terms: platform, aws"
+        ),
+        evidence_phrasing_summary="Use the verified extracted text as the anchor for any stronger wording.",
+        generation_brief_summary="- Focus areas: Platform delivery\n- Tone or positioning: concise and executive-ready",
     )
 
     assert title == "AI tailored resume draft"
     assert "Outcome signals:" in prompt
     assert "Content mode: extracted_text" in prompt
     assert "Verified extracted artefact text:" in prompt
+    assert "Artefact analysis:" in prompt
+    assert "Artefact analysis index:" in prompt
+    assert "Submission strategy:" in prompt
+    assert "Evidence allocation guidance:" in prompt
+    assert "Section emphasis guidance:" in prompt
+    assert "Evidence phrasing guidance:" in prompt
+    assert "User generation brief:" in prompt
     assert "Tailoring guidance:" in prompt
     assert "Platform delivery" in prompt
 
 
 def test_build_cover_letter_draft_prompt_uses_cover_letter_contract() -> None:
-    job = Job(title="Staff TPM", company="Example Co", status="saved")
+    job = Job(title="Staff TPM", company="Example Co", status="saved", description_raw="Please include a cover letter.")
     candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
+    analysis = AiOutput(
+        body="### Evidence strength\n* Strong delivery outcomes",
+        source_context={"accomplishment_density": "high"},
+    )
 
     title, prompt = _build_artefact_draft_prompt(
         profile=None,
@@ -532,18 +638,39 @@ def test_build_cover_letter_draft_prompt_uses_cover_letter_contract() -> None:
         artefact_summary=candidate,
         draft_kind="cover_letter_draft",
         content_mode="metadata_only",
+        artefact_analysis=analysis,
+        requirement_strategy_summary=(
+            "Required or explicitly requested artefacts: cover letter\n"
+            "The requested draft type directly satisfies one explicit job requirement: cover letter"
+        ),
+        evidence_allocation_summary="Use the cover letter for concise role motivation, fit framing, and a small number of high-signal examples.",
+        section_emphasis_summary="Keep example claims brief and careful where outcome evidence is limited.",
+        evidence_phrasing_summary="Where evidence is thin or mostly responsibility-based, use measured wording and mark gaps explicitly instead of polishing them into strengths.",
+        submission_pack_coordination_summary="Do not duplicate the resume bullet structure; use the letter to connect the evidence to role motivation.",
     )
 
     assert title == "AI cover letter draft"
     assert "Draft a concise cover letter for this job" in prompt
     assert "Outcome signals:" in prompt
     assert "Content mode: metadata_only" in prompt
+    assert "Artefact analysis:" in prompt
+    assert "Artefact analysis index:" in prompt
+    assert "Submission strategy:" in prompt
+    assert "Submission pack coordination:" in prompt
+    assert "Evidence allocation guidance:" in prompt
+    assert "Section emphasis guidance:" in prompt
+    assert "Evidence phrasing guidance:" in prompt
+    assert "directly satisfies one explicit job requirement: cover letter" in prompt
     assert "Baseline artefact content is unavailable. Reason from metadata only." in prompt
 
 
 def test_build_supporting_statement_draft_prompt_uses_statement_contract() -> None:
-    job = Job(title="Staff TPM", company="Example Co", status="saved")
+    job = Job(title="Staff TPM", company="Example Co", status="saved", description_raw="Please include a supporting statement.")
     candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
+    analysis = AiOutput(
+        body="### Job requirement match\n* Likely supports statement-heavy application flow",
+        source_context={"requirement_coverage_hints": ["job requests additional artefacts beyond this baseline: supporting statement"]},
+    )
 
     title, prompt = _build_artefact_draft_prompt(
         profile=None,
@@ -551,12 +678,95 @@ def test_build_supporting_statement_draft_prompt_uses_statement_contract() -> No
         artefact_summary=candidate,
         draft_kind="supporting_statement_draft",
         content_mode="metadata_only",
+        artefact_analysis=analysis,
+        requirement_strategy_summary=(
+            "Required or explicitly requested artefacts: supporting statement\n"
+            "The requested draft type directly satisfies one explicit job requirement: supporting statement"
+        ),
+        evidence_allocation_summary=(
+            "Use the supporting statement for explicit criteria coverage, fuller examples, and structured narrative evidence.\n"
+            "Do not merely repeat resume bullets; expand them into context, actions, and outcomes where relevant."
+        ),
+        section_emphasis_summary=(
+            "Expand the strongest evidence into fuller STAR-style or criteria-led examples.\n"
+            "Thread the most relevant tooling/domain terms into the example sections: platform"
+        ),
+        evidence_phrasing_summary="Where the source clearly supports outcomes, use confident but precise impact phrasing.",
+        submission_pack_coordination_summary="Use this document to carry the densest requirement-by-requirement evidence so the other documents can stay tighter.",
     )
 
     assert title == "AI supporting statement draft"
     assert "Draft a targeted supporting statement for this job" in prompt
     assert "Outcome signals:" in prompt
     assert "Content mode: metadata_only" in prompt
+    assert "Artefact analysis:" in prompt
+    assert "Artefact analysis index:" in prompt
+    assert "Submission strategy:" in prompt
+    assert "Submission pack coordination:" in prompt
+    assert "Section emphasis guidance:" in prompt
+    assert "Evidence phrasing guidance:" in prompt
+    assert "Use the supporting statement for explicit criteria coverage" in prompt
+
+
+def test_build_resume_draft_prompt_allocates_narrative_to_supporting_statement_when_required() -> None:
+    job = Job(
+        title="Staff TPM",
+        company="Example Co",
+        status="saved",
+        description_raw="Please include a supporting statement.",
+    )
+    candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
+
+    _, prompt = _build_artefact_draft_prompt(
+        profile=None,
+        job=job,
+        artefact_summary=candidate,
+        draft_kind="resume_draft",
+        content_mode="metadata_only",
+        requirement_strategy_summary=(
+            "Required or explicitly requested artefacts: supporting statement\n"
+            "Selected baseline does not satisfy all explicitly requested artefact types by itself; "
+            "guide the user on what should exist alongside it."
+        ),
+        evidence_allocation_summary=(
+            "Keep the resume focused on concrete role-relevant evidence, impact, scope, and skills.\n"
+            "Do not overload the resume with long criteria-by-criteria narrative that belongs in the supporting statement."
+        ),
+    )
+
+    assert "Evidence allocation guidance:" in prompt
+    assert "belongs in the supporting statement" in prompt
+
+
+def test_build_resume_draft_prompt_uses_analysis_to_shape_section_emphasis() -> None:
+    job = Job(title="Staff TPM", company="Example Co", status="saved")
+    candidate = _candidate("Kind: resume | Filename: tpm-resume.pdf | Metadata quality: strong")
+    analysis = AiOutput(
+        body="### What this artefact emphasizes\n* Platform delivery leadership",
+        source_context={
+            "detected_sections": ["summary", "skills"],
+            "accomplishment_density": "high",
+            "tooling_or_domain_mentions": ["platform", "aws"],
+        },
+    )
+
+    _, prompt = _build_artefact_draft_prompt(
+        profile=None,
+        job=job,
+        artefact_summary=candidate,
+        draft_kind="resume_draft",
+        content_mode="metadata_only",
+        artefact_analysis=analysis,
+        section_emphasis_summary=(
+            "Foreground quantified outcomes and impact bullets in the main evidence sections.\n"
+            "Preserve a concise professional summary rather than expanding it into a long narrative block.\n"
+            "Use the skills area to foreground the strongest relevant tooling/domain terms: platform, aws"
+        ),
+    )
+
+    assert "Section emphasis guidance:" in prompt
+    assert "Foreground quantified outcomes and impact bullets" in prompt
+    assert "platform, aws" in prompt
 
 
 def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
@@ -592,10 +802,29 @@ def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(
+                body="### Evidence strength\n* Strong quantified platform delivery evidence",
+                source_context={
+                    "artefact_uuid": artefact_uuid,
+                    "detected_sections": ["experience", "skills"],
+                    "accomplishment_density": "high",
+                },
+            ),
+        )
+
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Selected artefact:" in prompt
             assert "tpm-resume.pdf" in prompt
+            assert "Artefact analysis:" in prompt
+            assert "Artefact analysis index:" in prompt
+            assert "Submission strategy:" in prompt
+            assert "Submission pack coordination:" in prompt
+            assert "Evidence phrasing guidance:" in prompt
+            assert "User generation brief:" in prompt
             return "### Keep\n* **Programme delivery evidence**"
 
         monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
@@ -605,7 +834,13 @@ def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
             job = db.get(Job, job_id)
             artefact = db.get(Artefact, artefact_id)
 
-            output = generate_job_artefact_tailoring_guidance(db, user, job, artefact)
+            output = generate_job_artefact_tailoring_guidance(
+                db,
+                user,
+                job,
+                artefact,
+                generation_brief={"focus_areas": "Programme delivery", "tone": "concise"},
+            )
             db.commit()
 
             assert output.output_type == "tailoring_guidance"
@@ -615,6 +850,11 @@ def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
             assert output.source_context["artefact_uuid"] == artefact.uuid
             assert output.source_context["used_extracted_text"] is False
             assert output.source_context["draft_handoff_contract"] == "artefact_draft_seed_v1"
+            assert output.source_context["required_artefact_types"] == []
+            assert output.source_context["generation_brief"] == {
+                "focus_areas": "Programme delivery",
+                "tone": "concise",
+            }
 
             stored = db.get(AiOutput, output.id)
             assert stored is not None
@@ -649,6 +889,7 @@ def test_generate_job_artefact_tailoring_guidance_uses_local_fallback_for_thin_m
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
 
         with session_local() as db:
             user = db.get(User, user_id)
@@ -693,7 +934,12 @@ def test_generate_job_artefact_tailoring_guidance_uses_extracted_text_for_textli
         with session_local() as db:
             user = create_local_user(db, email="jobseeker@example.com", password="password")
             db.flush()
-            job = Job(owner_user_id=user.id, title="Markdown tailoring target", status="saved")
+            job = Job(
+                owner_user_id=user.id,
+                title="Markdown tailoring target",
+                status="saved",
+                description_raw="Please include a supporting statement.",
+            )
             artefact = Artefact(
                 owner_user_id=user.id,
                 job_id=job.id,
@@ -715,15 +961,34 @@ def test_generate_job_artefact_tailoring_guidance_uses_extracted_text_for_textli
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
 
         monkeypatch.setattr(
             "app.services.ai.load_artefact_text_excerpt",
             lambda artefact: "# Resume\n\n* Platform delivery\n* Stakeholder leadership",
         )
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(
+                body="### What this artefact emphasizes\n* Platform delivery and stakeholder leadership",
+                source_context={
+                    "artefact_uuid": artefact_uuid,
+                    "detected_sections": ["summary", "experience"],
+                    "tooling_or_domain_mentions": ["platform"],
+                },
+            ),
+        )
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Extracted artefact text (verified excerpt):" in prompt
             assert "Platform delivery" in prompt
+            assert "Artefact analysis:" in prompt
+            assert "Artefact analysis index:" in prompt
+            assert "Submission strategy:" in prompt
+            assert "Submission pack coordination:" in prompt
+            assert "Evidence phrasing guidance:" in prompt
+            assert "User generation brief:" in prompt
+            assert "supporting statement" in prompt
             return "### Keep\n* **Platform delivery**"
 
         monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
@@ -733,12 +998,20 @@ def test_generate_job_artefact_tailoring_guidance_uses_extracted_text_for_textli
             job = db.get(Job, job_id)
             artefact = db.get(Artefact, artefact_id)
 
-            output = generate_job_artefact_tailoring_guidance(db, user, job, artefact)
+            output = generate_job_artefact_tailoring_guidance(
+                db,
+                user,
+                job,
+                artefact,
+                generation_brief={"must_include": "Stakeholder leadership"},
+            )
             db.commit()
 
             assert output.provider == "gemini"
             assert output.source_context["used_extracted_text"] is True
             assert output.source_context["draft_handoff_contract"] == "artefact_draft_seed_v1"
+            assert output.source_context["required_artefact_types"] == ["supporting statement"]
+            assert output.source_context["generation_brief"] == {"must_include": "Stakeholder leadership"}
     finally:
         app.dependency_overrides.clear()
 
@@ -777,15 +1050,34 @@ def test_generate_job_artefact_draft_stores_visible_output(
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
 
         monkeypatch.setattr(
             "app.services.ai.load_artefact_text_excerpt",
             lambda artefact: "# Resume\n\n* Platform delivery",
         )
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(
+                body="### What this artefact emphasizes\n* Platform delivery leadership",
+                source_context={
+                    "artefact_uuid": artefact_uuid,
+                    "detected_sections": ["summary", "experience"],
+                    "accomplishment_density": "moderate",
+                },
+            ),
+        )
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Content mode: extracted_text" in prompt
             assert "Platform delivery" in prompt
+            assert "Artefact analysis:" in prompt
+            assert "Artefact analysis index:" in prompt
+            assert "Submission strategy:" in prompt
+            assert "Submission pack coordination:" in prompt
+            assert "Section emphasis guidance:" in prompt
+            assert "Evidence phrasing guidance:" in prompt
+            assert "User generation brief:" in prompt
             assert document is None
             return "### Headline\nTechnical Program Manager"
 
@@ -802,6 +1094,7 @@ def test_generate_job_artefact_draft_stores_visible_output(
                 job,
                 artefact,
                 draft_kind="resume_draft",
+                generation_brief={"focus_areas": "Platform delivery", "tone": "assertive"},
             )
             db.commit()
 
@@ -811,6 +1104,11 @@ def test_generate_job_artefact_draft_stores_visible_output(
             assert output.source_context["draft_kind"] == "resume_draft"
             assert output.source_context["content_mode"] == "extracted_text"
             assert output.source_context["artefact_uuid"] == artefact.uuid
+            assert output.source_context["required_artefact_types"] == []
+            assert output.source_context["generation_brief"] == {
+                "focus_areas": "Platform delivery",
+                "tone": "assertive",
+            }
     finally:
         app.dependency_overrides.clear()
 
@@ -845,15 +1143,31 @@ def test_generate_job_artefact_draft_uses_gemini_provider_document_for_pdf_when_
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            artefact_uuid = artefact.uuid
 
         monkeypatch.setattr("app.services.ai.load_artefact_text_excerpt", lambda artefact: None)
         monkeypatch.setattr(
             "app.services.ai.load_artefact_document_payload",
             lambda artefact: ("application/pdf", b"%PDF-sample"),
         )
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(
+                body="### Artefact type and structure\n* Resume PDF with likely multi-section content",
+                source_context={
+                    "artefact_uuid": artefact_uuid,
+                    "detected_sections": ["experience", "skills"],
+                    "requirement_coverage_hints": ["no explicit extra artefact requirement detected"],
+                },
+            ),
+        )
 
-        def fake_execute_prompt(setting, prompt, *, document=None):
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
             assert "Content mode: provider_document" in prompt
+            assert "Artefact analysis:" in prompt
+            assert "Artefact analysis index:" in prompt
+            assert "Submission strategy:" in prompt
+            assert "Section emphasis guidance:" in prompt
             assert document is not None
             assert document["mime_type"] == "application/pdf"
             assert document["data"] == b"%PDF-sample"
@@ -878,6 +1192,7 @@ def test_generate_job_artefact_draft_uses_gemini_provider_document_for_pdf_when_
             assert output.source_context["content_mode"] == "provider_document"
             assert output.source_context["provider_document_mime_type"] == "application/pdf"
             assert output.source_context["used_extracted_text"] is False
+            assert output.source_context["required_artefact_types"] == []
     finally:
         app.dependency_overrides.clear()
 
@@ -896,5 +1211,80 @@ def test_call_gemini_maps_raw_timeout_error(monkeypatch) -> None:
         _call_gemini(setting, "hello")
     except AiExecutionError as exc:
         assert "Google Gemini timed out before returning a response" in str(exc)
+    else:
+        raise AssertionError("Expected AiExecutionError")
+
+
+def test_call_gemini_uses_extended_timeout_for_document_payload(monkeypatch) -> None:
+    setting = AiProviderSetting(
+        provider="gemini",
+        model_name="gemini-flash-latest",
+        api_key_encrypted="sealed",
+    )
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}'
+
+    def _fake_urlopen(*args, **kwargs):
+        captured.update(kwargs)
+        return _FakeResponse()
+
+    monkeypatch.setattr("app.services.ai._open_provider_api_key", lambda setting: "gemini-secret-1234")
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+
+    result = _call_gemini(
+        setting,
+        "hello",
+        document={"mime_type": "application/pdf", "data": b"pdf"},
+    )
+
+    assert result == "ok"
+    assert captured["timeout"] == 60
+
+
+def test_execute_prompt_enriches_ai_execution_error_with_diagnostics(monkeypatch) -> None:
+    setting = AiProviderSetting(
+        provider="gemini",
+        model_name="gemini-flash-latest",
+        api_key_encrypted="sealed",
+    )
+
+    def _raise(*args, **kwargs):
+        raise AiExecutionError("Google Gemini timed out before returning a response. Try again or reduce the request size.")
+
+    monkeypatch.setattr("app.services.ai._call_gemini", _raise)
+
+    try:
+        _execute_prompt(
+            setting,
+            "hello",
+            document={"mime_type": "application/pdf", "data": b"pdf"},
+            action="tailoring_guidance",
+            content_mode="provider_document",
+            job_uuid="job-123",
+            artefact_uuid="artefact-456",
+        )
+    except AiExecutionError as exc:
+        assert exc.diagnostics["action"] == "tailoring_guidance"
+        assert exc.diagnostics["provider"] == "gemini"
+        assert exc.diagnostics["model"] == "gemini-flash-latest"
+        assert exc.diagnostics["content_mode"] == "provider_document"
+        assert exc.diagnostics["document_attached"] is True
+        assert exc.diagnostics["timeout_seconds"] == 60
+        assert exc.diagnostics["job_uuid"] == "job-123"
+        assert exc.diagnostics["artefact_uuid"] == "artefact-456"
+        summary = _ai_debug_summary(exc)
+        assert "action=tailoring_guidance" in summary
+        assert "provider=gemini" in summary
+        assert "content_mode=provider_document" in summary
+        assert "timeout_seconds=60" in summary
     else:
         raise AssertionError("Expected AiExecutionError")

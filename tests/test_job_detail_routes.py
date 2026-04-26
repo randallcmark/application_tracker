@@ -16,6 +16,7 @@ from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.job_artefact_link import JobArtefactLink
 from app.main import app
+from app.services.ai import AiExecutionError
 from tests.test_local_auth_routes import build_client
 
 
@@ -143,11 +144,49 @@ def test_job_detail_section_query_renders_selected_application_surface(tmp_path:
         assert 'data-ui-active-section="application"' in response.text
         assert 'data-ui-component="workspace-frame"' in response.text
         assert 'data-ui-component="overview-identity"' in response.text
-        assert "Application state and route" in response.text
+        assert 'data-ui-component="application-workbench"' in response.text
+        assert "Submission route" in response.text
         assert "Open source" in response.text
         assert "Open apply link" in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
         assert "Role overview" not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_section_query_renders_refined_interviews_and_followups_surfaces(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="workflow-sections@example.com", password="password")
+            db.flush()
+            job = Job(
+                owner_user_id=user.id,
+                title="Workflow section target",
+                status="applied",
+            )
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "workflow-sections@example.com")
+
+        interviews_response = client.get(f"/jobs/{job_uuid}?section=interviews")
+        assert interviews_response.status_code == 200
+        assert 'data-ui-component="interviews-workbench"' in interviews_response.text
+        assert "Interview loop" in interviews_response.text
+        assert "Upcoming conversations" in interviews_response.text
+        assert "Plan next interview" in interviews_response.text
+
+        followups_response = client.get(f"/jobs/{job_uuid}?section=follow-ups")
+        assert followups_response.status_code == 200
+        assert 'data-ui-component="follow-ups-workbench"' in followups_response.text
+        assert "Follow-up queue" in followups_response.text
+        assert "Start application" in followups_response.text
+        assert "Surface blockers" in followups_response.text
+        assert "Queue return note" in followups_response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -384,12 +423,154 @@ def test_job_detail_renders_selected_artefact_link_for_artefact_analysis(
         response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
-        assert "Analyzed artefact" in response.text
+        assert "Analysed artefact" in response.text
         assert f'href="/artefacts/{artefact_uuid}/download"' in response.text
         assert "analysis-resume.pdf" in response.text
         assert "content: metadata_only" in response.text
         assert "Lower-confidence analysis" in response.text
         assert "Required or explicitly requested: cover letter" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_documents_local_ai_workspace_switches_tabs_and_hides_placeholder(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Tab switch target", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.pdf",
+                storage_key="artefacts/baseline.pdf",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    artefact_id=artefact.id,
+                    output_type="tailoring_guidance",
+                    title="AI tailoring guidance",
+                    body="### Keep\n* Delivery evidence",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                    source_context={"artefact_uuid": artefact.uuid, "content_mode": "provider_document"},
+                )
+            )
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    artefact_id=artefact.id,
+                    output_type="artefact_analysis",
+                    title="AI artefact analysis",
+                    body="### Artefact type and structure\n* Resume baseline",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                    source_context={"artefact_uuid": artefact.uuid, "content_mode": "provider_document"},
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(
+            f"/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=analyse"
+        )
+
+        assert response.status_code == 200
+        assert f'href="/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=analyse"' in response.text
+        assert f'href="/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=tailor"' in response.text
+        assert 'class="workspace-local-ai-tab active"' in response.text
+        assert ">Analyse</a>" in response.text
+        assert "AI artefact analysis" in response.text
+        assert "Artefact type and structure" in response.text
+        assert "This local workspace keeps artefact-specific AI output attached to the document instead of the global page rail." not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_documents_local_ai_workspace_ignores_global_fit_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Workspace isolation target", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.pdf",
+                storage_key="artefacts/baseline.pdf",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    output_type="tailoring_guidance",
+                    artefact_id=artefact.id,
+                    title="AI tailoring guidance",
+                    body="### Keep\n* Delivery evidence",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                    source_context={"artefact_uuid": artefact.uuid, "content_mode": "provider_document"},
+                )
+            )
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    output_type="artefact_analysis",
+                    artefact_id=artefact.id,
+                    title="AI artefact analysis",
+                    body="### Artefact type and structure\n* Resume baseline",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                    source_context={"artefact_uuid": artefact.uuid, "content_mode": "provider_document"},
+                )
+            )
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    output_type="fit_summary",
+                    title="AI fit summary",
+                    body="### Strengths\n* Strong match",
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(
+            f"/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=analyse"
+        )
+
+        assert response.status_code == 200
+        assert "AI artefact analysis" in response.text
+        assert "Artefact type and structure" in response.text
+        assert "AI Assistant" in response.text
+        assert 'class="workspace-local-ai-tab active"' in response.text
+        assert ">Analyse</a>" in response.text
+        assert f'href="/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=tailor"' in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -425,13 +606,15 @@ def test_job_detail_renders_draft_action_for_job_artefacts(tmp_path: Path, monke
         response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
-        assert "Analyze" in response.text
+        assert "Analyse" in response.text
         assert "Draft tailored resume" in response.text
         assert "Draft cover letter" in response.text
         assert "Draft supporting statement" in response.text
         assert "Draft attestation" in response.text
         assert f'action="/jobs/{job_uuid}/artefacts/{artefact_uuid}/analysis"' in response.text
-        assert f'action="/jobs/{job_uuid}/artefacts/{artefact_uuid}/drafts"' in response.text
+        assert "brief_action=draft" in response.text
+        assert "brief_draft_kind=resume_draft" in response.text
+        assert artefact_uuid in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -759,10 +942,11 @@ def test_job_detail_tailoring_guidance_creates_visible_output(tmp_path: Path, mo
             artefact_uuid = artefact.uuid
 
         def fake_generate_job_artefact_tailoring_guidance(
-            db, user, job, artefact, *, profile=None, prior_suggestion=None
+            db, user, job, artefact, *, profile=None, prior_suggestion=None, generation_brief=None
         ):
             assert artefact.uuid == artefact_uuid
             assert prior_suggestion is not None
+            assert generation_brief is None
             output = AiOutput(
                 owner_user_id=user.id,
                 job_id=job.id,
@@ -900,6 +1084,239 @@ def test_job_detail_artefact_analysis_creates_visible_output(tmp_path: Path, mon
         app.dependency_overrides.clear()
 
 
+def test_job_detail_documents_generation_brief_modal_is_available_for_generators(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Generation brief target", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.md",
+                storage_key="artefacts/baseline.md",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(
+            f"/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=draft&brief_action=draft&brief_draft_kind=cover_letter_draft"
+        )
+
+        assert response.status_code == 200
+        assert 'data-ui-component="generation-brief-modal"' in response.text
+        assert "Draft with optional brief" in response.text
+        assert 'name="focus_areas"' in response.text
+        assert 'name="must_include"' in response.text
+        assert 'name="avoid"' in response.text
+        assert 'name="tone"' in response.text
+        assert 'name="extra_context"' in response.text
+        assert 'name="skip_brief" value="1"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Tailor with brief", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.md",
+                storage_key="artefacts/baseline.md",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.add(
+                AiProviderSetting(
+                    owner_user_id=user.id,
+                    provider="gemini",
+                    label="AI Studio",
+                    model_name="gemini-flash-latest",
+                    api_key_encrypted="sealed",
+                    api_key_hint="key...1234",
+                    is_enabled=True,
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        def fake_generate_job_artefact_tailoring_guidance(
+            db, user, job, artefact, *, profile=None, prior_suggestion=None, generation_brief=None
+        ):
+            assert generation_brief == {
+                "focus_areas": "Platform migrations",
+                "must_include": "Stakeholder leadership",
+                "tone": "concise",
+            }
+            output = AiOutput(
+                owner_user_id=user.id,
+                job_id=job.id,
+                artefact_id=artefact.id,
+                output_type="tailoring_guidance",
+                title="AI tailoring guidance",
+                body="### Keep\n* **Platform migrations**",
+                provider="gemini",
+                model_name="gemini-flash-latest",
+                source_context={
+                    "surface": "job_workspace",
+                    "artefact_uuid": artefact.uuid,
+                    "prompt_contract": "artefact_tailoring_v1",
+                    "used_extracted_text": False,
+                    "generation_brief": generation_brief,
+                },
+            )
+            db.add(output)
+            db.flush()
+            return output
+
+        monkeypatch.setattr(
+            "app.api.routes.job_detail.generate_job_artefact_tailoring_guidance",
+            fake_generate_job_artefact_tailoring_guidance,
+        )
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/artefacts/{artefact_uuid}/tailoring-guidance",
+            data={
+                "focus_areas": "Platform migrations",
+                "must_include": "Stakeholder leadership",
+                "tone": "concise",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        detail_response = client.get(response.headers["location"])
+        assert detail_response.status_code == 200
+        assert "Brief used:" in detail_response.text
+        assert "Platform migrations" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_draft_accepts_generation_brief(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Draft with brief", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.md",
+                storage_key="artefacts/baseline.md",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    artefact_id=artefact.id,
+                    output_type="tailoring_guidance",
+                    title="AI tailoring guidance",
+                    body="### Keep\n* **Programme delivery evidence**",
+                )
+            )
+            db.add(
+                AiProviderSetting(
+                    owner_user_id=user.id,
+                    provider="gemini",
+                    label="AI Studio",
+                    model_name="gemini-flash-latest",
+                    api_key_encrypted="sealed",
+                    api_key_hint="key...1234",
+                    is_enabled=True,
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        def fake_generate_job_artefact_draft(
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            draft_kind,
+            profile=None,
+            tailoring_guidance=None,
+            prior_suggestion=None,
+            generation_brief=None,
+        ):
+            assert draft_kind == "cover_letter_draft"
+            assert generation_brief == {
+                "focus_areas": "Cross-functional leadership",
+                "avoid": "Deep delivery chronology",
+            }
+            output = AiOutput(
+                owner_user_id=user.id,
+                job_id=job.id,
+                artefact_id=artefact.id,
+                output_type="draft",
+                title="AI cover letter draft",
+                body="### Opening\nDear Hiring Team,",
+                provider="gemini",
+                model_name="gemini-flash-latest",
+                source_context={
+                    "surface": "job_workspace",
+                    "artefact_uuid": artefact.uuid,
+                    "prompt_contract": "artefact_draft_v1",
+                    "draft_kind": "cover_letter_draft",
+                    "content_mode": "metadata_only",
+                    "generation_brief": generation_brief,
+                },
+            )
+            db.add(output)
+            db.flush()
+            return output
+
+        monkeypatch.setattr(
+            "app.api.routes.job_detail.generate_job_artefact_draft",
+            fake_generate_job_artefact_draft,
+        )
+
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/jobs/{job_uuid}/artefacts/{artefact_uuid}/drafts",
+            data={
+                "draft_kind": "cover_letter_draft",
+                "focus_areas": "Cross-functional leadership",
+                "avoid": "Deep delivery chronology",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        detail_response = client.get(response.headers["location"])
+        assert detail_response.status_code == 200
+        assert "Brief used:" in detail_response.text
+        assert "Cross-functional leadership" in detail_response.text
+        assert "Generation metadata" in detail_response.text
+        assert "Avoid or de-emphasise" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_job_detail_tailoring_guidance_uses_local_fallback_when_selected_artefact_is_thin(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -958,6 +1375,73 @@ def test_job_detail_tailoring_guidance_uses_local_fallback_when_selected_artefac
         app.dependency_overrides.clear()
 
 
+def test_job_detail_tailoring_guidance_failure_surfaces_ai_debug_context(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Tailoring failure", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.pdf",
+                storage_key="artefacts/baseline.pdf",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(
+                JobArtefactLink(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    artefact_id=artefact.id,
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        def fake_tailoring(*args, **kwargs):
+            raise AiExecutionError(
+                "Google Gemini timed out before returning a response. Try again or reduce the request size.",
+                diagnostics={
+                    "action": "tailoring_guidance",
+                    "provider": "gemini",
+                    "content_mode": "provider_document",
+                    "document_attached": True,
+                    "timeout_seconds": 60,
+                    "job_uuid": job_uuid,
+                    "artefact_uuid": artefact_uuid,
+                },
+            )
+
+        monkeypatch.setattr(
+            "app.api.routes.job_detail.generate_job_artefact_tailoring_guidance",
+            fake_tailoring,
+        )
+
+        response = client.post(
+            f"/jobs/{job_uuid}/artefacts/{artefact_uuid}/tailoring-guidance",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_error=" in response.headers["location"]
+        assert "ai_debug=" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert detail_response.status_code == 200
+        assert "Google Gemini timed out before returning a response" in detail_response.text
+        assert "action=tailoring_guidance" in detail_response.text
+        assert "provider=gemini" in detail_response.text
+        assert "content_mode=provider_document" in detail_response.text
+        assert "timeout_seconds=60" in detail_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_job_detail_artefact_draft_creates_visible_output(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:
@@ -1006,11 +1490,21 @@ def test_job_detail_artefact_draft_creates_visible_output(tmp_path: Path, monkey
             artefact_uuid = artefact.uuid
 
         def fake_generate_job_artefact_draft(
-            db, user, job, artefact, *, draft_kind, profile=None, tailoring_guidance=None, prior_suggestion=None
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            draft_kind,
+            profile=None,
+            tailoring_guidance=None,
+            prior_suggestion=None,
+            generation_brief=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "resume_draft"
             assert tailoring_guidance is not None
+            assert generation_brief is None
             output = AiOutput(
                 owner_user_id=user.id,
                 job_id=job.id,
@@ -1103,10 +1597,20 @@ def test_job_detail_cover_letter_draft_creates_visible_output(tmp_path: Path, mo
             artefact_uuid = artefact.uuid
 
         def fake_generate_job_artefact_draft(
-            db, user, job, artefact, *, draft_kind, profile=None, tailoring_guidance=None, prior_suggestion=None
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            draft_kind,
+            profile=None,
+            tailoring_guidance=None,
+            prior_suggestion=None,
+            generation_brief=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "cover_letter_draft"
+            assert generation_brief is None
             output = AiOutput(
                 owner_user_id=user.id,
                 job_id=job.id,
@@ -1191,10 +1695,20 @@ def test_job_detail_supporting_statement_draft_creates_visible_output(tmp_path: 
             artefact_uuid = artefact.uuid
 
         def fake_generate_job_artefact_draft(
-            db, user, job, artefact, *, draft_kind, profile=None, tailoring_guidance=None, prior_suggestion=None
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            draft_kind,
+            profile=None,
+            tailoring_guidance=None,
+            prior_suggestion=None,
+            generation_brief=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "supporting_statement_draft"
+            assert generation_brief is None
             output = AiOutput(
                 owner_user_id=user.id,
                 job_id=job.id,
@@ -1305,6 +1819,10 @@ def test_job_detail_save_draft_as_artefact_creates_markdown_artefact(tmp_path: P
                     source_context={
                         "draft_kind": "resume_draft",
                         "artefact_uuid": baseline.uuid,
+                        "generation_brief": {
+                            "focus_areas": "Platform delivery",
+                            "tone": "concise",
+                        },
                     },
                 )
             )
@@ -1336,6 +1854,8 @@ def test_job_detail_save_draft_as_artefact_creates_markdown_artefact(tmp_path: P
             assert saved.purpose == "AI tailored resume draft"
             assert saved.version_label == "ai-draft-v1"
             assert baseline_uuid in (saved.notes or "")
+            assert "Generation brief:" in (saved.notes or "")
+            assert "Focus areas=Platform delivery" in (saved.notes or "")
             output = db.scalar(select(AiOutput).where(AiOutput.output_type == "draft"))
             assert output is not None
             assert output.source_context["saved_artefact_uuid"] == saved.uuid

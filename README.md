@@ -180,11 +180,8 @@ Build and run locally:
 docker compose up -d --build
 ```
 
-Apply database migrations inside the container:
-
-```bash
-docker compose exec app alembic upgrade head
-```
+The container runs `alembic upgrade head` automatically on startup. Set `AUTO_MIGRATE=0` only if
+you want to manage migrations manually.
 
 Then create the first local admin user in the browser:
 
@@ -247,8 +244,9 @@ After pulling updates, rebuild and rerun migrations:
 ```bash
 git pull
 docker compose up -d --build
-docker compose exec app alembic upgrade head
 ```
+
+The rebuilt container applies any pending Alembic migrations before starting the web server.
 
 Download periodic backups from `/admin`, or back up the persistent `/app/data` mount directly from
 the host.

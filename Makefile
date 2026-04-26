@@ -1,4 +1,4 @@
-.PHONY: check lint migrate package-firefox-extension run test
+.PHONY: check docker-import-smoke lint migrate package-firefox-extension run test
 
 PYTHON ?= .venv/bin/python
 UVICORN ?= .venv/bin/uvicorn
@@ -24,3 +24,6 @@ package-firefox-extension:
 
 run:
 	$(UVICORN) app.main:app --reload
+
+docker-import-smoke:
+	docker build -t application-tracker-import-smoke .

@@ -5,6 +5,7 @@ from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.auth_session import AuthSession
 from app.db.models.communication import Communication
+from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.email_intake import EmailIntake
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -20,6 +21,7 @@ __all__ = [
     "Artefact",
     "AuthSession",
     "Communication",
+    "CompetencyEvidence",
     "EmailIntake",
     "InterviewEvent",
     "Job",

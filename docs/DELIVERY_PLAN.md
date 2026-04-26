@@ -180,6 +180,14 @@ defines the resumable implementation plan for:
 - removing duplicate role summary blocks;
 - later pane-by-pane cleanup and any future utility-card reassessment.
 
+The next pane-cleanup pass has now started in the live UI for:
+
+- `Application`
+- `Interviews`
+- `Follow-ups`
+
+with calmer titles, clearer workflow grouping, and explicit workbench markers.
+
 ## Phase 5: Artefact Library
 
 Goal: make files reusable assets rather than passive attachments.
@@ -191,9 +199,21 @@ without copying the file. Application/interview-level reuse, extraction, and AI 
 planned follow-on work.
 
 Detailed resumable planning for AI-assisted artefact analysis, selection, tailoring, draft generation, and
-later outcome-aware refinement now lives in `docs/ARTEFACT_AI_PLAN.md`. The active next recommended
-slice is now Phase A: analysis-first artefact understanding and fit evaluation. Existing outcome
-summary helpers remain implemented as supporting infrastructure rather than the lead roadmap.
+later outcome-aware refinement now lives in `docs/ARTEFACT_AI_PLAN.md`. Phase A, the first
+analysis-first artefact understanding and fit-evaluation foundation slice, is now implemented:
+explicit `artefact_analysis`, hidden reuse in suggestion/tailoring/drafting, and lightweight
+structured indexing all exist without new schema. Existing outcome summary helpers remain
+implemented as supporting infrastructure rather than the lead roadmap. The next recommended step is
+to keep pushing those signals deeper into generated-example quality and multi-document submission
+coordination now that shortlist, fit reasoning, submission-strategy framing, document-role evidence
+allocation, section-level emphasis, and evidence-phrasing guidance all have deterministic
+foundations. The first guided-generation control slices are now also implemented: artefact-local
+`Tailor` and `Draft ...` actions can open a compact optional brief so the user can steer
+accomplishments, must-include points, tone, and de-emphasis without affecting one-click evaluative
+actions like `Analyse`, and generated outputs now keep that brief inspectable in local AI metadata
+and saved-draft provenance. G3 is now tracked in `docs/COMPETENCY_EVIDENCE_PLAN.md` and
+`docs/design/COMPETENCY_EVIDENCE_UX.md`; the first implementation slice adds a user-owned
+competency evidence foundation before guided STAR UI or AI shaping.
 Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
 shortlist and compact AI summary helpers, and sub-slice 2 is now implemented in the AI service
 layer: a dedicated `artefact_suggestion` prompt contract and generation entry point. Sub-slice 3 is

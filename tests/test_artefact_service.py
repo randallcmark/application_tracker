@@ -131,10 +131,12 @@ def test_summarise_artefact_for_ai_includes_outcome_signals_and_related_context(
         assert summary.outcome_signal_summary.strongest_signal == "interview-linked"
         assert summary.outcome_signal_summary.evidence_level == "moderate"
         assert summary.metadata_quality == "strong"
+        assert summary.fit_score >= 0
         assert "Purpose: Leadership-heavy resume" in summary.summary_text
         assert "Interview-linked jobs: 1" in summary.summary_text
         assert "Outcome evidence: strongest signal interview-linked, evidence moderate" in summary.summary_text
         assert "Metadata quality: strong" in summary.summary_text
+        assert "Fit score:" in summary.summary_text
         assert "Already linked to current job: no" in summary.summary_text
         assert "Recent linked job titles: Platform Lead" in summary.summary_text
         assert "Notes: Strong delivery and stakeholder management evidence." in summary.summary_text
@@ -223,6 +225,75 @@ def test_summarise_artefact_for_ai_marks_thin_metadata_when_context_is_sparse(
         assert summary.metadata_quality == "thin"
         assert "Metadata quality: thin" in summary.summary_text
         assert "Missing metadata: purpose, version, notes, outcome context, linked history" in summary.summary_text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_candidate_artefacts_for_job_prefers_requirement_and_content_fit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            current_job = Job(
+                owner_user_id=user.id,
+                title="Staff Technical Program Manager",
+                status="saved",
+                description_raw=(
+                    "Please submit a supporting statement. "
+                    "Strong platform, cloud infrastructure, and stakeholder leadership experience required."
+                ),
+            )
+            db.add(current_job)
+            db.flush()
+
+            generic_resume = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                purpose="Generic resume",
+                filename="generic-resume.md",
+                content_type="text/markdown",
+                storage_key="artefacts/generic-resume.md",
+            )
+            targeted_statement = Artefact(
+                owner_user_id=user.id,
+                kind="supporting_statement",
+                purpose="Platform supporting statement",
+                filename="platform-statement.md",
+                content_type="text/markdown",
+                storage_key="artefacts/platform-statement.md",
+            )
+            db.add_all([generic_resume, targeted_statement])
+            db.commit()
+            user_id = user.id
+            job_id = current_job.id
+
+        def fake_excerpt(artefact: Artefact) -> str | None:
+            if artefact.filename == "platform-statement.md":
+                return (
+                    "# Supporting Statement\n\n"
+                    "Led platform delivery across cloud infrastructure programs.\n"
+                    "Partnered with senior stakeholders across distributed systems work."
+                )
+            if artefact.filename == "generic-resume.md":
+                return "# Resume\n\nGeneral operations support and coordination."
+            return None
+
+        monkeypatch.setattr("app.services.artefacts.load_artefact_text_excerpt", fake_excerpt)
+
+        with session_local() as db:
+            user = db.get(type(user), user_id)
+            current_job = db.get(Job, job_id)
+            candidates = list_candidate_artefacts_for_job(db, user, current_job, limit=2)
+
+        assert [candidate.filename for candidate in candidates] == [
+            "platform-statement.md",
+            "generic-resume.md",
+        ]
+        assert candidates[0].fit_score > candidates[1].fit_score
+        assert "Fit score:" in candidates[0].summary_text
     finally:
         app.dependency_overrides.clear()
 

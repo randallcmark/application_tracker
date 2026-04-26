@@ -155,14 +155,29 @@ As of 2026-04-19, the app is verified through:
 - Artefact AI Phase E sub-slice 1 implemented: artefacts now expose conservative outcome-signal
   summaries in the service layer, including strongest signal and evidence level, so later AI
   reasoning can use explicit prior outcome context instead of inferring from ad hoc counts.
-- Artefact AI is now being reframed around analysis-first artefact understanding and fit
-  evaluation. The next active slice is a visible `artefact_analysis` capability with job-text
-  requirement inference and qualitative fit evaluation, while the implemented outcome helpers remain
-  secondary supporting context.
+- Artefact AI has now been reframed around analysis-first artefact understanding and fit
+  evaluation. Phase A is implemented: visible `artefact_analysis`, job-text requirement inference,
+  hidden analysis reuse in suggestion/tailoring/drafting, and lightweight structured indexing are
+  now in place. Deterministic shortlist ranking now also uses requirement/content/domain/seniority
+  fit signals before prompt-time AI, and tailoring/draft prompts now use explicit submission
+  strategy framing, evidence-allocation guidance, and section-level emphasis guidance based on
+  inferred requirements and analysis/index signals. Evidence-phrasing guidance and submission-pack
+  coordination are now also implemented, so generated text can distinguish supported claims from
+  thin evidence and divide work more intentionally across resume/cover-letter/supporting-statement
+  style packs. Guided generation briefs are now also implemented for artefact-local `Tailor` and
+  `Draft ...` actions, so users can optionally steer focus areas, must-include points, tone, and
+  de-emphasis without adding prompt boxes to evaluative actions. Generated outputs now also expose
+  that steering context in local AI metadata and carry it into saved-draft provenance. The
+  implemented outcome helpers remain secondary supporting context. G3 is now tracked as a
+  competency evidence / STAR workflow, starting with a user-owned evidence model and service
+  foundation before guided UI or AI shaping.
 - Job Workspace reduction work is now tracked in `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`. The first
   reduction slice is implemented, and the next follow-on there is pane-by-pane cleanup across
   `Application`, `Interviews`, `Follow-ups`, `Tasks`, `Notes`, and `Documents` before any later
   utility-card redesign is reconsidered.
+- Job Workspace pane cleanup has now started for `Application`, `Interviews`, and `Follow-ups`,
+  with calmer titles, clearer grouping, and explicit workbench markers while preserving the shared
+  workspace frame.
 
 Known next product focus:
 
@@ -171,9 +186,13 @@ Known next product focus:
 - Phase 4 follow-up: continue improving Job Workspace execution flows where external systems are
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
-- Phase 5 / Phase 6 follow-up: continue `docs/ARTEFACT_AI_PLAN.md` from Phase A, starting with
-  artefact analysis foundation and fit evaluation before deeper optimization and later
-  outcome-aware refinement.
+- Phase 5 / Phase 6 follow-up: continue `docs/ARTEFACT_AI_PLAN.md` after Phase A by improving
+  generated-example quality and richer multi-document pack orchestration with the new
+  analysis/index signals now that shortlist quality, submission-strategy framing, evidence
+  allocation, section-level emphasis, evidence phrasing, pack coordination, and optional user
+  generation briefs have stronger deterministic foundations, before deeper optimization, repository-
+  backed accomplishment grounding through the competency evidence plan, and later outcome-aware
+  refinement.
 - Phase 6 follow-up: extend provider execution further, especially Anthropic, and later consider
   Artefact Library rendering once Job Workspace artefact suggestion is stable.
 - Phase 7: scheduler and worker support.

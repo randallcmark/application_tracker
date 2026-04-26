@@ -124,7 +124,10 @@ def test_artefact_library_shows_saved_draft_provenance(tmp_path: Path, monkeypat
                 kind="cover_letter",
                 purpose="AI cover letter draft",
                 version_label="ai-draft-v1",
-                notes=f"Saved from AI draft output #7. Baseline artefact UUID: {baseline.uuid}.",
+                notes=(
+                    f"Saved from AI draft output #7. Baseline artefact UUID: {baseline.uuid}. "
+                    "Generation brief: Focus areas=Platform migrations | Tone or positioning=concise."
+                ),
                 outcome_context="Generated from visible AI draft output.",
                 filename="cover-letter-draft.md",
                 storage_key="jobs/library/artefacts/cover-letter-draft.md",
@@ -142,6 +145,8 @@ def test_artefact_library_shows_saved_draft_provenance(tmp_path: Path, monkeypat
         assert "Saved from AI draft output #7" in response.text
         assert "Baseline artefact" in response.text
         assert "baseline.md" in response.text
+        assert "Generation brief" in response.text
+        assert "Platform migrations" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -295,7 +300,7 @@ def test_job_workspace_attaches_existing_artefact(tmp_path: Path, monkeypatch) -
 
         login(client, "jobseeker@example.com")
 
-        detail_response = client.get(f"/jobs/{job_uuid}")
+        detail_response = client.get(f"/jobs/{job_uuid}?section=documents")
         response = client.post(
             f"/jobs/{job_uuid}/artefact-links",
             data={"artefact_uuid": artefact_uuid},
@@ -309,7 +314,7 @@ def test_job_workspace_attaches_existing_artefact(tmp_path: Path, monkeypatch) -
         assert detail_response.status_code == 200
         assert "reuse.txt" in detail_response.text
         assert response.status_code == 303
-        assert response.headers["location"] == f"/jobs/{job_uuid}"
+        assert response.headers["location"] == f"/jobs/{job_uuid}?section=documents"
         assert hidden_response.status_code == 404
 
         with session_local() as db:

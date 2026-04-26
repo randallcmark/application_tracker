@@ -164,9 +164,59 @@ def test_job_workspace_ui_contract_switches_main_surface_by_section_query(tmp_pa
         assert 'data-ui-component="artefact-list"' in html
         assert 'data-ui-component="artefact-ai-workspace"' in html
         assert "Artefacts" in html
-        assert "Analyze" in html
+        assert "Analyse" in html
+        assert ".workspace-ai-results {" in html
+        assert "max-height: 360px;" in html
+        assert "overflow: auto;" in html
+        assert ".workspace-artefact-list {" in html
+        assert "overflow: visible;" in html
+        assert ".workspace-ai-menu[open]" in html
+        assert "top: calc(100% + 8px);" in html
+        assert "brief_action=tailor" in html
+        assert "brief_action=draft" in html
         assert 'data-ui-section="overview"' not in html
         assert "Role &amp; notes" not in html
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_workspace_ui_contract_renders_generation_brief_modal_for_generative_actions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="briefmodal@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Brief modal target", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="resume.md",
+                storage_key="artefacts/resume.md",
+                content_type="text/markdown",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "briefmodal@example.com")
+        response = client.get(
+            f"/jobs/{job_uuid}?section=documents&ai_artefact={artefact_uuid}&ai_tab=tailor&brief_action=tailor"
+        )
+
+        assert response.status_code == 200
+        html = response.text
+        assert 'data-ui-component="generation-brief-modal"' in html
+        assert ".workspace-modal-backdrop {" in html
+        assert ".workspace-modal-card {" in html
+        assert ".workspace-brief-form {" in html
+        assert ".workspace-ai-metadata {" in html
+        assert ".workspace-ai-metadata-grid {" in html
+        assert "Generate without brief" in html
     finally:
         app.dependency_overrides.clear()
 
@@ -200,7 +250,8 @@ def test_job_workspace_ui_contract_keeps_shared_frame_on_application_section(tmp
         assert 'data-ui-component="overview-identity"' in html
         assert 'data-ui-component="utility-strip"' in html
         assert 'data-ui-section="application"' in html
-        assert "Application state and route" in html
+        assert 'data-ui-component="application-workbench"' in html
+        assert "Submission route" in html
         assert 'data-ui-section="overview"' not in html
     finally:
         app.dependency_overrides.clear()
@@ -293,7 +344,7 @@ def test_job_workspace_ui_contract_keeps_ai_in_right_rail(tmp_path: Path, monkey
         assert "Overall Assessment" in html
         assert "AI can help you with" in html
         assert "Tailor your resume" in html
-        assert "Analyze role fit" in html
+        assert "Analyse role fit" in html
         assert "AI fit summary" in html
         assert "gemini-flash-latest" in html
     finally:
