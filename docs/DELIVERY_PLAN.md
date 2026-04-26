@@ -212,8 +212,10 @@ foundations. The first guided-generation control slices are now also implemented
 accomplishments, must-include points, tone, and de-emphasis without affecting one-click evaluative
 actions like `Analyse`, and generated outputs now keep that brief inspectable in local AI metadata
 and saved-draft provenance. G3 is now tracked in `docs/COMPETENCY_EVIDENCE_PLAN.md` and
-`docs/design/COMPETENCY_EVIDENCE_UX.md`; the first implementation slice adds a user-owned
-competency evidence foundation before guided STAR UI or AI shaping.
+`docs/design/COMPETENCY_EVIDENCE_UX.md`; the first implementation slices now add a user-owned
+competency evidence foundation, compact manual library UI, and direct-library guided STAR
+creation/refinement prompts. Direct-library AI STAR shaping is now implemented as visible
+non-mutating `competency_star_shaping` output.
 Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
 shortlist and compact AI summary helpers, and sub-slice 2 is now implemented in the AI service
 layer: a dedicated `artefact_suggestion` prompt contract and generation entry point. Sub-slice 3 is

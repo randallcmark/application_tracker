@@ -49,6 +49,11 @@ Implementation targets:
 - allow basic create/edit without AI;
 - avoid long narrative walls by segmenting STAR fields.
 
+Status: implemented. The protected `/competencies` surface now renders a compact owner-scoped
+library, create panel, editable evidence cards, source signals, result snippets, tags, and
+expandable STAR detail. It is linked from the protected user menu rather than primary navigation so
+the library stays available without making the main workflow heavier.
+
 ### S3: Guided Creation And Refinement
 
 Goal: help the user build or improve one entry through short prompts.
@@ -70,11 +75,20 @@ Question pattern:
 6. What makes this credible?
 7. Where is this most useful?
 
+Status: implemented for direct library action. The create panel and each existing entry's
+refinement form now use grouped prompts for theme, STAR evidence, credibility, and reuse. This is
+still manual and explicit: no AI output creates or mutates evidence.
+
 ### S4: AI-Assisted STAR Shaping
 
 Goal: turn partial evidence into concise, truthful STAR responses.
 
 Outputs remain visible and non-mutating unless the user explicitly saves edits.
+
+Status: implemented for direct library action. Each evidence card exposes `Shape with AI`, which
+creates a visible `competency_star_shaping` `AiOutput` linked by `source_context` using
+`competency_evidence_uuid` and prompt contract `competency_star_shaping_v1`. The saved evidence
+record is not edited by generation.
 
 ### S5: Opt-In Reuse In Artefact Generation
 
@@ -128,6 +142,6 @@ When resuming:
 
 1. Start here and confirm the active S-slice.
 2. Preserve user ownership and visible/non-mutating AI behaviour.
-3. Keep S1 service/model work separate from S2 UI.
+3. Treat S1 service/model work and S2 manual UI as landed foundations.
 4. Update this document, `docs/ARTEFACT_AI_PLAN.md`, `docs/DELIVERY_PLAN.md`, and the public
    roadmap when a slice lands.

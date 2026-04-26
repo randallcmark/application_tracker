@@ -29,6 +29,7 @@ def assert_primary_shell_contract(html: str) -> None:
     assert 'class="shell-topbar-action"' in html
     assert 'class="user-menu"' in html
     assert 'class="user-menu-panel"' in html
+    assert 'href="/competencies">Competency Evidence</a>' in html
     assert 'data-shell-hero="shared"' in html
     assert 'data-hero-variant="standard"' in html
     assert '.app-topbar[data-chip-state="hidden"] .header-context' in html

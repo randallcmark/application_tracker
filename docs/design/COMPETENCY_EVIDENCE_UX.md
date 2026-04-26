@@ -23,6 +23,10 @@ Each card should show:
 
 The card should not show all STAR text by default.
 
+Current implementation: `/competencies` uses compact cards with title, competency, strength,
+result snippet, tags, source signal, and expandable STAR detail. The create/refine controls are
+manual, guided, and visible; AI shaping begins in a later slice.
+
 ## Entry Detail
 
 Use segmented blocks:
@@ -47,6 +51,10 @@ Suggested grouping:
 3. Result and credibility.
 4. Tags and source context.
 
+Current implementation: the library create panel and per-card refinement form use grouped prompt
+sections for theme, STAR evidence, credibility, and reuse. The first slice keeps this inline and
+contract-bound before introducing overlays or AI shaping.
+
 ## Existing-Surface Hooks
 
 Job Workspace:
@@ -65,3 +73,6 @@ Draft generation:
 
 AI may help shape an entry or draft a STAR response, but saved evidence remains user-controlled.
 AI output should be visible and inspectable before anything is persisted into the evidence library.
+
+Current implementation: each card has a compact `Shape with AI` action. Generated STAR shaping is
+rendered back on the card as visible markdown output and does not mutate the saved evidence fields.

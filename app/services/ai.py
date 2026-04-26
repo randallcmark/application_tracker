@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.ai_output import AiOutput
 from app.db.models.ai_provider_setting import AiProviderSetting
+from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
@@ -32,6 +33,7 @@ KNOWN_OUTPUT_TYPES = (
     "artefact_suggestion",
     "artefact_analysis",
     "tailoring_guidance",
+    "competency_star_shaping",
 )
 
 PROVIDER_LABELS = {
@@ -328,6 +330,41 @@ def _build_job_prompt(
         f"{instruction}\n\n"
         f"User profile:\n{_profile_context(profile)}\n\n"
         f"Job:\n{_job_context(job)}"
+    )
+    return title, prompt
+
+
+def _competency_evidence_context(evidence: CompetencyEvidence) -> str:
+    fields = [
+        ("Title", evidence.title),
+        ("Competency", evidence.competency),
+        ("Situation", evidence.situation),
+        ("Task", evidence.task),
+        ("Action", evidence.action),
+        ("Result", evidence.result),
+        ("Evidence notes", evidence.evidence_notes),
+        ("Strength", evidence.strength),
+        ("Tags", evidence.tags),
+        ("Source kind", evidence.source_kind),
+    ]
+    visible = [f"{label}: {value}" for label, value in fields if value not in (None, "")]
+    return "\n".join(visible) if visible else "No competency evidence details are available."
+
+
+def _build_competency_star_shaping_prompt(
+    *,
+    profile: UserProfile | None,
+    evidence: CompetencyEvidence,
+) -> tuple[str, str]:
+    title = "AI STAR shaping"
+    prompt = (
+        "Shape one saved competency evidence entry into a concise, truthful STAR response. "
+        "Use markdown sections titled 'STAR response', 'Evidence to strengthen', 'Interview use', "
+        "and 'Artefact use'. Do not invent missing facts, metrics, dates, employers, tools, or outcomes. "
+        "If any STAR part is thin or missing, say exactly what the user should add. "
+        "Keep the response reusable across roles rather than tailored to one specific vacancy.\n\n"
+        f"User profile:\n{_profile_context(profile)}\n\n"
+        f"Competency evidence:\n{_competency_evidence_context(evidence)}"
     )
     return title, prompt
 
@@ -1387,6 +1424,50 @@ def generate_job_ai_output(
             "job_status": job.status,
             "job_title": job.title,
             "surface": surface,
+        },
+    )
+    db.add(output)
+    db.flush()
+    return output
+
+
+def generate_competency_star_shaping(
+    db: Session,
+    user: User,
+    evidence: CompetencyEvidence,
+    *,
+    profile: UserProfile | None = None,
+) -> AiOutput:
+    if evidence.owner_user_id != user.id:
+        raise AiExecutionError("Competency evidence not found")
+    setting = get_enabled_ai_provider(db, user)
+    if setting is None:
+        raise AiExecutionError("Enable an AI provider in Settings before generating AI output")
+
+    title, prompt = _build_competency_star_shaping_prompt(
+        profile=profile,
+        evidence=evidence,
+    )
+    body = _execute_prompt(
+        setting,
+        prompt,
+        action="competency_star_shaping",
+    )
+    output = AiOutput(
+        owner_user_id=user.id,
+        output_type="competency_star_shaping",
+        title=title,
+        body=body,
+        provider=setting.provider,
+        model_name=setting.model_name,
+        status="active",
+        source_context={
+            "surface": "competency_library",
+            "competency_evidence_uuid": evidence.uuid,
+            "prompt_contract": "competency_star_shaping_v1",
+            "strength": evidence.strength,
+            "source_kind": evidence.source_kind,
+            "provider_label": setting.label,
         },
     )
     db.add(output)

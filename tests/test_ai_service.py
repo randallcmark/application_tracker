@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.auth.users import create_local_user
 from app.db.models.ai_output import AiOutput
+from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
 from app.db.models.ai_provider_setting import AiProviderSetting
 from app.db.models.user_profile import UserProfile
@@ -18,6 +19,7 @@ from app.services.ai import (
     _build_artefact_analysis_prompt,
     _build_artefact_draft_prompt,
     _build_artefact_tailoring_prompt,
+    _build_competency_star_shaping_prompt,
     _build_artefact_suggestion_prompt,
     _build_job_prompt,
     _execute_prompt,
@@ -31,8 +33,10 @@ from app.services.ai import (
     generate_job_artefact_draft,
     generate_job_artefact_tailoring_guidance,
     generate_job_artefact_suggestion,
+    generate_competency_star_shaping,
 )
 from app.services.artefacts import load_artefact_text_excerpt
+from app.services.competency_evidence import create_competency_evidence
 from tests.test_local_auth_routes import build_client
 
 
@@ -767,6 +771,92 @@ def test_build_resume_draft_prompt_uses_analysis_to_shape_section_emphasis() -> 
     assert "Section emphasis guidance:" in prompt
     assert "Foreground quantified outcomes and impact bullets" in prompt
     assert "platform, aws" in prompt
+
+
+def test_build_competency_star_shaping_prompt_uses_saved_evidence_without_job_context() -> None:
+    evidence = CompetencyEvidence(
+        owner_user_id=1,
+        title="Platform migration recovery",
+        competency="Delivery leadership",
+        situation="A migration was blocked.",
+        task="Recover launch readiness.",
+        action="Reset governance and supplier cadence.",
+        result="Released on the revised date.",
+        evidence_notes="Credible because it involved directors and supplier leads.",
+        strength="working",
+        tags="platform, leadership",
+    )
+
+    title, prompt = _build_competency_star_shaping_prompt(profile=None, evidence=evidence)
+
+    assert title == "AI STAR shaping"
+    assert "Use markdown sections titled 'STAR response'" in prompt
+    assert "Keep the response reusable across roles" in prompt
+    assert "Platform migration recovery" in prompt
+    assert "Reset governance and supplier cadence." in prompt
+    assert "Job:" not in prompt
+
+
+def test_generate_competency_star_shaping_stores_visible_output(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Executive stakeholder recovery",
+                competency="Stakeholder management",
+                situation="A launch path was contested.",
+                task="Align directors on a smaller first release.",
+                action="Built a trade-off narrative and reset cadence.",
+                result="Agreement reached before steering group.",
+                strength="working",
+                tags="leadership, stakeholders",
+            )
+            setting = AiProviderSetting(
+                owner_user_id=user.id,
+                provider="gemini",
+                model_name="gemini-flash-latest",
+                api_key_encrypted="sealed",
+                api_key_hint="key...1234",
+                is_enabled=True,
+            )
+            db.add(setting)
+            db.commit()
+            user_id = user.id
+            evidence_id = evidence.id
+            evidence_uuid = evidence.uuid
+
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
+            assert kwargs["action"] == "competency_star_shaping"
+            assert "Competency evidence:" in prompt
+            assert "Agreement reached before steering group." in prompt
+            return "### STAR response\n* **Situation:** A launch path was contested."
+
+        monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
+
+        with session_local() as db:
+            user = db.get(User, user_id)
+            evidence = db.get(type(evidence), evidence_id)
+
+            output = generate_competency_star_shaping(db, user, evidence)
+            db.commit()
+
+            assert output.output_type == "competency_star_shaping"
+            assert output.title == "AI STAR shaping"
+            assert output.job_id is None
+            assert output.artefact_id is None
+            assert output.source_context["surface"] == "competency_library"
+            assert output.source_context["competency_evidence_uuid"] == evidence_uuid
+            assert output.source_context["prompt_contract"] == "competency_star_shaping_v1"
+
+            stored = db.scalar(select(AiOutput).where(AiOutput.output_type == "competency_star_shaping"))
+            assert stored is not None
+            assert stored.body.startswith("### STAR response")
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_generate_job_artefact_tailoring_guidance_stores_visible_output(

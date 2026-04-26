@@ -1038,6 +1038,13 @@ def app_header(
     menu_links: list[str] = [_render_user_menu_link("User Settings", "/settings", active=active == "settings")]
     menu_links.append(_render_user_menu_link("Artefacts", "/artefacts", active=active == "artefacts"))
     menu_links.append(
+        _render_user_menu_link(
+            "Competency Evidence",
+            "/competencies",
+            active=active == "competencies",
+        )
+    )
+    menu_links.append(
         _render_user_menu_link("Capture Settings", "/api/capture/bookmarklet", active=active == "capture")
     )
     menu_links.append(_render_user_menu_link("Help", "/help", active=active == "help"))

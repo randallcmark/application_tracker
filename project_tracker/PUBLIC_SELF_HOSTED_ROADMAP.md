@@ -169,8 +169,9 @@ As of 2026-04-19, the app is verified through:
   de-emphasis without adding prompt boxes to evaluative actions. Generated outputs now also expose
   that steering context in local AI metadata and carry it into saved-draft provenance. The
   implemented outcome helpers remain secondary supporting context. G3 is now tracked as a
-  competency evidence / STAR workflow, starting with a user-owned evidence model and service
-  foundation before guided UI or AI shaping.
+  competency evidence / STAR workflow. The user-owned evidence model/service foundation and compact
+  manual library UI are implemented, with direct-library guided STAR creation/refinement prompts now
+  in place. Direct-library AI STAR shaping is now implemented as visible non-mutating output.
 - Job Workspace reduction work is now tracked in `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`. The first
   reduction slice is implemented, and the next follow-on there is pane-by-pane cleanup across
   `Application`, `Interviews`, `Follow-ups`, `Tasks`, `Notes`, and `Documents` before any later
@@ -191,8 +192,8 @@ Known next product focus:
   analysis/index signals now that shortlist quality, submission-strategy framing, evidence
   allocation, section-level emphasis, evidence phrasing, pack coordination, and optional user
   generation briefs have stronger deterministic foundations, before deeper optimization, repository-
-  backed accomplishment grounding through the competency evidence plan, and later outcome-aware
-  refinement.
+  backed accomplishment grounding through the competency evidence plan's guided creation and AI
+  shaping slices, and later outcome-aware refinement.
 - Phase 6 follow-up: extend provider execution further, especially Anthropic, and later consider
   Artefact Library rendering once Job Workspace artefact suggestion is stable.
 - Phase 7: scheduler and worker support.

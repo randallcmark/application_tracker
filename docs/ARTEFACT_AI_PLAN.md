@@ -286,8 +286,10 @@ Current status:
 - G2 implemented: generated outputs expose brief metadata locally and carry brief provenance into
   saved artefacts.
 - G3 in progress: competency evidence / STAR planning is tracked in
-  `docs/COMPETENCY_EVIDENCE_PLAN.md`, with the first implementation slice focused on a user-owned
-  evidence foundation.
+  `docs/COMPETENCY_EVIDENCE_PLAN.md`. The user-owned evidence foundation and compact manual
+  library UI are implemented, and direct-library guided creation/refinement prompts are now in
+  place. Direct-library AI STAR shaping is now also implemented as visible non-mutating
+  `competency_star_shaping` output.
 
 Implementation targets:
 
@@ -1244,5 +1246,7 @@ Out of scope for the first slice:
 
 1. G1: optional generation-brief modal and prompt/source-context integration. Implemented.
 2. G2: make brief use more visible in generated output metadata and later export flows. Implemented.
-3. G3: add a reusable competency / STAR evidence repository.
+3. G3: add a reusable competency / STAR evidence repository. In progress: foundation, compact
+   manual library, direct-library guided creation/refinement prompts, and visible AI STAR shaping
+   implemented.
 4. G4: let generation use both artefact baselines and evidence-repository context together.
