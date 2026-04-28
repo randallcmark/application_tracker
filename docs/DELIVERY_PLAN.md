@@ -198,59 +198,19 @@ owned artefacts from an owner-scoped library route, and attach an existing artef
 without copying the file. Application/interview-level reuse, extraction, and AI suggestions remain
 planned follow-on work.
 
-Detailed resumable planning for AI-assisted artefact analysis, selection, tailoring, draft generation, and
-later outcome-aware refinement now lives in `docs/ARTEFACT_AI_PLAN.md`. Phase A, the first
-analysis-first artefact understanding and fit-evaluation foundation slice, is now implemented:
-explicit `artefact_analysis`, hidden reuse in suggestion/tailoring/drafting, and lightweight
-structured indexing all exist without new schema. Existing outcome summary helpers remain
-implemented as supporting infrastructure rather than the lead roadmap. The next recommended step is
-to keep pushing those signals deeper into generated-example quality and multi-document submission
-coordination now that shortlist, fit reasoning, submission-strategy framing, document-role evidence
-allocation, section-level emphasis, and evidence-phrasing guidance all have deterministic
-foundations. The first guided-generation control slices are now also implemented: artefact-local
-`Tailor` and `Draft ...` actions can open a compact optional brief so the user can steer
-accomplishments, must-include points, tone, and de-emphasis without affecting one-click evaluative
-actions like `Analyse`, and generated outputs now keep that brief inspectable in local AI metadata
-and saved-draft provenance. G3 is now tracked in `docs/COMPETENCY_EVIDENCE_PLAN.md` and
-`docs/design/COMPETENCY_EVIDENCE_UX.md`; the first implementation slices now add a user-owned
-competency evidence foundation, compact manual library UI, and direct-library guided STAR
-creation/refinement prompts. Direct-library AI STAR shaping is now implemented as visible
-non-mutating `competency_star_shaping` output.
-Phase B sub-slice 1 is now implemented in the service layer: deterministic artefact
-shortlist and compact AI summary helpers, and sub-slice 2 is now implemented in the AI service
-layer: a dedicated `artefact_suggestion` prompt contract and generation entry point. Sub-slice 3 is
-also now implemented: Job Workspace exposes `Suggest artefacts` and renders visible
-`artefact_suggestion` output. Sub-slice 4 is also implemented: when no candidate artefacts exist,
-the app now creates a visible local fallback suggestion without requiring a provider. Optional
-linking affordances and thin-metadata output polish are now also implemented. Phase B is complete
-for the first intended artefact suggestion slice; the next recommended step is Phase C tailoring
-guidance. The detailed implementation spec for that next phase now lives in
-`docs/ARTEFACT_AI_PLAN.md`, including the proposed `tailoring_guidance` output contract, service
-boundaries, Job Workspace trigger model, sparse-content behavior, and handoff to later draft
-generation. Phase C sub-slice 1 is now implemented in the AI layer: the `tailoring_guidance`
-output contract, prompt contract, and service entry point now exist. Phase C sub-slice 2 is also
-implemented: Job Workspace now exposes a per-artefact tailoring action with ownership-safe
-retrieval and route wiring. Phase C sub-slices 3 and 4 are now also implemented: tailoring
-guidance renders through the shared visible AI output surface with a selected artefact link, and
-thin metadata artefacts now degrade to a visible local fallback instead of forcing a weak provider
-call. Phase C sub-slice 5 is now also implemented: text-like artefacts can contribute a verified
-excerpt to tailoring prompts, and tailoring outputs now carry draft-handoff metadata for later
-generation. Phase D has now started: the first visible draft slice is implemented for one selected
-artefact in Job Workspace, beginning with `resume_draft` and an explicit document context strategy
-that prefers extracted text and falls back to metadata-only drafting when necessary. Cover-letter
-drafting is now also exposed from the same route, metadata-only drafts are labelled as
-low-confidence scaffolds in the shared output surface, and visible drafts can now be promoted
-explicitly into new markdown artefacts without overwriting the baseline. Supporting statement and
-attestation draft kinds now also share the same route and promotion flow, with saved artefact kind
-and filename matching the selected draft type. The artefact library now surfaces saved-draft
-provenance so promoted drafts retain a visible link back to their source draft and baseline. The
-document context layer now also supports DOCX extraction plus best-effort host-backed extraction
-for legacy Word/RTF and PDF files when available. A narrow Gemini-backed `provider_document` path
-now also exists for draft generation when no extracted text is available but a supported binary
-artefact can be passed directly, reducing unnecessary metadata-only fallbacks on non-text files.
-Analysis-first artefact foundation work is now starting with explicit `artefact_analysis` support,
-job-text requirement inference, and qualitative fit evaluation. Outcome-aware summaries remain
-available as soft background context only.
+Detailed resumable planning for AI-assisted artefact analysis, selection, tailoring, draft
+generation, competency-evidence grounding, and later outcome-aware refinement now lives in
+`docs/ARTEFACT_AI_PLAN.md`. The analysis-first baseline is implemented: visible
+`artefact_analysis`, hidden analysis reuse, job-text requirement inference, deterministic
+shortlisting, `artefact_suggestion`, `tailoring_guidance`, visible `draft` outputs, save-as-artefact
+promotion, extraction/provider-document fallbacks, generation briefs, saved-draft provenance, and
+conservative outcome summaries all exist without hidden mutation. Competency evidence is now also
+usable as a reusable accomplishment library: the user-owned evidence model, compact `/competencies`
+UI, guided STAR refinement, and visible `competency_star_shaping` output are implemented. The active
+artefact-AI milestone is now G4: selected competency evidence can be opted into artefact-local
+`Tailor` and `Draft ...` generation, stored in generated output metadata, and used as grounding
+context without mutating evidence or artefacts. Job Workspace also now provides small role/artefact
+hooks into the manual competency evidence form with source context preserved on save.
 
 Implementation targets:
 

@@ -17,6 +17,7 @@ from app.db.models.job import Job
 from app.db.models.job_artefact_link import JobArtefactLink
 from app.main import app
 from app.services.ai import AiExecutionError
+from app.services.competency_evidence import create_competency_evidence
 from tests.test_local_auth_routes import build_client
 
 
@@ -257,6 +258,39 @@ def test_job_detail_renders_existing_ai_output(tmp_path: Path, monkeypatch) -> N
         assert "Strengths: strong systems background." in response.text
         assert "local-model" in response.text
         assert "Overall Assessment" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_exposes_competency_evidence_source_hooks(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Evidence hook role", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.md",
+                storage_key="artefacts/baseline.md",
+            )
+            db.add_all([job, artefact])
+            db.flush()
+            db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            db.commit()
+            job_uuid = job.uuid
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/jobs/{job_uuid}?section=documents")
+
+        assert response.status_code == 200
+        assert f'href="/competencies?source_job_uuid={job_uuid}"' in response.text
+        assert "Create evidence from this role" in response.text
+        assert f'href="/competencies?source_artefact_uuid={artefact_uuid}"' in response.text
+        assert "Create evidence" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -942,7 +976,15 @@ def test_job_detail_tailoring_guidance_creates_visible_output(tmp_path: Path, mo
             artefact_uuid = artefact.uuid
 
         def fake_generate_job_artefact_tailoring_guidance(
-            db, user, job, artefact, *, profile=None, prior_suggestion=None, generation_brief=None
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            profile=None,
+            prior_suggestion=None,
+            generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert prior_suggestion is not None
@@ -1100,6 +1142,14 @@ def test_job_detail_documents_generation_brief_modal_is_available_for_generators
             db.add_all([job, artefact])
             db.flush()
             db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            create_competency_evidence(
+                db,
+                user,
+                title="Platform migration recovery",
+                competency="Delivery leadership",
+                result="Released on the revised date.",
+                strength="strong",
+            )
             db.commit()
             job_uuid = job.uuid
             artefact_uuid = artefact.uuid
@@ -1118,6 +1168,10 @@ def test_job_detail_documents_generation_brief_modal_is_available_for_generators
         assert 'name="avoid"' in response.text
         assert 'name="tone"' in response.text
         assert 'name="extra_context"' in response.text
+        assert 'data-ui-component="generation-brief-competency-selector"' in response.text
+        assert 'name="selected_competency_evidence_uuids"' in response.text
+        assert "Platform migration recovery" in response.text
+        assert "Released on the revised date." in response.text
         assert 'name="skip_brief" value="1"' in response.text
     finally:
         app.dependency_overrides.clear()
@@ -1139,6 +1193,13 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
             db.add_all([job, artefact])
             db.flush()
             db.add(JobArtefactLink(owner_user_id=user.id, job_id=job.id, artefact_id=artefact.id))
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Platform migration recovery",
+                competency="Delivery leadership",
+                result="Released on the revised date.",
+            )
             db.add(
                 AiProviderSetting(
                     owner_user_id=user.id,
@@ -1153,10 +1214,20 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
             db.commit()
             job_uuid = job.uuid
             artefact_uuid = artefact.uuid
+            evidence_uuid = evidence.uuid
 
         def fake_generate_job_artefact_tailoring_guidance(
-            db, user, job, artefact, *, profile=None, prior_suggestion=None, generation_brief=None
+            db,
+            user,
+            job,
+            artefact,
+            *,
+            profile=None,
+            prior_suggestion=None,
+            generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
+            assert selected_competency_evidence_uuids == [evidence_uuid]
             assert generation_brief == {
                 "focus_areas": "Platform migrations",
                 "must_include": "Stakeholder leadership",
@@ -1177,6 +1248,8 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
                     "prompt_contract": "artefact_tailoring_v1",
                     "used_extracted_text": False,
                     "generation_brief": generation_brief,
+                    "selected_competency_evidence_uuids": selected_competency_evidence_uuids,
+                    "competency_evidence_contract": "competency_evidence_generation_context_v1",
                 },
             )
             db.add(output)
@@ -1196,6 +1269,7 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
                 "focus_areas": "Platform migrations",
                 "must_include": "Stakeholder leadership",
                 "tone": "concise",
+                "selected_competency_evidence_uuids": evidence_uuid,
             },
             follow_redirects=False,
         )
@@ -1204,6 +1278,7 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
         detail_response = client.get(response.headers["location"])
         assert detail_response.status_code == 200
         assert "Brief used:" in detail_response.text
+        assert "Competency evidence used: 1 example" in detail_response.text
         assert "Platform migrations" in detail_response.text
     finally:
         app.dependency_overrides.clear()
@@ -1261,6 +1336,7 @@ def test_job_detail_draft_accepts_generation_brief(tmp_path: Path, monkeypatch) 
             tailoring_guidance=None,
             prior_suggestion=None,
             generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
             assert draft_kind == "cover_letter_draft"
             assert generation_brief == {
@@ -1500,6 +1576,7 @@ def test_job_detail_artefact_draft_creates_visible_output(tmp_path: Path, monkey
             tailoring_guidance=None,
             prior_suggestion=None,
             generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "resume_draft"
@@ -1607,6 +1684,7 @@ def test_job_detail_cover_letter_draft_creates_visible_output(tmp_path: Path, mo
             tailoring_guidance=None,
             prior_suggestion=None,
             generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "cover_letter_draft"
@@ -1705,6 +1783,7 @@ def test_job_detail_supporting_statement_draft_creates_visible_output(tmp_path: 
             tailoring_guidance=None,
             prior_suggestion=None,
             generation_brief=None,
+            selected_competency_evidence_uuids=None,
         ):
             assert artefact.uuid == artefact_uuid
             assert draft_kind == "supporting_statement_draft"

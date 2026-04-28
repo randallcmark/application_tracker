@@ -11,15 +11,19 @@ from sqlalchemy import select
 from app.api.deps import DbSession, get_current_user
 from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.ai_output import AiOutput
+from app.db.models.artefact import Artefact
 from app.db.models.competency_evidence import CompetencyEvidence
+from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.ai import AiExecutionError, generate_competency_star_shaping
+from app.services.artefacts import get_user_artefact_by_uuid
 from app.services.competency_evidence import (
     create_competency_evidence,
     get_user_competency_evidence_by_uuid,
     list_competency_evidence,
     update_competency_evidence,
 )
+from app.services.jobs import get_user_job_by_uuid
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["competencies"])
@@ -204,7 +208,55 @@ def _evidence_card(evidence: CompetencyEvidence, ai_output: AiOutput | None = No
     """
 
 
-def _evidence_form_fields(evidence: CompetencyEvidence | None = None) -> str:
+def _prefill_from_source(source_job: Job | None, source_artefact: Artefact | None) -> dict[str, str]:
+    if source_artefact is not None:
+        return {
+            "title": f"Evidence from {source_artefact.filename}",
+            "competency": "",
+            "evidence_notes": f"Source artefact: {source_artefact.filename}",
+            "tags": "artefact evidence",
+            "source_kind": "artefact",
+            "source_artefact_uuid": source_artefact.uuid,
+        }
+    if source_job is not None:
+        role = source_job.title or "role"
+        company = f" at {source_job.company}" if source_job.company else ""
+        return {
+            "title": f"Evidence for {role}",
+            "competency": "",
+            "evidence_notes": f"Source role: {role}{company}",
+            "tags": "role evidence",
+            "source_kind": "job",
+            "source_job_uuid": source_job.uuid,
+        }
+    return {}
+
+
+def _source_prefill_panel(source_job: Job | None, source_artefact: Artefact | None) -> str:
+    if source_artefact is not None:
+        return (
+            '<div class="source-prefill" data-ui-component="competency-source-prefill">'
+            "<strong>Source context</strong>"
+            f"<span>Artefact: {escape(source_artefact.filename)}</span>"
+            "</div>"
+        )
+    if source_job is not None:
+        company = f" · {escape(source_job.company)}" if source_job.company else ""
+        return (
+            '<div class="source-prefill" data-ui-component="competency-source-prefill">'
+            "<strong>Source context</strong>"
+            f"<span>Role: {escape(source_job.title)}{company}</span>"
+            "</div>"
+        )
+    return ""
+
+
+def _evidence_form_fields(
+    evidence: CompetencyEvidence | None = None,
+    *,
+    defaults: dict[str, str] | None = None,
+) -> str:
+    defaults = defaults or {}
     title = evidence.title if evidence is not None else ""
     competency = evidence.competency if evidence is not None else ""
     strength = evidence.strength if evidence is not None else "seed"
@@ -214,7 +266,18 @@ def _evidence_form_fields(evidence: CompetencyEvidence | None = None) -> str:
     result = evidence.result if evidence is not None else ""
     evidence_notes = evidence.evidence_notes if evidence is not None else ""
     tags = evidence.tags if evidence is not None else ""
+    source_kind = defaults.get("source_kind", "")
+    source_job_uuid = defaults.get("source_job_uuid", "")
+    source_artefact_uuid = defaults.get("source_artefact_uuid", "")
+    if evidence is None:
+        title = defaults.get("title", title or "")
+        competency = defaults.get("competency", competency or "")
+        evidence_notes = defaults.get("evidence_notes", evidence_notes or "")
+        tags = defaults.get("tags", tags or "")
     return f"""
+    <input type="hidden" name="source_kind" value="{escape(source_kind, quote=True)}">
+    <input type="hidden" name="source_job_uuid" value="{escape(source_job_uuid, quote=True)}">
+    <input type="hidden" name="source_artefact_uuid" value="{escape(source_artefact_uuid, quote=True)}">
     <fieldset class="prompt-group" data-ui-component="competency-prompt-theme">
       <legend>1. Theme</legend>
       <label>What competency or theme does this example demonstrate?
@@ -268,6 +331,8 @@ def render_competency_library(
     ai_outputs_by_evidence_uuid: dict[str, AiOutput] | None = None,
     ai_error: str | None = None,
     ai_status: str | None = None,
+    source_job: Job | None = None,
+    source_artefact: Artefact | None = None,
 ) -> HTMLResponse:
     ai_outputs_by_evidence_uuid = ai_outputs_by_evidence_uuid or {}
     cards = "\n".join(
@@ -292,6 +357,16 @@ def render_competency_library(
     }
     .flash.success { background: var(--success-soft); color: var(--success); }
     .flash.error { background: var(--danger-soft); color: var(--danger); }
+    .source-prefill {
+      background: var(--accent-soft);
+      border: 0.5px solid var(--line);
+      border-radius: 8px;
+      color: var(--accent-strong);
+      display: grid;
+      gap: 4px;
+      padding: 10px;
+    }
+    .source-prefill span { color: var(--muted); }
     .eyebrow, dt {
       color: var(--muted);
       font-size: 0.76rem;
@@ -411,8 +486,9 @@ def render_competency_library(
           <p class="eyebrow">New evidence</p>
           <h2>Add competency evidence</h2>
         </div>
+        {_source_prefill_panel(source_job, source_artefact)}
         <form class="evidence-form" method="post" action="/competencies">
-          {_evidence_form_fields()}
+          {_evidence_form_fields(defaults=_prefill_from_source(source_job, source_artefact))}
           <button type="submit">Add evidence</button>
         </form>
       </aside>
@@ -440,13 +516,23 @@ def competency_library(
     current_user: Annotated[User, Depends(get_current_user)],
     ai_error: Annotated[str | None, Query()] = None,
     ai_status: Annotated[str | None, Query()] = None,
+    source_job_uuid: Annotated[str | None, Query()] = None,
+    source_artefact_uuid: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
+    source_job = get_user_job_by_uuid(db, current_user, source_job_uuid) if source_job_uuid else None
+    source_artefact = (
+        get_user_artefact_by_uuid(db, current_user, source_artefact_uuid)
+        if source_artefact_uuid
+        else None
+    )
     return render_competency_library(
         current_user,
         list_competency_evidence(db, current_user),
         ai_outputs_by_evidence_uuid=_latest_competency_ai_outputs(db, current_user),
         ai_error=ai_error,
         ai_status=ai_status,
+        source_job=source_job,
+        source_artefact=source_artefact,
     )
 
 
@@ -463,7 +549,21 @@ def create_competency_evidence_form(
     evidence_notes: Annotated[str, Form()] = "",
     strength: Annotated[str, Form()] = "seed",
     tags: Annotated[str, Form()] = "",
+    source_kind: Annotated[str, Form()] = "",
+    source_job_uuid: Annotated[str, Form()] = "",
+    source_artefact_uuid: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
+    source_job = get_user_job_by_uuid(db, current_user, source_job_uuid.strip()) if source_job_uuid.strip() else None
+    source_artefact = (
+        get_user_artefact_by_uuid(db, current_user, source_artefact_uuid.strip())
+        if source_artefact_uuid.strip()
+        else None
+    )
+    cleaned_source_kind = source_kind.strip() if source_kind.strip() in {"job", "artefact"} else "manual"
+    if cleaned_source_kind == "job" and source_job is None:
+        raise HTTPException(status_code=404, detail="Source job not found")
+    if cleaned_source_kind == "artefact" and source_artefact is None:
+        raise HTTPException(status_code=404, detail="Source artefact not found")
     try:
         create_competency_evidence(
             db,
@@ -477,7 +577,9 @@ def create_competency_evidence_form(
             evidence_notes=evidence_notes,
             strength=strength,
             tags=tags,
-            source_kind="manual",
+            source_kind=cleaned_source_kind,
+            source_job=source_job if cleaned_source_kind == "job" else None,
+            source_artefact=source_artefact if cleaned_source_kind == "artefact" else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

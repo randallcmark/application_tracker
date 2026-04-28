@@ -171,7 +171,12 @@ As of 2026-04-19, the app is verified through:
   implemented outcome helpers remain secondary supporting context. G3 is now tracked as a
   competency evidence / STAR workflow. The user-owned evidence model/service foundation and compact
   manual library UI are implemented, with direct-library guided STAR creation/refinement prompts now
-  in place. Direct-library AI STAR shaping is now implemented as visible non-mutating output.
+  in place. Direct-library AI STAR shaping is now implemented as visible non-mutating output. G4 is
+  now the active artefact-AI milestone: selected competency evidence can be opted into artefact-local
+  `Tailor` and `Draft ...` generation as user-owned accomplishment grounding, with resolved evidence
+  UUIDs stored in generated output metadata and no hidden mutation. Job Workspace now also exposes
+  role/artefact hooks into a prefilled manual evidence form, preserving source context only after
+  explicit save.
 - Job Workspace reduction work is now tracked in `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`. The first
   reduction slice is implemented, and the next follow-on there is pane-by-pane cleanup across
   `Application`, `Interviews`, `Follow-ups`, `Tasks`, `Notes`, and `Documents` before any later
@@ -187,13 +192,9 @@ Known next product focus:
 - Phase 4 follow-up: continue improving Job Workspace execution flows where external systems are
   involved.
 - Phase 5 follow-up: application/interview-level artefact associations, extraction, and suggestions.
-- Phase 5 / Phase 6 follow-up: continue `docs/ARTEFACT_AI_PLAN.md` after Phase A by improving
-  generated-example quality and richer multi-document pack orchestration with the new
-  analysis/index signals now that shortlist quality, submission-strategy framing, evidence
-  allocation, section-level emphasis, evidence phrasing, pack coordination, and optional user
-  generation briefs have stronger deterministic foundations, before deeper optimization, repository-
-  backed accomplishment grounding through the competency evidence plan's guided creation and AI
-  shaping slices, and later outcome-aware refinement.
+- Phase 5 / Phase 6 follow-up: continue `docs/ARTEFACT_AI_PLAN.md` from G4 with an explicit
+  save-back action for AI-shaped STAR responses, then later outcome-aware refinement only after
+  evidence reuse has real usage.
 - Phase 6 follow-up: extend provider execution further, especially Anthropic, and later consider
   Artefact Library rendering once Job Workspace artefact suggestion is stable.
 - Phase 7: scheduler and worker support.

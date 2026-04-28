@@ -6,17 +6,17 @@ does not consume unnecessary context.
 ## Files
 
 - `AGENTS.md`: short always-loaded product, safety, and engineering guardrails.
-- `.codex/application_tracker.toml`: canonical model routing, risk levels,
-  verification commands, quality gates, and sub-agent policy.
+- `docs/agent/codex-routing.md`: canonical in-repo routing for risk levels,
+  verification commands, quality gates, task slicing, and sub-agent policy.
 - `.codex/skills/application-tracker/SKILL.md`: portable repo skill for Codex
-  environments that support skills.
+  environments that support skills when a local `.codex/` overlay exists.
 - `.codex/prompts/`: reusable prompts for common implementation and review
-  slices.
+  slices when a local `.codex/` overlay exists.
 - `docs/CODEX_PLAYBOOK.md`: concise human-readable operating loop.
 
-`AGENTS.md`, `.codex/`, and `docs/CODEX_PLAYBOOK.md` are intentionally local
-agent configuration and may remain ignored. Track this file if you want the repo
-to document how local agent configuration is expected to work.
+`AGENTS.md`, `docs/CODEX_PLAYBOOK.md`, and `docs/agent/codex-routing.md` are
+the tracked repo-native operating surface. `.codex/` is optional local overlay
+space and may remain ignored.
 
 ## Model Strategy
 
@@ -24,10 +24,10 @@ Default to the lowest safe tier:
 
 | Work type | Profile |
 | --- | --- |
-| Docs, small CSS, local tests | `models.low_risk` |
-| Bounded feature work | `models.standard_implementation` |
-| Mechanical refactor after design is settled | `models.long_running_refactor` |
-| Schema, auth, owner scope, workflow, AI, worker, deployment | `models.high_risk` |
+| Docs, small CSS, local tests | `docs/agent/codex-routing.md#low-risk` |
+| Bounded feature work | `docs/agent/codex-routing.md#standard-implementation` |
+| Mechanical refactor after design is settled | `docs/agent/codex-routing.md#long-running-refactor` |
+| Schema, auth, owner scope, workflow, AI, worker, deployment | `docs/agent/codex-routing.md#high-risk` |
 
 Use stronger reasoning for decisions that are expensive to unwind. Use smaller
 models for already-scoped edits, regression tests, CSS cleanup, documentation,
@@ -45,9 +45,8 @@ and command/test orchestration.
 
 ## Prompt Templates
 
-Use `.codex/prompts/implementation-slice.md` for a bounded build task.
-Use `.codex/prompts/review-and-plan.md` when the next step is assessment or
-planning rather than immediate implementation.
+Use `docs/agent/codex-routing.md` for the tracked build/review loop.
+Local `.codex/prompts/*` helpers are optional overlays when present.
 
 ## Sub-Agents
 
@@ -58,6 +57,7 @@ disjoint CSS/documentation edit. Avoid delegating the immediate blocker.
 ## Maintenance
 
 When product direction changes, update `AGENTS.md` only if the always-on
-guardrails change. Update `.codex/application_tracker.toml` for routing,
+guardrails change. Update `docs/agent/codex-routing.md` for routing,
 verification, or model changes. Update the playbook only when the operating
-loop changes.
+loop changes. Update `.codex/*` only if you intentionally maintain a local
+overlay in addition to the tracked repo-native harness.

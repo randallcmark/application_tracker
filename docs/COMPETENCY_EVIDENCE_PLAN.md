@@ -101,6 +101,11 @@ Use cases:
 - attestation: factual evidence only;
 - interview prep: concise STAR answers.
 
+Status: implemented for first-pass generation reuse and source hooks. Artefact-local `Tailor` and
+`Draft ...` flows can opt selected evidence into generation without schema changes, and Job
+Workspace now links to a prefilled manual evidence form from role or artefact context. Evidence is
+only created after explicit user save.
+
 ## Data Model, S1
 
 `CompetencyEvidence`

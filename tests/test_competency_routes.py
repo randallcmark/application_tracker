@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.auth.users import create_local_user
 from app.db.models.ai_output import AiOutput
+from app.db.models.artefact import Artefact
 from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
 from app.main import app
@@ -160,6 +161,79 @@ def test_competency_library_renders_latest_star_shaping_output(tmp_path: Path, m
         assert "<strong>Situation:</strong>" in response.text
         assert "Hidden shaping" not in response.text
         assert hidden_uuid in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_library_prefills_source_job_without_persisting(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            other_user = create_local_user(db, email="other@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Staff TPM", company="Example Co", status="saved")
+            foreign_job = Job(owner_user_id=other_user.id, title="Hidden role", status="saved")
+            db.add_all([job, foreign_job])
+            db.commit()
+            job_uuid = job.uuid
+            foreign_uuid = foreign_job.uuid
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/competencies?source_job_uuid={job_uuid}")
+        foreign_response = client.get(f"/competencies?source_job_uuid={foreign_uuid}")
+
+        assert response.status_code == 200
+        assert 'data-ui-component="competency-source-prefill"' in response.text
+        assert "Role: Staff TPM" in response.text
+        assert 'name="source_kind" value="job"' in response.text
+        assert f'name="source_job_uuid" value="{job_uuid}"' in response.text
+        assert "Evidence for Staff TPM" in response.text
+        assert foreign_response.status_code == 200
+        assert "Hidden role" not in foreign_response.text
+        with session_local() as db:
+            assert db.query(CompetencyEvidence).count() == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_create_persists_source_artefact_context(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="baseline.md",
+                storage_key="artefacts/baseline.md",
+            )
+            db.add(artefact)
+            db.commit()
+            artefact_uuid = artefact.uuid
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            "/competencies",
+            data={
+                "title": "Evidence from baseline resume",
+                "competency": "Delivery leadership",
+                "result": "Recovered launch readiness.",
+                "strength": "working",
+                "source_kind": "artefact",
+                "source_artefact_uuid": artefact_uuid,
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        with session_local() as db:
+            evidence = db.query(CompetencyEvidence).one()
+            assert evidence.source_kind == "artefact"
+            assert evidence.source_artefact is not None
+            assert evidence.source_artefact.uuid == artefact_uuid
+            assert evidence.source_job is None
     finally:
         app.dependency_overrides.clear()
 

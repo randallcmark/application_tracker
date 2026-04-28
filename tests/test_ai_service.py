@@ -953,6 +953,99 @@ def test_generate_job_artefact_tailoring_guidance_stores_visible_output(
         app.dependency_overrides.clear()
 
 
+def test_generate_job_artefact_tailoring_guidance_uses_selected_competency_evidence(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            other_user = create_local_user(db, email="other@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Staff TPM", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=job.id,
+                kind="resume",
+                filename="tpm-resume.pdf",
+                storage_key="artefacts/tpm-resume.pdf",
+                purpose="TPM resume",
+            )
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Platform migration recovery",
+                competency="Delivery leadership",
+                action="Reset governance and supplier cadence.",
+                result="Released on the revised date.",
+                strength="strong",
+            )
+            foreign_evidence = create_competency_evidence(
+                db,
+                other_user,
+                title="Foreign evidence",
+                competency="Hidden",
+            )
+            db.add(
+                AiOutput(
+                    owner_user_id=user.id,
+                    output_type="competency_star_shaping",
+                    title="AI STAR shaping",
+                    body="### STAR response\n* Recovered launch readiness.",
+                    source_context={"competency_evidence_uuid": evidence.uuid},
+                )
+            )
+            db.add(
+                AiProviderSetting(
+                    owner_user_id=user.id,
+                    provider="gemini",
+                    model_name="gemini-flash-latest",
+                    api_key_encrypted="sealed",
+                    api_key_hint="key...1234",
+                    is_enabled=True,
+                )
+            )
+            db.add_all([job, artefact])
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+            artefact_id = artefact.id
+            evidence_uuid = evidence.uuid
+            foreign_uuid = foreign_evidence.uuid
+
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(body="### Evidence strength\n* Strong", source_context={}),
+        )
+
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
+            assert "Selected competency evidence:" in prompt
+            assert "Platform migration recovery" in prompt
+            assert "Recovered launch readiness." in prompt
+            assert "Foreign evidence" not in prompt
+            return "### Keep\n* Use the migration example."
+
+        monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
+
+        with session_local() as db:
+            output = generate_job_artefact_tailoring_guidance(
+                db,
+                db.get(User, user_id),
+                db.get(Job, job_id),
+                db.get(Artefact, artefact_id),
+                selected_competency_evidence_uuids=[evidence_uuid, foreign_uuid],
+            )
+            db.commit()
+
+            assert output.source_context["selected_competency_evidence_uuids"] == [evidence_uuid]
+            assert (
+                output.source_context["competency_evidence_contract"]
+                == "competency_evidence_generation_context_v1"
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_generate_job_artefact_tailoring_guidance_uses_local_fallback_for_thin_metadata(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1199,6 +1292,85 @@ def test_generate_job_artefact_draft_stores_visible_output(
                 "focus_areas": "Platform delivery",
                 "tone": "assertive",
             }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_generate_job_artefact_draft_uses_selected_competency_evidence(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Cover letter with evidence", status="saved")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                job_id=job.id,
+                kind="resume",
+                filename="baseline.md",
+                content_type="text/markdown",
+                storage_key="artefacts/baseline.md",
+            )
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Stakeholder recovery",
+                competency="Stakeholder management",
+                result="Agreement reached before steering group.",
+                strength="working",
+            )
+            db.add_all(
+                [
+                    job,
+                    artefact,
+                    AiProviderSetting(
+                        owner_user_id=user.id,
+                        provider="gemini",
+                        model_name="gemini-flash-latest",
+                        api_key_encrypted="sealed",
+                        api_key_hint="key...1234",
+                        is_enabled=True,
+                    ),
+                ]
+            )
+            db.commit()
+            user_id = user.id
+            job_id = job.id
+            artefact_id = artefact.id
+            evidence_uuid = evidence.uuid
+
+        monkeypatch.setattr("app.services.ai.load_artefact_text_excerpt", lambda artefact: "# Resume")
+        monkeypatch.setattr(
+            "app.services.ai.build_job_artefact_analysis",
+            lambda *args, **kwargs: AiOutput(body="### Evidence strength\n* Moderate", source_context={}),
+        )
+
+        def fake_execute_prompt(setting, prompt, *, document=None, **kwargs):
+            assert "Selected competency evidence:" in prompt
+            assert "Stakeholder recovery" in prompt
+            assert "Agreement reached before steering group." in prompt
+            return "### Opening\nI am interested in this role."
+
+        monkeypatch.setattr("app.services.ai._execute_prompt", fake_execute_prompt)
+
+        with session_local() as db:
+            output = generate_job_artefact_draft(
+                db,
+                db.get(User, user_id),
+                db.get(Job, job_id),
+                db.get(Artefact, artefact_id),
+                draft_kind="cover_letter_draft",
+                selected_competency_evidence_uuids=[evidence_uuid],
+            )
+            db.commit()
+
+            assert output.source_context["selected_competency_evidence_uuids"] == [evidence_uuid]
+            assert (
+                output.source_context["competency_evidence_contract"]
+                == "competency_evidence_generation_context_v1"
+            )
     finally:
         app.dependency_overrides.clear()
 

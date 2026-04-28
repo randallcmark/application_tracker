@@ -18,6 +18,7 @@ from app.db.models.ai_output import AiOutput
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
+from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
@@ -40,6 +41,7 @@ from app.services.artefacts import (
     update_artefact_metadata,
     store_job_artefact,
 )
+from app.services.competency_evidence import list_competency_evidence
 from app.services.interviews import schedule_interview
 from app.services.jobs import (
     BOARD_STATUSES,
@@ -1243,7 +1245,11 @@ def _workspace_role_notes_section(job: Job) -> str:
     ]
     chip_html = "".join(f'<span class="workspace-chip">{escape(chip)}</span>' for chip in chips if chip)
     chip_html += '<span class="workspace-add-chip">+ Add tag</span>'
-    actions = '<a class="workspace-inline-link" href="#workspace-tools">Edit</a>'
+    actions = (
+        '<a class="workspace-inline-link" href="#workspace-tools">Edit</a>'
+        f'<a class="workspace-inline-link" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">'
+        "Create evidence from this role</a>"
+    )
     body = f"""
     <div class="workspace-text-block">
       {_editable_description(job)}
@@ -1403,6 +1409,23 @@ def _generation_brief_summary(source_context: dict[str, object] | None) -> str:
     if not parts:
         return ""
     return '<p class="muted">Brief used: ' + " | ".join(escape(part) for part in parts) + "</p>"
+
+
+def _competency_result_snippet(evidence: CompetencyEvidence) -> str:
+    return evidence.result or evidence.action or evidence.situation or "Result not captured yet"
+
+
+def _selected_competency_evidence_summary(source_context: dict[str, object] | None) -> str:
+    if not source_context:
+        return ""
+    selected = source_context.get("selected_competency_evidence_uuids")
+    if not isinstance(selected, list):
+        return ""
+    count = len([item for item in selected if isinstance(item, str) and item])
+    if count == 0:
+        return ""
+    label = "example" if count == 1 else "examples"
+    return f'<p class="muted">Competency evidence used: {count} {label}</p>'
 
 
 def _generation_brief_items(source_context: dict[str, object] | None) -> list[tuple[str, str]]:
@@ -1572,12 +1595,14 @@ def _artefact_local_ai_workspace(
         links = _artefact_suggestion_links(output, artefact_lookup)
     provider_line = f'<p class="muted">From {escape(output.model_name or output.provider or "AI")}</p>'
     brief_line = _generation_brief_summary(source_context)
+    competency_line = _selected_competency_evidence_summary(source_context)
     metadata_panel = _local_ai_metadata_panel(output, source_context)
     body = f"""
     <div class="workspace-ai-results">
       <div class="workspace-ai-results-title">{escape(output.title or output.output_type.replace('_', ' ').title())}</div>
       {provider_line}
       {brief_line}
+      {competency_line}
       {metadata_panel}
       {_render_ai_markdown(output.body)}
       {content_note}
@@ -1604,6 +1629,7 @@ def _generation_brief_modal(
     action: str | None,
     draft_kind: str = "resume_draft",
     fields: dict[str, str] | None = None,
+    competency_evidence_items: list[CompetencyEvidence] | None = None,
 ) -> str:
     if artefact is None or action not in {"tailor", "draft"}:
         return ""
@@ -1621,6 +1647,36 @@ def _generation_brief_modal(
         if action == "tailor"
         else f'<input type="hidden" name="draft_kind" value="{escape(draft_kind, quote=True)}">'
     )
+    evidence_items = competency_evidence_items or []
+    if evidence_items:
+        evidence_rows = "".join(
+            f"""
+            <label class="competency-selector-row">
+              <input type="checkbox" name="selected_competency_evidence_uuids" value="{escape(evidence.uuid, quote=True)}">
+              <span>
+                <strong>{escape(evidence.title)}</strong>
+                <span>{escape(evidence.competency or "Competency not set")} · {escape(evidence.strength)}</span>
+                <small>{escape(_competency_result_snippet(evidence))}</small>
+              </span>
+            </label>
+            """
+            for evidence in evidence_items[:8]
+        )
+        evidence_selector = f"""
+          <details class="competency-selector" data-ui-component="generation-brief-competency-selector">
+            <summary>Use competency evidence</summary>
+            <div class="competency-selector-list">
+              {evidence_rows}
+            </div>
+          </details>
+        """
+    else:
+        evidence_selector = """
+          <details class="competency-selector" data-ui-component="generation-brief-competency-selector">
+            <summary>Use competency evidence</summary>
+            <p class="muted">No competency evidence saved yet.</p>
+          </details>
+        """
     cancel_href = _job_detail_redirect(
         job.uuid,
         section="documents",
@@ -1656,6 +1712,7 @@ def _generation_brief_modal(
               <input type="text" name="extra_context" value="{escape(fields.get("extra_context", ""), quote=True)}" placeholder="Anything specific for this role or application">
             </label>
           </div>
+          {evidence_selector}
           <div class="workspace-modal-actions">
             <button type="submit">{escape(submit_label)}</button>
             <button class="outline" type="submit" name="skip_brief" value="1">Generate without brief</button>
@@ -1691,6 +1748,7 @@ def _workspace_artefact_item(job: Job, artefact: Artefact) -> str:
           <summary class="action-btn ai">✦ AI ⌄</summary>
           <div class="workspace-ai-menu-body">
             <a class="button-link menu-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents&ai_artefact={escape(artefact.uuid, quote=True)}&ai_tab=tailor&brief_action=tailor">Tailor</a>
+            <a class="button-link menu-link" href="/competencies?source_artefact_uuid={escape(artefact.uuid, quote=True)}">Create evidence</a>
             <form class="inline-action-form" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefacts/{escape(artefact.uuid, quote=True)}/analysis">
               <button class="outline" type="submit">Analyse</button>
             </form>
@@ -1735,6 +1793,11 @@ def _workspace_artefacts_section(
             <h3>Upload artefact</h3>
             {_artefact_form(job)}
           </div>
+        </div>
+        <div class="workspace-subpanel">
+          <h3>Competency evidence</h3>
+          <p class="muted">Start a reusable STAR example from this role. You can edit it before saving.</p>
+          <a class="button-link" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">Create evidence from this role</a>
         </div>
       </details>
     </div>
@@ -2297,6 +2360,7 @@ def render_job_detail(
     selected_ai_tab: str | None = None,
     generation_brief_action: str | None = None,
     generation_brief_draft_kind: str | None = None,
+    competency_evidence_items: list[CompetencyEvidence] | None = None,
 ) -> str:
     active_section = _normalize_workspace_section(active_section)
     events = sorted(
@@ -3221,6 +3285,42 @@ def render_job_detail(
       gap: 10px;
       justify-content: flex-end;
     }}
+    .competency-selector {{
+      border: 0.5px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+    }}
+    .competency-selector > summary {{
+      color: var(--accent-strong);
+      cursor: pointer;
+      font-weight: 600;
+    }}
+    .competency-selector-list {{
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+      max-height: 220px;
+      overflow: auto;
+    }}
+    .competency-selector-row {{
+      align-items: flex-start;
+      border: 0.5px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      gap: 8px;
+      grid-template-columns: auto minmax(0, 1fr);
+      padding: 8px;
+    }}
+    .competency-selector-row span,
+    .competency-selector-row small {{
+      color: var(--muted);
+      display: block;
+      overflow-wrap: anywhere;
+    }}
+    .competency-selector-row strong {{
+      color: var(--ink);
+      display: block;
+    }}
     .workspace-support-tools details > summary {{
       color: var(--accent-strong);
       cursor: pointer;
@@ -3405,6 +3505,7 @@ def render_job_detail(
         brief_artefact,
         action=brief_action,
         draft_kind=brief_draft_kind,
+        competency_evidence_items=competency_evidence_items,
     )}
     """
     scripts = f"""
@@ -3716,6 +3817,7 @@ def job_detail(
             selected_ai_tab=ai_tab,
             generation_brief_action=brief_action,
             generation_brief_draft_kind=brief_draft_kind,
+            competency_evidence_items=list_competency_evidence(db, current_user),
         )
     )
 
@@ -3975,6 +4077,7 @@ def create_job_artefact_tailoring_guidance_route(
     tone: Annotated[str, Form()] = "",
     extra_context: Annotated[str, Form()] = "",
     skip_brief: Annotated[str, Form()] = "",
+    selected_competency_evidence_uuids: Annotated[list[str] | None, Form()] = None,
 ) -> RedirectResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
@@ -4006,6 +4109,7 @@ def create_job_artefact_tailoring_guidance_route(
                 tone=tone,
                 extra_context=extra_context,
             ),
+            selected_competency_evidence_uuids=selected_competency_evidence_uuids,
         )
     except AiExecutionError as exc:
         db.rollback()
@@ -4095,6 +4199,7 @@ def create_job_artefact_draft_route(
     tone: Annotated[str, Form()] = "",
     extra_context: Annotated[str, Form()] = "",
     skip_brief: Annotated[str, Form()] = "",
+    selected_competency_evidence_uuids: Annotated[list[str] | None, Form()] = None,
 ) -> RedirectResponse:
     job = require_owner(get_user_job_by_uuid(db, current_user, job_uuid), current_user)
     artefact = get_user_job_artefact_by_uuid(db, current_user, job, artefact_uuid)
@@ -4139,6 +4244,7 @@ def create_job_artefact_draft_route(
                 tone=tone,
                 extra_context=extra_context,
             ),
+            selected_competency_evidence_uuids=selected_competency_evidence_uuids,
         )
     except AiExecutionError as exc:
         db.rollback()

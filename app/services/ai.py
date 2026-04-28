@@ -369,6 +369,91 @@ def _build_competency_star_shaping_prompt(
     return title, prompt
 
 
+def _normalise_selected_competency_evidence_uuids(values: list[str] | None) -> list[str]:
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        cleaned = (value or "").strip()
+        if cleaned and cleaned not in seen:
+            selected.append(cleaned)
+            seen.add(cleaned)
+    return selected
+
+
+def _competency_result_snippet(evidence: CompetencyEvidence) -> str:
+    return evidence.result or evidence.action or evidence.situation or "Result not captured yet"
+
+
+def _selected_competency_evidence_context(
+    db: Session,
+    user: User,
+    evidence_uuids: list[str] | None,
+) -> tuple[list[CompetencyEvidence], dict[str, AiOutput]]:
+    selected_uuids = _normalise_selected_competency_evidence_uuids(evidence_uuids)
+    if not selected_uuids:
+        return [], {}
+    evidence_items = list(
+        db.scalars(
+            select(CompetencyEvidence).where(
+                CompetencyEvidence.owner_user_id == user.id,
+                CompetencyEvidence.uuid.in_(selected_uuids),
+            )
+        )
+    )
+    evidence_by_uuid = {evidence.uuid: evidence for evidence in evidence_items}
+    ordered_evidence = [evidence_by_uuid[uuid] for uuid in selected_uuids if uuid in evidence_by_uuid]
+    if not ordered_evidence:
+        return [], {}
+
+    outputs = db.scalars(
+        select(AiOutput)
+        .where(
+            AiOutput.owner_user_id == user.id,
+            AiOutput.output_type == "competency_star_shaping",
+            AiOutput.status == "active",
+        )
+        .order_by(AiOutput.updated_at.desc(), AiOutput.created_at.desc())
+    )
+    selected_set = {evidence.uuid for evidence in ordered_evidence}
+    latest_by_evidence_uuid: dict[str, AiOutput] = {}
+    for output in outputs:
+        source_context = output.source_context or {}
+        evidence_uuid = source_context.get("competency_evidence_uuid")
+        if (
+            isinstance(evidence_uuid, str)
+            and evidence_uuid in selected_set
+            and evidence_uuid not in latest_by_evidence_uuid
+        ):
+            latest_by_evidence_uuid[evidence_uuid] = output
+    return ordered_evidence, latest_by_evidence_uuid
+
+
+def _competency_evidence_generation_summary(
+    evidence_items: list[CompetencyEvidence],
+    latest_shaping_by_evidence_uuid: dict[str, AiOutput],
+) -> str:
+    if not evidence_items:
+        return ""
+    rows: list[str] = [
+        "Selected competency evidence is user-owned accomplishment context, not verified content from the selected artefact.",
+        "Use it only where it helps ground examples. Do not invent metrics, tools, dates, employers, or outcomes beyond the saved evidence.",
+    ]
+    for index, evidence in enumerate(evidence_items, start=1):
+        parts = [
+            f"{index}. {evidence.title}",
+            f"Competency: {evidence.competency or 'not set'}",
+            f"Strength: {evidence.strength}",
+            f"Reusable result/action: {_competency_result_snippet(evidence)}",
+        ]
+        if evidence.evidence_notes:
+            parts.append(f"Credibility notes: {evidence.evidence_notes}")
+        shaping = latest_shaping_by_evidence_uuid.get(evidence.uuid)
+        if shaping is not None and shaping.body:
+            parts.append(f"Latest STAR shaping:\n{shaping.body}")
+        rows.append("\n".join(parts))
+    return "\n\n".join(rows)
+
+
 def _build_artefact_suggestion_prompt(
     *,
     profile: UserProfile | None,
@@ -888,6 +973,7 @@ def _build_artefact_tailoring_prompt(
     evidence_phrasing_summary: str | None = None,
     submission_pack_coordination_summary: str | None = None,
     generation_brief_summary: str | None = None,
+    competency_evidence_summary: str | None = None,
 ) -> tuple[str, str]:
     title = "AI tailoring guidance"
     prior_context = ""
@@ -921,6 +1007,13 @@ def _build_artefact_tailoring_prompt(
             f"{generation_brief_summary}\n"
             "Use this brief to shape emphasis and tone, but do not invent evidence or claims that are not supported."
         )
+    competency_evidence_block = ""
+    if competency_evidence_summary:
+        competency_evidence_block = (
+            "\n\nSelected competency evidence:\n"
+            f"{competency_evidence_summary}\n"
+            "Treat this as optional user-owned accomplishment context. It is not proof that the selected artefact already contains those examples."
+        )
     prompt = (
         "You are providing tailoring guidance for one selected artefact against one job. "
         "Use markdown sections titled 'Keep', 'Strengthen', 'De-emphasise or remove', "
@@ -932,7 +1025,8 @@ def _build_artefact_tailoring_prompt(
         f"Job:\n{_job_context(job)}\n\n"
         f"Selected artefact:\n{artefact_summary.summary_text}\n"
         f"Outcome signals:\n{artefact_summary.outcome_signal_summary.summary_text}"
-        f"{analysis_context}{requirement_strategy_block}{pack_coordination_block}{evidence_phrasing_block}{generation_brief_block}{extracted_text_block}{prior_context}"
+        f"{analysis_context}{requirement_strategy_block}{pack_coordination_block}{evidence_phrasing_block}"
+        f"{generation_brief_block}{competency_evidence_block}{extracted_text_block}{prior_context}"
     )
     return title, prompt
 
@@ -1000,6 +1094,7 @@ def _build_artefact_draft_prompt(
     evidence_phrasing_summary: str | None = None,
     submission_pack_coordination_summary: str | None = None,
     generation_brief_summary: str | None = None,
+    competency_evidence_summary: str | None = None,
 ) -> tuple[str, str]:
     title, instruction = _draft_request(draft_kind)
     content_block = "Baseline artefact content is unavailable. Reason from metadata only."
@@ -1042,6 +1137,13 @@ def _build_artefact_draft_prompt(
             f"{generation_brief_summary}\n"
             "Use this brief to shape emphasis and tone, but do not invent evidence or claims that are not supported."
         )
+    competency_evidence_block = ""
+    if competency_evidence_summary:
+        competency_evidence_block = (
+            "\n\nSelected competency evidence:\n"
+            f"{competency_evidence_summary}\n"
+            "Use selected evidence to ground examples where relevant, but do not present it as verified baseline artefact content unless the baseline also supports it."
+        )
     prompt = (
         f"{instruction}\n\n"
         f"User profile:\n{_profile_context(profile)}\n\n"
@@ -1057,6 +1159,7 @@ def _build_artefact_draft_prompt(
         f"{section_emphasis_block}"
         f"{evidence_phrasing_block}"
         f"{generation_brief_block}"
+        f"{competency_evidence_block}"
         f"{tailoring_block}"
         f"{prior_block}"
     )
@@ -1672,6 +1775,7 @@ def generate_job_artefact_tailoring_guidance(
     profile: UserProfile | None = None,
     prior_suggestion: AiOutput | None = None,
     generation_brief: dict[str, str] | None = None,
+    selected_competency_evidence_uuids: list[str] | None = None,
 ) -> AiOutput:
     artefact_summary = summarise_artefact_for_ai(artefact, current_job=job)
     extracted_text = load_artefact_text_excerpt(artefact)
@@ -1687,6 +1791,13 @@ def generate_job_artefact_tailoring_guidance(
     )
     generation_brief = _normalize_generation_brief(generation_brief)
     generation_brief_summary = _generation_brief_summary(generation_brief)
+    selected_evidence, latest_shaping = _selected_competency_evidence_context(
+        db,
+        user,
+        selected_competency_evidence_uuids,
+    )
+    selected_evidence_uuids = [evidence.uuid for evidence in selected_evidence]
+    competency_evidence_summary = _competency_evidence_generation_summary(selected_evidence, latest_shaping)
     if artefact_summary.metadata_quality == "thin" and not used_extracted_text:
         output = AiOutput(
             owner_user_id=user.id,
@@ -1713,6 +1824,8 @@ def generate_job_artefact_tailoring_guidance(
                 "local_fallback": True,
                 "draft_handoff_contract": "artefact_draft_seed_v1",
                 "generation_brief": generation_brief,
+                "selected_competency_evidence_uuids": selected_evidence_uuids,
+                "competency_evidence_contract": "competency_evidence_generation_context_v1",
                 **(
                     {"artefact_suggestion_output_id": prior_suggestion.id}
                     if prior_suggestion is not None
@@ -1753,6 +1866,7 @@ def generate_job_artefact_tailoring_guidance(
         evidence_phrasing_summary=evidence_phrasing_summary,
         submission_pack_coordination_summary=submission_pack_coordination_summary,
         generation_brief_summary=generation_brief_summary,
+        competency_evidence_summary=competency_evidence_summary,
     )
     body = _execute_prompt(
         setting,
@@ -1785,6 +1899,8 @@ def generate_job_artefact_tailoring_guidance(
             "required_artefact_types": requirement_info["required"],
             "optional_artefact_types": requirement_info["optional"],
             "generation_brief": generation_brief,
+            "selected_competency_evidence_uuids": selected_evidence_uuids,
+            "competency_evidence_contract": "competency_evidence_generation_context_v1",
         },
     )
     db.add(output)
@@ -1803,6 +1919,7 @@ def generate_job_artefact_draft(
     tailoring_guidance: AiOutput | None = None,
     prior_suggestion: AiOutput | None = None,
     generation_brief: dict[str, str] | None = None,
+    selected_competency_evidence_uuids: list[str] | None = None,
 ) -> AiOutput:
     setting = get_enabled_ai_provider(db, user)
     if setting is None:
@@ -1842,6 +1959,13 @@ def generate_job_artefact_draft(
     )
     generation_brief = _normalize_generation_brief(generation_brief)
     generation_brief_summary = _generation_brief_summary(generation_brief)
+    selected_evidence, latest_shaping = _selected_competency_evidence_context(
+        db,
+        user,
+        selected_competency_evidence_uuids,
+    )
+    selected_evidence_uuids = [evidence.uuid for evidence in selected_evidence]
+    competency_evidence_summary = _competency_evidence_generation_summary(selected_evidence, latest_shaping)
     section_emphasis_summary = _draft_section_emphasis_summary(
         draft_kind=draft_kind,
         artefact_analysis=artefact_analysis,
@@ -1867,6 +1991,7 @@ def generate_job_artefact_draft(
         evidence_phrasing_summary=evidence_phrasing_summary,
         submission_pack_coordination_summary=submission_pack_coordination_summary,
         generation_brief_summary=generation_brief_summary,
+        competency_evidence_summary=competency_evidence_summary,
     )
     body = _execute_prompt(
         setting,
@@ -1903,6 +2028,8 @@ def generate_job_artefact_draft(
             "required_artefact_types": requirement_info["required"],
             "optional_artefact_types": requirement_info["optional"],
             "generation_brief": generation_brief,
+            "selected_competency_evidence_uuids": selected_evidence_uuids,
+            "competency_evidence_contract": "competency_evidence_generation_context_v1",
         },
     )
     db.add(output)

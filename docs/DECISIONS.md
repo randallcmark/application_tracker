@@ -1,5 +1,8 @@
 # Decisions
 
+This legacy index is retained for continuity during the harness migration.
+Canonical durable decisions now live under `docs/architecture/decisions/`.
+
 ## 2026-04-11: Fresh Rebuild
 
 The original personal MVP has been moved to:
