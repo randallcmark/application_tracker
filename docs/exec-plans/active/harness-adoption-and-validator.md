@@ -6,7 +6,7 @@ Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-04-28
+Last Updated: 2026-04-30
 
 ## Goal
 
@@ -30,6 +30,8 @@ Adopt the template harness structure into Application Tracker so future agent wo
 
 - New harness routes exist and are non-empty.
 - `AGENTS.md` points to tracked repo-native routes.
+- Current planning is consolidated into the three hubs: vision, implementation sequencing, and task
+  breakdown.
 - `docs/CODEX_CONFIGURATION.md` no longer depends on the missing `.codex/application_tracker.toml`.
 - `bash scripts/validate-harness.sh` passes.
 
@@ -43,11 +45,16 @@ Adopt the template harness structure into Application Tracker so future agent wo
 ## Progress Log
 
 - 2026-04-28: Created plan during harness migration implementation.
+- 2026-04-30: Consolidated planning into `docs/PRODUCT_VISION.md`,
+  `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`; older planning docs
+  are now historical/supporting references.
 
 ## Decisions
 
 - Use `docs/agent/codex-routing.md` as the tracked replacement for the missing `.codex/application_tracker.toml`.
 - Keep existing long-form planning docs as source material and normalize active work into `docs/exec-plans/active/`.
+- Use the three planning hubs as the current route for product vision, priority order, and
+  execution-ready workstream detail.
 
 ## Validation
 

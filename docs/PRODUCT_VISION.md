@@ -1,82 +1,92 @@
 # Product Vision
 
-Application Tracker is a private, self-hosted job-search workspace. It helps a jobseeker decide what matters, capture and triage opportunities, prepare applications, manage reusable artefacts, and keep a record of what worked.
+This is the canonical current product vision for Application Tracker. Historical product analysis,
+older roadmap drafts, and detailed feature plans may add background, but they should not override
+this document.
 
-The product is not just a kanban board. The board is one workflow view inside a broader environment for doing the work of a job search.
+## Product Thesis
+
+Application Tracker is a private, self-hosted, local-first job-search workspace. It helps a
+jobseeker decide what matters, capture and triage opportunities, prepare applications, manage
+reusable artefacts, and preserve a private learning record across the search.
+
+The product is not a kanban board with extra pages. The board remains useful as a workflow lens
+over active work, but the strategic center is a Focus-led workspace for choosing and doing the next
+useful job-search action.
 
 ## North Star
 
-A jobseeker should be able to run the app, state what they are trying to achieve, capture roles from the web, see what needs attention today, work through applications with the right artefacts and context, and preserve a private learning record across the full search.
+A jobseeker should be able to run the app, state what they are trying to achieve, capture roles
+from fragmented external systems, see what needs attention now, work through an application with
+the right artefacts and context, and keep a private record of what worked.
 
-The first public version should feel like a focused job-search workspace, not a generic CRUD admin tool or a project-management board with job labels.
+The first public version should feel like a calm job-search operating environment, not a generic
+CRUD admin console, project-management board, or hidden AI agent.
 
 ## Target Users
 
 Primary user:
 
 - An individual jobseeker running a private local, NAS, homelab, or small VPS deployment.
-- Needs fast capture, practical triage, application preparation, follow-up tracking, and portable backups.
-- Cares about privacy because the data includes resumes, salary expectations, job preferences, interview notes, and outcomes.
+- Needs fast capture, practical triage, application preparation, follow-up tracking, artefact
+  reuse, and portable backups.
+- Cares about privacy because the data includes resumes, salary expectations, preferences,
+  recruiter messages, interview notes, and outcomes.
 
 Secondary user:
 
-- A small trusted group in one contained self-hosted deployment, such as a household, coach, or peer group.
-- Needs separate user workspaces, admin recovery, and clear ownership boundaries.
+- A small trusted group in one contained deployment, such as a household, coach, or peer group.
+- Needs separate workspaces, admin recovery, and clear ownership boundaries.
 - Does not need SaaS-scale tenancy, billing, or cross-organisation administration.
 
 ## Primary Surfaces
 
-Focus is the default command surface. It answers what needs attention now: due follow-ups, stale jobs, active applications, interviews, recent captures, and work that has no clear next action.
+- Focus is the default command surface. It answers what needs attention now: due follow-ups,
+  artefact reviews, stale jobs, active applications, interviews, recent captures, and missing next
+  actions.
+- Inbox is the intake and judgement surface. It holds captured, imported, recommended,
+  low-confidence, or partially enriched opportunities until the user accepts, dismisses, or
+  enriches them.
+- Active Work is the workflow view for jobs already worth effort. Board, lane, and list views are
+  allowed lenses, not the product center.
+- Job Workspace is the execution surface for one opportunity. It combines role overview, current
+  state, next action, application readiness, artefacts, notes, journal, and external application
+  links.
+- Artefacts are reusable working assets. Resumes, cover letters, narratives, attestations,
+  portfolios, writing samples, and generated drafts should be attributable to jobs and outcomes.
+- Capture brings jobs into the system from manual entry, browser extension, API, email capture, and
+  later scheduled imports.
+- Admin supports self-hosted operation: users, API tokens, backups, restore, scheduler runs,
+  health, and deployment maintenance.
 
-Inbox is the intake and judgement surface. It holds system-recommended jobs, email-captured jobs, low-confidence captures, scheduled imports, and partially enriched opportunities until the user accepts, dismisses, or enriches them.
+## Product Guardrails
 
-Active Work is the workflow view for jobs already worth effort. It can use board, lane, and list views, but those views exist to support the job search rather than define the product.
-
-Job Workspace is the execution surface for one opportunity. It combines role overview, current state, next action, application readiness, artefacts, notes, journal, and external application links.
-
-Artefacts are working assets, not passive attachments. Resumes, cover letters, narratives, attestations, portfolios, and writing samples should be reusable, attributable to jobs, and connected to outcomes over time.
-
-Capture brings jobs into the system from manual entry, browser extensions, APIs, email capture, and future scheduled search/import jobs.
-
-Admin supports self-hosted operation: users, API tokens, backups, restore, scheduler runs, health, and deployment maintenance.
-
-Help is a lightweight product guide available to every authenticated user. It should explain how
-the surfaces relate, reinforce Focus-first daily use, and keep self-hosted/admin guidance visible
-without turning the main workflow into documentation.
-
-## Design Principles
-
-The canonical visual system is `docs/design/DESIGN_SYSTEM.md`. New UI work should use that document for colour, typography, spacing, component, AI guidance, and external-transition decisions.
-
-- User goal first: product surfaces should be organised around what the user is trying to achieve.
+- User goal first: organize surfaces around what the jobseeker is trying to achieve.
 - Next action over raw status: status matters, but the app should make the next useful step visible.
-- Calm and precise: avoid noisy, gamified, or oversized controls; emphasise role quality, metadata, and readiness.
-- External systems are first-class: employer sites, ATS pages, email, calendars, and document tools remain part of the workflow.
-- Artefacts are strategic: the system should help select, tailor, and learn from application materials.
-- AI is embedded and inspectable: recommendations and drafts should appear where work happens, never as hidden state or silent mutation.
+- Calm and precise: prioritize scanning, reading, and repeated use over decorative or gamified UI.
+- External systems are first-class: employer sites, ATS pages, email, calendars, and document tools
+  remain part of the workflow.
+- Intake paths stay distinct: intentional manual entry, captured intake, and system-recommended
+  intake must not collapse into the same product meaning.
+- Artefacts are strategic: the system should help select, tailor, and learn from application
+  materials over time.
+- AI is optional, visible, attributable, and non-mutating. It must never silently change jobs,
+  profiles, artefacts, notes, or workflow state.
 - Local-first by default: the core tracker must work without external services.
+- Owner scoping, admin boundaries, and safe upload handling are non-negotiable.
 
-## What This Product Is Not
+## Current Planning Sources
 
-- Not a hosted SaaS product.
-- Not a generic CRM or project-management board.
-- Not an AI agent that acts without review.
-- Not a scraper-only tool.
-- Not a document repository detached from job outcomes.
+Use these three hub documents for current planning:
 
-## Surface Relationships
+- Vision: `docs/PRODUCT_VISION.md`
+- Strategy and order of execution: `docs/roadmap/implementation-sequencing.md`
+- Execution-ready task breakdown: `docs/roadmap/task-map.md`
 
-Focus points the user to the right work.
+Supporting references:
 
-Inbox decides which opportunities enter the workflow.
-
-Email capture feeds Inbox when a job-board or recruiter email catches the user's eye. The first version should prioritise an easy user-initiated path, such as forwarding or pasting selected email content, before attempting full mailbox polling.
-
-Active Work shows the jobs already being pursued.
-
-Job Workspace is where a specific application is prepared, submitted, followed up, and learned from.
-
-The board remains useful for stage movement and visual scanning, but it is no longer the strategic centre. It is one lens over Active Work.
-
-User-context operations such as User Settings, Capture Settings, Help, Sign out, and admin-only
-Admin/API Docs belong under the logged-in username rather than in the primary workflow navigation.
+- User journeys and behavior contracts: `docs/product/product-brief.md` and
+  `docs/product/user-journeys.md`
+- Design system: `docs/design/DESIGN_SYSTEM.md`
+- Architecture boundaries: `docs/architecture/index.md` and `docs/architecture/boundaries.md`
+- Active execution plans: `docs/exec-plans/active/`

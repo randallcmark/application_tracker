@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, date, datetime
 from html import escape
 import re
 from typing import Annotated
@@ -31,6 +31,26 @@ def _value(value: object) -> str:
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M")
     return str(value)
+
+
+def _date_value(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.date().isoformat()
+
+
+def _parse_follow_up_date(value: str) -> datetime | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        parsed = date.fromisoformat(cleaned)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Follow-up date must be a valid date",
+        ) from exc
+    return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
 
 
 def _size(value: int | None) -> str:
@@ -88,6 +108,7 @@ def _artefact_card(artefact: Artefact, artefact_lookup: dict[str, Artefact]) -> 
         job_links = '<li><span class="muted">No linked jobs</span></li>'
     purpose = artefact.purpose or "Purpose not set"
     version = artefact.version_label or "Version not set"
+    follow_up = _value(artefact.follow_up_at) if artefact.follow_up_at else "No follow-up scheduled"
     notes = f"<p>{escape(artefact.notes)}</p>" if artefact.notes else ""
     provenance = _artefact_provenance(artefact, artefact_lookup)
     return f"""
@@ -105,6 +126,10 @@ def _artefact_card(artefact: Artefact, artefact_lookup: dict[str, Artefact]) -> 
         <div>
           <dt>Version</dt>
           <dd>{escape(version)}</dd>
+        </div>
+        <div>
+          <dt>Follow-up</dt>
+          <dd>{escape(follow_up)}</dd>
         </div>
       </dl>
       {notes}
@@ -131,6 +156,10 @@ def _artefact_card(artefact: Artefact, artefact_lookup: dict[str, Artefact]) -> 
           <label>
             Outcome context
             <input name="outcome_context" value="{escape(artefact.outcome_context or "", quote=True)}" maxlength="300" placeholder="Used for interview invite, rejected, offer">
+          </label>
+          <label>
+            Follow-up date
+            <input name="follow_up_at" type="date" value="{escape(_date_value(artefact.follow_up_at), quote=True)}">
           </label>
           <label>
             Notes
@@ -282,6 +311,7 @@ def update_artefact_metadata_form(
     version_label: Annotated[str, Form()] = "",
     notes: Annotated[str, Form()] = "",
     outcome_context: Annotated[str, Form()] = "",
+    follow_up_at: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     artefact = get_user_artefact_by_uuid(db, current_user, artefact_uuid)
     if artefact is None:
@@ -293,6 +323,8 @@ def update_artefact_metadata_form(
         version_label=version_label,
         notes=notes,
         outcome_context=outcome_context,
+        follow_up_at=_parse_follow_up_date(follow_up_at),
+        update_follow_up=True,
     )
     db.commit()
     return RedirectResponse(url="/artefacts", status_code=status.HTTP_303_SEE_OTHER)

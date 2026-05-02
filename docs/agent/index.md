@@ -12,6 +12,7 @@ This directory tells agents how to work in this repository. Read this page first
 
 ## Task Routes
 
+- Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior: `docs/product/product-brief.md` and `docs/product/user-journeys.md`.
 - Architecture or dependency changes: `docs/architecture/index.md` and `docs/architecture/boundaries.md`.
 - Complex or multi-step work: `docs/agent/task-protocol.md` and `docs/exec-plans/template.md`.
@@ -25,13 +26,14 @@ This directory tells agents how to work in this repository. Read this page first
 
 ## Default Workflow
 
-1. Clarify the task by reading the smallest relevant docs.
-2. Inspect existing code before proposing behavior or structure.
-3. For complex work, create or update an execution plan in `docs/exec-plans/active/`.
-4. Make the smallest coherent change.
-5. Update docs when behavior, commands, constraints, or decisions change.
-6. Run the documented validation commands.
-7. Summarize the change, validation, and remaining risks.
+1. Clarify product direction from the three planning hubs when the task touches roadmap or priority.
+2. Read the smallest relevant behavior, architecture, validation, or feature docs.
+3. Inspect existing code before proposing behavior or structure.
+4. For complex work, create or update an execution plan in `docs/exec-plans/active/`.
+5. Make the smallest coherent change.
+6. Update docs when behavior, commands, constraints, or decisions change.
+7. Run the documented validation commands.
+8. Summarize the change, validation, and remaining risks.
 
 ## When To Create An Execution Plan
 

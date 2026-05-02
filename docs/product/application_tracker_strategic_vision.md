@@ -1,5 +1,9 @@
 # Application Tracker Strategic Vision
 
+> Historical strategy note. Current product vision lives in `docs/PRODUCT_VISION.md`; current
+> execution order and task detail live in `docs/roadmap/implementation-sequencing.md` and
+> `docs/roadmap/task-map.md`.
+
 ## Purpose
 
 Application Tracker exists to help a jobseeker achieve their next job goal with less friction, better judgement, and stronger follow-through.

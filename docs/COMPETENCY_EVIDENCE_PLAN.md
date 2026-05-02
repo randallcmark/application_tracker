@@ -88,7 +88,9 @@ Outputs remain visible and non-mutating unless the user explicitly saves edits.
 Status: implemented for direct library action. Each evidence card exposes `Shape with AI`, which
 creates a visible `competency_star_shaping` `AiOutput` linked by `source_context` using
 `competency_evidence_uuid` and prompt contract `competency_star_shaping_v1`. The saved evidence
-record is not edited by generation.
+record is not edited by generation. A separate explicit `Save shaped STAR to evidence` action can
+copy the visible AI-shaped STAR fields back into the evidence record after owner and source-context
+checks.
 
 ### S5: Opt-In Reuse In Artefact Generation
 
@@ -102,9 +104,10 @@ Use cases:
 - interview prep: concise STAR answers.
 
 Status: implemented for first-pass generation reuse and source hooks. Artefact-local `Tailor` and
-`Draft ...` flows can opt selected evidence into generation without schema changes, and Job
-Workspace now links to a prefilled manual evidence form from role or artefact context. Evidence is
-only created after explicit user save.
+`Draft ...` flows can opt selected evidence into generation without schema changes, generated AI
+outputs keep visible resolved evidence provenance in metadata, generated output/evidence links are
+stored as queryable generation-time snapshots, and Job Workspace now links to a prefilled manual
+evidence form from role or artefact context. Evidence is only created after explicit user save.
 
 ## Data Model, S1
 

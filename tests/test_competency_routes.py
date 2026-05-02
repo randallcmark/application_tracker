@@ -159,6 +159,7 @@ def test_competency_library_renders_latest_star_shaping_output(tmp_path: Path, m
         assert 'data-ui-component="competency-star-shaping-output"' in response.text
         assert "AI STAR shaping" in response.text
         assert "<strong>Situation:</strong>" in response.text
+        assert "Save shaped STAR to evidence" in response.text
         assert "Hidden shaping" not in response.text
         assert hidden_uuid in response.text
     finally:
@@ -328,6 +329,106 @@ def test_competency_star_shaping_route_creates_visible_output_without_mutating_e
             assert evidence.result == "Agreement reached before steering group."
             assert output is not None
             assert output.source_context["competency_evidence_uuid"] == evidence_uuid
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_star_shaping_save_back_updates_evidence_explicitly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Rough stakeholder example",
+                competency="Stakeholder management",
+                situation="Original rough situation.",
+                strength="seed",
+            )
+            db.flush()
+            output = AiOutput(
+                owner_user_id=user.id,
+                output_type="competency_star_shaping",
+                title="AI STAR shaping",
+                body=(
+                    "* **Situation:** A launch path was contested by three senior groups.\n"
+                    "* **Task:** Align directors on a smaller first release.\n"
+                    "* **Action:** Built a trade-off narrative and reset the steering cadence.\n"
+                    "* **Result:** Agreement was reached before the steering group."
+                ),
+                provider="system",
+                source_context={
+                    "competency_evidence_uuid": evidence.uuid,
+                    "prompt_contract": "competency_star_shaping_v1",
+                },
+            )
+            db.add(output)
+            db.commit()
+            evidence_uuid = evidence.uuid
+            output_id = output.id
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/competencies/{evidence_uuid}/star-shaping/{output_id}/save",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/competencies?ai_status=STAR%20shaping%20saved"
+        with session_local() as db:
+            evidence = db.query(CompetencyEvidence).filter_by(uuid=evidence_uuid).one()
+
+            assert evidence.situation == "A launch path was contested by three senior groups."
+            assert evidence.task == "Align directors on a smaller first release."
+            assert evidence.action == "Built a trade-off narrative and reset the steering cadence."
+            assert evidence.result == "Agreement was reached before the steering group."
+            assert evidence.source_ai_output_id == output_id
+            assert "Saved from AI STAR shaping output" in (evidence.evidence_notes or "")
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_star_shaping_save_back_rejects_foreign_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            other = create_local_user(db, email="other@example.com", password="password")
+            db.flush()
+            evidence = create_competency_evidence(db, user, title="Owned evidence")
+            foreign_output = AiOutput(
+                owner_user_id=other.id,
+                output_type="competency_star_shaping",
+                title="Foreign shaping",
+                body="* **Situation:** Hidden",
+                source_context={
+                    "competency_evidence_uuid": evidence.uuid,
+                    "prompt_contract": "competency_star_shaping_v1",
+                },
+            )
+            db.add(foreign_output)
+            db.commit()
+            evidence_uuid = evidence.uuid
+            foreign_output_id = foreign_output.id
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            f"/competencies/{evidence_uuid}/star-shaping/{foreign_output_id}/save",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 404
+        with session_local() as db:
+            evidence = db.query(CompetencyEvidence).filter_by(uuid=evidence_uuid).one()
+
+            assert evidence.situation is None
+            assert evidence.source_ai_output_id is None
     finally:
         app.dependency_overrides.clear()
 

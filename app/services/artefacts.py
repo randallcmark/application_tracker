@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 import io
 from pathlib import Path
@@ -530,6 +531,27 @@ def list_user_artefacts(db: Session, user: User) -> list[Artefact]:
     )
 
 
+def list_due_artefact_followups(
+    db: Session,
+    user: User,
+    *,
+    now: datetime,
+    limit: int = 6,
+) -> list[Artefact]:
+    return list(
+        db.scalars(
+            select(Artefact)
+            .where(
+                Artefact.owner_user_id == user.id,
+                Artefact.follow_up_at.is_not(None),
+                Artefact.follow_up_at <= now,
+            )
+            .order_by(Artefact.follow_up_at, Artefact.updated_at)
+            .limit(limit)
+        )
+    )
+
+
 def list_user_unlinked_artefacts_for_job(db: Session, user: User, job: Job) -> list[Artefact]:
     linked_ids = select(JobArtefactLink.artefact_id).where(
         JobArtefactLink.owner_user_id == user.id,
@@ -702,6 +724,8 @@ def update_artefact_metadata(
     version_label: str | None = None,
     notes: str | None = None,
     outcome_context: str | None = None,
+    follow_up_at: datetime | None = None,
+    update_follow_up: bool = False,
 ) -> None:
     if kind is not None:
         artefact.kind = kind.strip() or "other"
@@ -713,6 +737,8 @@ def update_artefact_metadata(
         artefact.notes = notes.strip() or None
     if outcome_context is not None:
         artefact.outcome_context = outcome_context.strip() or None
+    if update_follow_up:
+        artefact.follow_up_at = follow_up_at
 
 
 def link_artefact_to_job(db: Session, user: User, job: Job, artefact: Artefact) -> JobArtefactLink:

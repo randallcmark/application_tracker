@@ -19,7 +19,7 @@ Use this file for the workflows agents should understand and validate.
 - User: authenticated jobseeker
 - Goal: understand what needs attention today
 - Entry point: `/focus`
-- Main path: review due follow-ups, stale work, interviews, recent captures, and next-action gaps; navigate into job workspaces or intake flows
+- Main path: review due follow-ups, artefact reviews, stale work, interviews, recent captures, and next-action gaps; navigate into job workspaces or intake flows
 - Important states: empty state, populated state, visible AI nudge when enabled
 - Failure states: no profile, no jobs, stale shell navigation, hidden primary action
 - Validation: route/UI tests plus manual browser check against `docs/design/DESIGN_SYSTEM.md`
@@ -49,8 +49,8 @@ Use this file for the workflows agents should understand and validate.
 - User: authenticated jobseeker
 - Goal: reuse existing artefacts and, when relevant, connect supporting evidence without hidden mutation
 - Entry point: `/artefacts`, job workspace artefact actions, `/competencies`
-- Main path: review artefact library, attach existing artefacts to jobs, inspect draft provenance, optionally use competency evidence as grounding for visible AI generation
-- Important states: no artefacts, reused artefact, saved draft provenance, evidence-assisted tailoring
+- Main path: review artefact library, attach existing artefacts to jobs, set follow-up dates for artefact review, inspect draft provenance, optionally use competency evidence as grounding for visible AI generation
+- Important states: no artefacts, reused artefact, saved draft provenance, due artefact follow-up, evidence-assisted tailoring
 - Failure states: duplicate uploads when association was intended, hidden mutation of artefacts or evidence, thin-metadata confusion
 - Validation: artefact and competency tests, manual UX review against `docs/design/DESIGN_SYSTEM.md` and `docs/design/COMPETENCY_EVIDENCE_UX.md`
 

@@ -1,8 +1,13 @@
 # Public Self-Hosted Roadmap
 
+> Historical planning note. This roadmap is preserved for context, but it is no longer the current
+> source of truth. Start with `docs/PRODUCT_VISION.md`,
+> `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
+
 This document is the resumable plan for turning Application Tracker from a personal MVP into a polished, self-hostable application for jobseekers managing job applications through the full lifecycle.
 
-It is written for future contributors and future AI sessions. Start here when resuming product planning or implementation work.
+It is preserved for future contributors and future AI sessions as historical context. Do not start
+current planning here; use the three planning hubs named above.
 
 Status key:
 
@@ -469,7 +474,8 @@ Tasks:
 - Decide whether extension build targets are tracked release artefacts or generated files.
 - Add a short `CONTRIBUTING.md` with local setup and test commands.
 - Add a `SECURITY.md` explaining supported deployment assumptions and where to report issues.
-- Keep the public roadmap discoverable from `README.md` and the canonical product docs.
+- Keep this historical roadmap discoverable only as background context from archive/planning notes
+  or supporting references.
 - Run the existing test suite in a clean environment.
 - Record any failing tests with exact commands and errors.
 
@@ -477,7 +483,7 @@ Acceptance criteria:
 
 - Fresh clone does not contain personal DBs, resumes, cover letters, or private job-search data.
 - `git status --short` is understandable after setup and test runs.
-- A new contributor can identify the current roadmap, setup instructions, and safety warnings.
+- A new contributor can identify the current planning hubs, setup instructions, and safety warnings.
 
 Resume prompts:
 
@@ -1128,5 +1134,7 @@ When resuming work:
 Suggested first prompt:
 
 ```text
-Read project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md and docs/DELIVERY_PLAN.md, inspect the current repo state, and continue Phase 1: Intent/Profile foundation without touching unrelated files.
+Read `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and
+`docs/roadmap/task-map.md`, inspect the current repo state, and continue the selected workstream
+without touching unrelated files.
 ```

@@ -1249,6 +1249,14 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
                     "used_extracted_text": False,
                     "generation_brief": generation_brief,
                     "selected_competency_evidence_uuids": selected_competency_evidence_uuids,
+                    "selected_competency_evidence_refs": [
+                        {
+                            "uuid": evidence_uuid,
+                            "title": "Platform migration recovery",
+                            "competency": "Delivery leadership",
+                            "strength": "working",
+                        }
+                    ],
                     "competency_evidence_contract": "competency_evidence_generation_context_v1",
                 },
             )
@@ -1279,6 +1287,7 @@ def test_job_detail_tailoring_guidance_accepts_generation_brief(tmp_path: Path, 
         assert detail_response.status_code == 200
         assert "Brief used:" in detail_response.text
         assert "Competency evidence used: 1 example" in detail_response.text
+        assert "Platform migration recovery (Delivery leadership; working)" in detail_response.text
         assert "Platform migrations" in detail_response.text
     finally:
         app.dependency_overrides.clear()
@@ -2153,6 +2162,83 @@ def test_job_detail_ai_generation_uses_gemini_provider_with_saved_key(tmp_path: 
             assert output is not None
             assert output.provider == "gemini"
             assert output.model_name == "gemini-2.5-flash"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_detail_ai_generation_uses_anthropic_provider_with_saved_key(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Anthropic target", status="saved")
+            db.add(job)
+            db.commit()
+            job_uuid = job.uuid
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+        provider_response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "anthropic",
+                "label": "Claude",
+                "model_name": "",
+                "api_key": "anthropic-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+        assert provider_response.status_code == 303
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {"content": [{"type": "text", "text": "Focus on platform leadership first."}]}
+                ).encode("utf-8")
+
+        def fake_urlopen(req, timeout=20, context=None):
+            captured["url"] = req.full_url
+            captured["headers"] = dict(req.header_items())
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeResponse()
+
+        monkeypatch.setattr("app.services.ai.request.urlopen", fake_urlopen)
+
+        response = client.post(
+            f"/jobs/{job_uuid}/ai-outputs",
+            data={"output_type": "recommendation"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_status=AI%20output%20generated" in response.headers["location"]
+        assert captured["url"] == "https://api.anthropic.com/v1/messages"
+        headers = {key.lower(): value for key, value in captured["headers"].items()}
+        assert headers["x-api-key"] == "anthropic-secret-1234"
+        assert headers["anthropic-version"] == "2023-06-01"
+        assert captured["body"]["model"] == "claude-sonnet-4-20250514"
+
+        detail_response = client.get(response.headers["location"])
+        assert "Focus on platform leadership first." in detail_response.text
+
+        with session_local() as db:
+            output = db.scalar(select(AiOutput))
+            assert output is not None
+            assert output.provider == "anthropic"
+            assert output.model_name == "claude-sonnet-4-20250514"
     finally:
         app.dependency_overrides.clear()
 

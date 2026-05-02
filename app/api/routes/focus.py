@@ -11,12 +11,14 @@ from sqlalchemy import func, select
 from app.api.deps import DbSession, get_current_user
 from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
 from app.db.models.ai_output import AiOutput
+from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
 from app.services.ai import AiExecutionError, generate_job_ai_output
+from app.services.artefacts import list_due_artefact_followups
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["focus"])
@@ -172,6 +174,24 @@ def _interview_item(interview: InterviewEvent) -> str:
       <strong>{_job_link(interview.job)}</strong>
       <span>{escape(_value(interview.scheduled_at))}</span>
       <p>{escape(interview.stage)} · {escape(interview.location or "Location not set")}</p>
+    </li>
+    """
+
+
+def _artefact_followup_item(artefact: Artefact) -> str:
+    linked_jobs = {link.job.id: link.job for link in artefact.job_links}
+    if artefact.job:
+        linked_jobs[artefact.job.id] = artefact.job
+    linked_context = ", ".join(
+        job.title for job in sorted(linked_jobs.values(), key=lambda item: item.title.lower())
+    )
+    if not linked_context:
+        linked_context = "No linked jobs"
+    return f"""
+    <li>
+      <strong><a href="/artefacts">{escape(artefact.filename)}</a></strong>
+      <span>{escape(_value(artefact.follow_up_at))}</span>
+      <p>{escape(artefact.purpose or artefact.kind)} · {escape(linked_context)}</p>
     </li>
     """
 
@@ -339,6 +359,7 @@ def render_focus(
     *,
     profile: UserProfile | None,
     due_followups: list[Communication],
+    due_artefact_followups: list[Artefact],
     stale_jobs: list[Job],
     recent_jobs: list[Job],
     interviews: list[InterviewEvent],
@@ -388,6 +409,9 @@ def render_focus(
         else ""
     )
     due_items = [_followup_item(event) for event in due_followups]
+    artefact_followup_items = [
+        _artefact_followup_item(artefact) for artefact in due_artefact_followups
+    ]
     stale_items = [_job_item(job, detail=f"Updated {_value(job.updated_at)}") for job in stale_jobs]
     recent_items = [_job_item(job, detail=f"Added {_value(job.created_at)}") for job in recent_jobs]
     interview_items = [_interview_item(interview) for interview in interviews]
@@ -496,6 +520,7 @@ def render_focus(
         <p>Use Focus for the next decision, then jump into Board or Job Workspace to keep the application moving.</p>
         <div class="mobile-stack">
           <span class="status-pill accent">{len(due_followups)} due follow-ups</span>
+          <span class="status-pill accent">{len(due_artefact_followups)} artefact reviews</span>
           <span class="status-pill warn">{len(stale_jobs)} stale jobs</span>
           <span class="status-pill success">{len(interviews)} interviews</span>
         </div>
@@ -520,12 +545,14 @@ def render_focus(
     {profile_prompt}
     <div class="metric-grid focus-summary" aria-label="Focus summary">
       <div class="metric-card"><strong>{len(due_followups)}</strong><span>Due follow-ups</span></div>
+      <div class="metric-card"><strong>{len(due_artefact_followups)}</strong><span>Artefact reviews</span></div>
       <div class="metric-card"><strong>{len(stale_jobs)}</strong><span>Stale jobs</span></div>
       <div class="metric-card"><strong>{len(interviews)}</strong><span>Upcoming interviews</span></div>
       <div class="metric-card"><strong>{active_count}</strong><span>Active jobs</span></div>
     </div>
     <div class="focus-grid">
       {_section("Due follow-ups", _list(due_items, "No due follow-ups."))}
+      {_section("Artefact reviews", _list(artefact_followup_items, "No artefact reviews due."))}
       {_section("Stale active jobs", _list(stale_items, "No stale active jobs."))}
       {_section("Upcoming interviews", _list(interview_items, "No upcoming interviews."))}
       {_section("Recent prospects", _list(recent_items, "No recent saved or interested jobs."))}
@@ -559,6 +586,7 @@ def focus(
     now = datetime.now(UTC)
     profile = get_user_profile(db, current_user)
     due_followups = _list_due_followups(db, current_user, now=now)
+    due_artefact_followups = list_due_artefact_followups(db, current_user, now=now)
     stale_jobs = _list_stale_jobs(db, current_user, now=now)
     recent_jobs = _list_recent_jobs(db, current_user)
     ai_target_job = _focus_ai_target(due_followups, stale_jobs, recent_jobs)
@@ -578,6 +606,7 @@ def focus(
         current_user,
         profile=profile,
         due_followups=due_followups,
+        due_artefact_followups=due_artefact_followups,
         stale_jobs=stale_jobs,
         recent_jobs=recent_jobs,
         interviews=_list_upcoming_interviews(db, current_user, now=now),

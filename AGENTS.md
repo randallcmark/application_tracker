@@ -6,8 +6,12 @@ This file is a map, not a manual. Keep it short enough to stay in context.
 
 1. Read this file.
 2. Read `docs/agent/index.md`.
-3. Read only the deeper docs relevant to the task.
-4. For complex work, create or update an execution plan in `docs/exec-plans/active/`.
+3. For product or roadmap work, start with the three planning hubs:
+   - Vision: `docs/PRODUCT_VISION.md`
+   - Strategy/order: `docs/roadmap/implementation-sequencing.md`
+   - Task breakdown: `docs/roadmap/task-map.md`
+4. Read only the deeper docs relevant to the task.
+5. For complex work, create or update an execution plan in `docs/exec-plans/active/`.
 
 ## Operating Rules
 
@@ -36,6 +40,7 @@ This file is a map, not a manual. Keep it short enough to stay in context.
 
 ## Routing
 
+- Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior: `docs/product/product-brief.md` and `docs/product/user-journeys.md`.
 - Architecture work: `docs/architecture/index.md`, `docs/architecture/boundaries.md`, and `docs/architecture/decisions/`.
 - Task slicing, risk, and model guidance: `docs/agent/codex-routing.md`.

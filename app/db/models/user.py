@@ -27,3 +27,8 @@ class User(IdMixin, TimestampMixin, Base):
     ai_provider_settings = relationship("AiProviderSetting", back_populates="owner")
     ai_outputs = relationship("AiOutput", back_populates="owner")
     competency_evidence = relationship("CompetencyEvidence", back_populates="owner")
+    ai_output_competency_evidence_links = relationship(
+        "AiOutputCompetencyEvidenceLink",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )

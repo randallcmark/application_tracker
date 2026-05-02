@@ -161,9 +161,11 @@ def test_job_workspace_ui_contract_switches_main_surface_by_section_query(tmp_pa
         assert 'data-ui-component="overview-identity"' in html
         assert 'data-ui-component="utility-strip"' in html
         assert 'data-ui-section="documents"' in html
+        assert 'data-ui-component="documents-workbench"' in html
         assert 'data-ui-component="artefact-list"' in html
         assert 'data-ui-component="artefact-ai-workspace"' in html
-        assert "Artefacts" in html
+        assert "Active documents" in html
+        assert "Document actions" in html
         assert "Analyse" in html
         assert ".workspace-ai-results {" in html
         assert "max-height: 360px;" in html
@@ -281,13 +283,53 @@ def test_job_workspace_ui_contract_tasks_section_uses_reduced_structure(tmp_path
         assert 'data-ui-active-section="tasks"' in html
         assert 'data-ui-component="workspace-frame"' in html
         assert 'data-ui-component="tasks-workbench"' in html
+        assert html.count('data-ui-section="tasks"') == 1
         assert "Tasks" in html
         assert "Current focus" in html
+        assert "Readiness" in html
         assert "Workflow actions" in html
         assert "Follow-through" in html
         assert "Maintenance" in html
         assert "Suggest artefacts" not in html
         assert "Workspace tools" not in html
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_workspace_ui_contract_notes_section_uses_reduced_structure(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="notessurface@example.com", password="password")
+            db.flush()
+            job = Job(owner_user_id=user.id, title="Notes surface target", status="interviewing")
+            db.add(job)
+            db.flush()
+            db.add(
+                Communication(
+                    owner_user_id=user.id,
+                    job_id=job.id,
+                    event_type="note",
+                    direction="internal",
+                    subject="Prep thread",
+                    notes="Keep recruiter context visible.",
+                )
+            )
+            db.commit()
+            job_uuid = job.uuid
+
+        login(client, "notessurface@example.com")
+        response = client.get(f"/jobs/{job_uuid}?section=notes")
+
+        assert response.status_code == 200
+        html = response.text
+        assert 'data-ui-active-section="notes"' in html
+        assert 'data-ui-component="notes-workbench"' in html
+        assert html.count('data-ui-section="notes"') == 1
+        assert "Recent activity" in html
+        assert "Add note" in html
+        assert "Journal" in html
+        assert "Role &amp; notes" not in html
     finally:
         app.dependency_overrides.clear()
 
@@ -369,6 +411,12 @@ def test_job_workspace_ui_contract_emits_responsive_layout_rules(tmp_path: Path,
         html = response.text
         assert ".workspace-grid {" in html
         assert "grid-template-columns: 248px minmax(0, 1fr) 332px;" in html
+        assert "@media (min-width: 1081px)" in html
+        assert ".page-main.standard {\n        overflow: hidden;" in html
+        assert "height: 100%;" in html
+        assert ".workspace-left-rail,\n      .workspace-center,\n      .workspace-right-rail {" in html
+        assert "overscroll-behavior: contain;" in html
+        assert "scrollbar-gutter: stable;" in html
         assert "@media (max-width: 1080px)" in html
         assert ".workspace-grid { grid-template-columns: 1fr; }" in html
         assert ".workspace-left-rail { order: 2; }" in html

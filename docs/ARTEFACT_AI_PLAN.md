@@ -80,11 +80,23 @@ Current G4 source-context contract for generated artefact outputs:
 ```json
 {
   "selected_competency_evidence_uuids": ["..."],
+  "selected_competency_evidence_refs": [
+    {
+      "uuid": "...",
+      "title": "...",
+      "competency": "...",
+      "strength": "...",
+      "latest_star_shaping_output_id": 123
+    }
+  ],
   "competency_evidence_contract": "competency_evidence_generation_context_v1"
 }
 ```
 
-No schema migration is required for first-pass competency evidence reuse.
+The resolved reference list is compact provenance for UI display and review. It is derived from
+owner-scoped evidence records at generation time and does not mutate competency evidence. No schema
+migration is required for the compact display contract. Richer queryable provenance is stored in
+`ai_output_competency_evidence_links`.
 
 ## Active Next Milestone: G4 Evidence Reuse In Generation
 
@@ -99,8 +111,11 @@ Implemented in first G4 slice:
 - selected evidence is resolved owner-scoped inside AI services;
 - selected evidence summaries and latest `competency_star_shaping` output are included in
   tailoring/draft prompts where available;
-- generated `tailoring_guidance` and `draft` outputs persist resolved evidence UUIDs in
-  `source_context`;
+- generated `tailoring_guidance` and `draft` outputs persist resolved evidence UUIDs and compact
+  resolved evidence references in `source_context`;
+- generated `tailoring_guidance` and `draft` outputs also create owner-scoped
+  `ai_output_competency_evidence_links` rows with generation-time evidence snapshots;
+- the Job Workspace AI metadata panel renders selected evidence provenance visibly;
 - no competency evidence, artefact, job, or workflow state is mutated by generation.
 
 Prompt rules:
@@ -116,8 +131,17 @@ Prompt rules:
 
 1. Small hooks to create competency evidence from job/artefact context are implemented. They open
    the manual evidence form with owner-scoped source context and require explicit save.
-2. Add an explicit user action to save an AI-shaped STAR response back into competency evidence.
-3. Consider richer evidence-link history only after source-context UUIDs prove insufficient.
+2. Explicit save-back from visible AI-shaped STAR output into competency evidence is implemented.
+   The user must click `Save shaped STAR to evidence`; the route owner-checks the evidence and AI
+   output, copies parsed STAR fields where available, records the source AI output, and leaves
+   generation itself non-mutating.
+3. Richer evidence-link history is implemented through the model-backed
+   `ai_output_competency_evidence_links` table. It stores owner-scoped links from generated AI
+   outputs to selected competency evidence, immutable generation-time evidence snapshots, use
+   intent, draft kind, optional latest STAR-shaping output id, and timestamps. Its downstream
+   utility is evidence-card reuse history, stronger auditability after evidence edits, queryable
+   cross-job reporting, and safer outcome-aware refinement without parsing historical JSON
+   metadata.
 4. Return to outcome-aware refinement only after competency evidence reuse has real usage.
 
 ## Regression Expectations

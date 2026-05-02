@@ -30,7 +30,15 @@ from app.db.models.api_token import ApiToken
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
-from app.services.ai import KNOWN_PROVIDERS, list_user_ai_provider_settings, upsert_ai_provider_setting
+from app.services.ai import (
+    KNOWN_PROVIDERS,
+    enable_ai_provider_model,
+    list_user_ai_provider_settings,
+    provider_default_base_url,
+    provider_default_model,
+    save_ai_provider_key_and_discover_models,
+    upsert_ai_provider_setting,
+)
 from app.services.profiles import get_or_create_user_profile, get_user_profile
 
 router = APIRouter(tags=["session-ui"])
@@ -164,8 +172,8 @@ def _ai_provider_rows(provider_settings) -> str:
     }
     for provider in KNOWN_PROVIDERS:
         setting = by_provider.get(provider)
-        model_name = setting.model_name if setting and setting.model_name else "Not set"
-        base_url = setting.base_url if setting and setting.base_url else "Default"
+        model_name = setting.model_name if setting and setting.model_name else provider_default_model(provider) or "Not set"
+        base_url = setting.base_url if setting and setting.base_url else provider_default_base_url(provider) or "Not set"
         api_key_hint = setting.api_key_hint if setting and setting.api_key_hint else "Not saved"
         status = "Enabled" if setting and setting.is_enabled else "Disabled"
         rows.append(
@@ -180,6 +188,128 @@ def _ai_provider_rows(provider_settings) -> str:
             """
         )
     return "\n".join(rows)
+
+
+def _model_select(setting) -> str:
+    models = setting.discovered_models if setting and isinstance(setting.discovered_models, list) else []
+    if not models:
+        if setting and setting.provider == "openai_compatible" and setting.model_discovery_status == "failed":
+            return f"""
+            <label>
+              Model
+              <input name="model_name" maxlength="200" value="{escape(setting.model_name or '', quote=True)}" placeholder="Enter model manually">
+            </label>
+            <p class="muted">Model discovery failed for this custom endpoint: {escape(setting.model_discovery_error or 'unknown error')}</p>
+            """
+        return '<p class="muted">Save API key to discover available models.</p>'
+    options = []
+    selected_model = setting.model_name if setting else ""
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        model_id = model.get("id")
+        if not isinstance(model_id, str) or not model_id:
+            continue
+        label = model.get("display_name") if isinstance(model.get("display_name"), str) else model_id
+        selected = " selected" if model_id == selected_model else ""
+        option_label = f"{label} ({model_id})" if label != model_id else model_id
+        options.append(
+            f'<option value="{escape(model_id, quote=True)}"{selected}>{escape(option_label)}</option>'
+        )
+    if not options:
+        return '<p class="muted">No usable models were returned.</p>'
+    return f"""
+    <label>
+      Model
+      <select name="model_name">
+        {''.join(options)}
+      </select>
+    </label>
+    """
+
+
+def _provider_enable_form(provider: str, setting) -> str:
+    if setting is None or not setting.api_key_encrypted:
+        return ""
+    return f"""
+    <form method="post" action="/settings/ai-provider/enable">
+      <input type="hidden" name="provider" value="{escape(provider, quote=True)}">
+      {_model_select(setting)}
+      <button type="submit">Enable selected model</button>
+    </form>
+    """
+
+
+def _standard_ai_provider_form(provider: str, label: str, help_text: str) -> str:
+    return f"""
+    <div class="provider-card">
+      <h3>{escape(label)}</h3>
+      <p class="muted">{escape(help_text)}</p>
+      <form method="post" action="/settings/ai-provider/discover">
+        <input type="hidden" name="provider" value="{escape(provider, quote=True)}">
+        <label>
+          Friendly name
+          <input name="label" maxlength="200" placeholder="{escape(label, quote=True)}">
+        </label>
+        <label>
+          API key
+          <input name="api_key" type="password" maxlength="400" placeholder="Leave blank to reuse saved key">
+        </label>
+        <button type="submit">Save key and discover models</button>
+      </form>
+      {{enable_form}}
+    </div>
+    """
+
+
+def _custom_ai_provider_form(enable_form: str = "") -> str:
+    return f"""
+    <div class="provider-card">
+      <h3>Custom OpenAI-compatible</h3>
+      <p class="muted">Use this for local or third-party endpoints that expose an OpenAI-compatible chat completions API.</p>
+      <form method="post" action="/settings/ai-provider/discover">
+        <input type="hidden" name="provider" value="openai_compatible">
+        <label>
+          Friendly name
+          <input name="label" maxlength="200" placeholder="Local Ollama, LM Studio, private gateway">
+        </label>
+        <label>
+          Base URL
+          <input name="base_url" maxlength="1000" placeholder="http://localhost:11434/v1">
+        </label>
+        <label>
+          API key
+          <input name="api_key" type="password" maxlength="400" placeholder="Leave blank to reuse saved key">
+        </label>
+        <button type="submit">Save key and discover models</button>
+      </form>
+      {enable_form}
+    </div>
+    """
+
+
+def _ai_provider_setup_forms(provider_settings=None) -> str:
+    by_provider = {setting.provider: setting for setting in provider_settings or []}
+    return (
+        '<div class="provider-grid">'
+        + _standard_ai_provider_form(
+            "openai",
+            "OpenAI",
+            "Preconfigured for the OpenAI API. Supply an API key; the model can be changed if needed.",
+        ).replace("{enable_form}", _provider_enable_form("openai", by_provider.get("openai")))
+        + _standard_ai_provider_form(
+            "gemini",
+            "Google Gemini",
+            "Preconfigured for Google AI Studio. Supply a Gemini API key; endpoint details are handled by the app.",
+        ).replace("{enable_form}", _provider_enable_form("gemini", by_provider.get("gemini")))
+        + _standard_ai_provider_form(
+            "anthropic",
+            "Anthropic",
+            "Preconfigured for the Anthropic Messages API. Supply an Anthropic API key to use Claude.",
+        ).replace("{enable_form}", _provider_enable_form("anthropic", by_provider.get("anthropic")))
+        + _custom_ai_provider_form(_provider_enable_form("openai_compatible", by_provider.get("openai_compatible")))
+        + "</div>"
+    )
 
 
 def _admin_api_token_row(api_token: ApiToken) -> str:
@@ -289,6 +419,15 @@ def settings_page(
     }
     textarea { min-height: 96px; resize: vertical; }
     .field-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .provider-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+    .provider-card {
+      border: 0.5px solid var(--line-soft);
+      border-radius: 12px;
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+    .provider-card h3 { margin: 0; }
     button {
       background: var(--accent);
       border: 0;
@@ -317,7 +456,7 @@ def settings_page(
     td form { margin: 0; }
     .secret { border-color: var(--accent); }
     @media (max-width: 760px) {
-      .field-grid { grid-template-columns: 1fr; }
+      .field-grid, .provider-grid { grid-template-columns: 1fr; }
       table {
         display: block;
         max-width: 100%;
@@ -400,40 +539,7 @@ def settings_page(
           </div>
         </div>
       </details>
-      <form method="post" action="/settings/ai-provider">
-        <div class="field-grid">
-          <label>
-            Provider
-            <select name="provider">
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini (AI Studio)</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai_compatible">OpenAI-compatible local endpoint</option>
-            </select>
-          </label>
-          <label>
-            Label
-            <input name="label" maxlength="200" placeholder="Personal OpenAI, Gemini AI Studio, local Ollama, Claude">
-          </label>
-          <label>
-            Base URL
-            <input name="base_url" maxlength="1000" placeholder="Optional override for OpenAI-compatible or Gemini endpoints">
-          </label>
-          <label>
-            Model
-            <input name="model_name" maxlength="200" placeholder="Model name">
-          </label>
-          <label>
-            API key
-            <input name="api_key" type="password" maxlength="400" placeholder="Leave blank to keep existing key">
-          </label>
-        </div>
-        <label class="checkbox-label">
-          <input name="is_enabled" type="checkbox" value="true">
-          Make this the active provider
-        </label>
-        <button type="submit">Save AI provider</button>
-      </form>
+      {_ai_provider_setup_forms(ai_provider_settings or [])}
       <table>
         <thead>
           <tr>
@@ -1126,6 +1232,50 @@ def settings_update_ai_provider(
             model_name=model_name,
             api_key=api_key,
             is_enabled=is_enabled == "true",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    db.commit()
+    return RedirectResponse(url="/settings#ai", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/settings/ai-provider/discover", include_in_schema=False)
+def settings_discover_ai_provider_models(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    provider: Annotated[str, Form()] = "openai",
+    label: Annotated[str, Form()] = "",
+    base_url: Annotated[str, Form()] = "",
+    api_key: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    try:
+        save_ai_provider_key_and_discover_models(
+            db,
+            current_user,
+            provider=provider,
+            label=label,
+            base_url=base_url,
+            api_key=api_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    db.commit()
+    return RedirectResponse(url="/settings#ai", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/settings/ai-provider/enable", include_in_schema=False)
+def settings_enable_ai_provider_model(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    provider: Annotated[str, Form()] = "openai",
+    model_name: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    try:
+        enable_ai_provider_model(
+            db,
+            current_user,
+            provider=provider,
+            model_name=model_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

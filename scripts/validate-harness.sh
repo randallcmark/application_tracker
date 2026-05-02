@@ -20,6 +20,7 @@ required_files=(
   "docs/agent/ai-feature-rules.md"
   "docs/agent/security-rules.md"
   "docs/agent/codex-routing.md"
+  "docs/PRODUCT_VISION.md"
   "docs/architecture/index.md"
   "docs/architecture/boundaries.md"
   "docs/product/product-brief.md"
@@ -66,6 +67,9 @@ fi
 
 for route in \
   "docs/agent/index.md" \
+  "docs/PRODUCT_VISION.md" \
+  "docs/roadmap/implementation-sequencing.md" \
+  "docs/roadmap/task-map.md" \
   "docs/product/product-brief.md" \
   "docs/product/user-journeys.md" \
   "docs/architecture/index.md" \

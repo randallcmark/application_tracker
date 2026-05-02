@@ -24,3 +24,9 @@ class AiOutput(IdMixin, TimestampMixin, Base):
     owner = relationship("User", back_populates="ai_outputs")
     job = relationship("Job", back_populates="ai_outputs")
     artefact = relationship("Artefact", back_populates="ai_outputs")
+    competency_evidence_links = relationship(
+        "AiOutputCompetencyEvidenceLink",
+        back_populates="ai_output",
+        cascade="all, delete-orphan",
+        foreign_keys="AiOutputCompetencyEvidenceLink.ai_output_id",
+    )

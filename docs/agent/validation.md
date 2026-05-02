@@ -26,6 +26,15 @@ Apply schema changes locally:
 make migrate
 ```
 
+When a change adds or edits a SQLAlchemy model field, Alembic migration, or durable database
+constraint, applying the migration to the active local database is required before completion. Do
+not rely only on tests that create a fresh temporary database. Confirm the active database is at
+head after the migration:
+
+```sh
+.venv/bin/alembic current
+```
+
 ## Project Validation
 
 Primary automated checks:
@@ -42,11 +51,19 @@ Container build smoke:
 make docker-import-smoke
 ```
 
+Docker Compose runtime smoke:
+
+```sh
+make docker-check
+```
+
 ## Validation Standard
 
 Before proposing completion:
 
 - Run the narrowest relevant tests during implementation.
+- For schema/model changes, run the migration patch against the active local database and confirm
+  Alembic is at head.
 - Run the full documented validation set before final handoff when feasible.
 - If validation fails, fix the cause or clearly report the failure.
 - If validation cannot run, explain why and record any persistent gap.

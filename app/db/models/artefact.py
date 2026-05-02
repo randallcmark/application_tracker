@@ -1,4 +1,6 @@
-from sqlalchemy import BigInteger, ForeignKey, String, Text
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -21,6 +23,9 @@ class Artefact(IdMixin, TimestampMixin, Base):
     version_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     outcome_context: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    follow_up_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True, nullable=True
+    )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
@@ -33,3 +38,8 @@ class Artefact(IdMixin, TimestampMixin, Base):
     application = relationship("Application", back_populates="artefacts")
     interview_event = relationship("InterviewEvent", back_populates="artefacts")
     ai_outputs = relationship("AiOutput", back_populates="artefact")
+    ai_output_competency_evidence_links = relationship(
+        "AiOutputCompetencyEvidenceLink",
+        back_populates="artefact",
+        cascade="all, delete-orphan",
+    )

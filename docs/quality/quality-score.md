@@ -6,7 +6,7 @@ Use this document as a recurring snapshot of project health. Keep it factual and
 
 | Area | Grade | Evidence | Next Action |
 | --- | --- | --- | --- |
-| Product clarity | B | Product direction is strong across `docs/PRODUCT_VISION.md`, `docs/DELIVERY_PLAN.md`, and the public roadmap, but the planning surface was fragmented before the harness migration. | Route active work through execution plans and keep product-brief contracts current. |
+| Product clarity | B+ | Current planning now routes through three hubs: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`. Historical planning docs are preserved as background instead of current roadmap peers. | Keep task-map workstreams current and move completed execution plans out of `docs/exec-plans/active/`. |
 | Architecture legibility | B- | Runtime shape is understandable from code and docs, but boundary rules were implicit until the harness pass and remain unenforced mechanically. | Add targeted boundary checks and keep ADRs current. |
 | Validation reliability | B- | `make lint`, `make test`, `make check`, migrations, and Docker smoke exist, but harness validation is new and CI enforcement is missing. | Add CI coverage for harness validation and fill any missing smoke paths. |
 | UI quality | B | The design system is strong and the shared shell is in place, but mobile portrait and shell overflow issues remain open. | Continue workspace/shell responsive cleanup with browser validation. |

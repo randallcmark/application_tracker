@@ -48,6 +48,8 @@ Review:
 
 - opens a dedicated Inbox review page without changing intake state;
 - lets the user clean up title, company, location, source, source/apply URL, and description;
+- flags missing company, location, source URL, description, and low/unknown confidence before
+  acceptance;
 - preserves captured provenance separately from the edited fields;
 - records an `Inbox enriched` journal entry when fields change.
 
@@ -55,13 +57,13 @@ Accepting after review uses the edited candidate fields.
 
 ## Email Capture
 
-The first email-to-Inbox slice supports manual paste:
+Email-to-Inbox supports manual paste:
 
 ```text
 http://127.0.0.1:8000/inbox/email/new
 ```
 
-The pasted email creates an owner-scoped email provenance record and one Inbox candidate.
+The pasted email creates an owner-scoped email provenance record and one or more Inbox candidates.
 
 Captured provenance includes:
 
@@ -84,13 +86,21 @@ Deterministic extraction:
 
 - job title defaults to the email subject;
 - description uses the plain text body, falling back to HTML-stripped text;
-- source/apply URL uses the first meaningful `http` or `https` URL;
+- source/apply URL uses each meaningful `http` or `https` URL;
+- job-board alert emails with multiple meaningful job URLs create multiple Inbox candidates tied to
+  the same email provenance record;
+- multi-candidate titles include the source hostname to help distinguish candidates during review;
+- Indeed saved-alert text bodies are parsed into one Inbox candidate per visible job block, including
+  title, company, location, and the block-specific description;
+- LinkedIn direct-match alert snippets are parsed from the `People with similar roles applied to
+  these jobs` section before URL splitting, so notification/footer/action links do not become
+  candidate jobs;
 - all extracted URLs are preserved in job structured data;
 - obvious unsubscribe, preference, privacy, terms, and tracking-pixel URLs are ignored when selecting the source URL.
 
-If the selected source URL already belongs to one of the user's jobs, the app links the new email
+If a selected source URL already belongs to one of the user's jobs, the app links the new email
 provenance record to that job, records an `Email captured` journal entry, and does not create a
-duplicate job.
+duplicate job for that URL. Other new URLs from the same email still create Inbox candidates.
 
 ## Test Instructions
 
@@ -104,7 +114,11 @@ duplicate job.
 8. Confirm it disappears from Inbox and is archived.
 9. Paste a job-board email at `/inbox/email/new`.
 10. Confirm the pasted email job appears in Inbox and stays out of Prospects until accepted.
-11. Open Review for the pasted email job.
-12. Edit title, company, location, source/apply URL, or description.
-13. Save review and confirm captured context remains visible.
-14. Accept the reviewed job and confirm the active job uses the edited values.
+11. Paste a job-board alert email with two role links and confirm two Inbox candidates appear.
+12. Paste an Indeed saved-alert body and confirm each visible job block creates its own Inbox
+    candidate.
+13. Open Review for a pasted email job.
+14. Edit title, company, location, source/apply URL, or description.
+15. Confirm missing or low-confidence fields appear in the review-readiness panel before acceptance.
+16. Save review and confirm captured context remains visible.
+17. Accept the reviewed job and confirm the active job uses the edited values.

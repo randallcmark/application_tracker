@@ -33,5 +33,6 @@ Optional later deployment:
 
 The current product vision is in `docs/PRODUCT_VISION.md`.
 The current delivery plan is in `docs/DELIVERY_PLAN.md`.
-The resumable roadmap and historical staged backlog are in `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
+Current planning starts with `docs/PRODUCT_VISION.md`,
+`docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 The detailed authentication plan is in `docs/AUTHENTICATION.md`.

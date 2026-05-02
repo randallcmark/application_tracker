@@ -15,7 +15,7 @@ from app.db.models.email_intake import EmailIntake
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.services.ai import AiExecutionError, generate_job_ai_output
-from app.services.email_intake import create_email_inbox_candidate
+from app.services.email_intake import create_email_inbox_candidate, create_email_inbox_candidates
 from app.services.jobs import BOARD_STATUSES, create_job_note, update_job_board_state
 from app.services.profiles import get_user_profile
 
@@ -37,6 +37,9 @@ class EmailCaptureResponse(BaseModel):
     job_uuid: str
     created: bool
     intake_state: str
+    job_uuids: list[str] = Field(default_factory=list)
+    candidate_count: int = 1
+    created_count: int = 0
 
 
 def _value(value: object) -> str:
@@ -104,9 +107,74 @@ def _source_action(job: Job) -> str:
     return f'<a class="external-link" href="{escape(url, quote=True)}" target="_blank" rel="noreferrer">Open source ↗</a>'
 
 
+def _review_attention_items(job: Job) -> list[tuple[str, str, str]]:
+    items: list[tuple[str, str, str]] = []
+    if not job.company:
+        items.append(("Company missing", "Add the employer before accepting.", "warn"))
+    if not job.location:
+        items.append(("Location missing", "Add location or mark remote when known.", "warn"))
+    if not (job.source_url or job.apply_url):
+        items.append(("Source link missing", "Add a recoverable source or apply link if one exists.", "warn"))
+    if not job.description_raw:
+        items.append(("Description missing", "Add enough context to judge fit later.", "warn"))
+    if job.intake_confidence in {"low", "unknown"}:
+        items.append(
+            (
+                f"{job.intake_confidence.replace('_', ' ').title()} confidence",
+                "Review extracted fields before moving this into active work.",
+                "accent",
+            )
+        )
+    return items
+
+
+def _review_readiness_panel(job: Job) -> str:
+    items = _review_attention_items(job)
+    if not items:
+        return """
+        <section class="page-panel soft review-readiness" data-ui-component="review-readiness">
+          <div class="panel-header">
+            <div>
+              <p class="panel-micro">Review readiness</p>
+              <h2>Ready for decision</h2>
+            </div>
+            <span class="status-pill success">Complete fields</span>
+          </div>
+          <p class="hint">Core fields are present. Accept or dismiss when the opportunity quality is clear.</p>
+        </section>
+        """
+    rendered = "".join(
+        "<li>"
+        f'<span class="status-pill {escape(tone, quote=True)}">{escape(title)}</span>'
+        f"<p>{escape(detail)}</p>"
+        "</li>"
+        for title, detail, tone in items
+    )
+    return f"""
+    <section class="page-panel soft review-readiness" data-ui-component="review-readiness">
+      <div class="panel-header">
+        <div>
+          <p class="panel-micro">Review readiness</p>
+          <h2>Needs cleanup before accept</h2>
+        </div>
+        <span class="status-pill warn">{len(items)} checks</span>
+      </div>
+      <ul class="review-readiness-list">
+        {rendered}
+      </ul>
+    </section>
+    """
+
+
 def _job_card(job: Job) -> str:
     source = _source_label(job)
     confidence = job.intake_confidence.replace("_", " ")
+    attention_count = len(_review_attention_items(job))
+    attention = (
+        f'<span class="status-pill warn">{attention_count} cleanup checks</span>'
+        if attention_count
+        else '<span class="status-pill success">Ready to decide</span>'
+    )
     return f"""
     <article class="inbox-card">
       <div class="card-header">
@@ -120,6 +188,7 @@ def _job_card(job: Job) -> str:
         <p>{escape(job.company or "Company not set")} · {escape(job.location or "Location not set")}</p>
         <p>{_source_action(job)}</p>
         <p class="meta">Captured {_value(job.captured_at or job.created_at)}</p>
+        <p>{attention}</p>
       </div>
       <div class="actions">
         <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/accept">
@@ -488,12 +557,27 @@ def render_inbox_review(
     }
     .ai-markdown li { border-left: 0; padding-left: 0; }
     .ai-action-stack { display: grid; gap: 10px; }
+    .review-readiness-list {
+      display: grid;
+      gap: 10px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .review-readiness-list li {
+      border-left: 3px solid var(--line);
+      display: grid;
+      gap: 6px;
+      padding-left: 10px;
+    }
+    .review-readiness-list p { margin: 0; }
     @media (max-width: 800px) {
       .field-grid, .actions { grid-template-columns: 1fr; }
     }
     """
     body = f"""
     {"".join(flash_parts)}
+    {_review_readiness_panel(job)}
     <section class="page-panel">
       <div class="panel-header">
         <div>
@@ -848,12 +932,21 @@ def _parse_form_datetime(value: str) -> datetime | None:
     return datetime.fromisoformat(stripped)
 
 
-def _email_response(email_intake: EmailIntake, job: Job, *, created: bool) -> EmailCaptureResponse:
+def _email_response(
+    email_intake: EmailIntake,
+    jobs: list[Job],
+    *,
+    created_count: int,
+) -> EmailCaptureResponse:
+    first_job = jobs[0]
     return EmailCaptureResponse(
         email_intake_uuid=email_intake.uuid,
-        job_uuid=job.uuid,
-        created=created,
-        intake_state=job.intake_state,
+        job_uuid=first_job.uuid,
+        created=created_count > 0,
+        intake_state=first_job.intake_state,
+        job_uuids=[job.uuid for job in jobs],
+        candidate_count=len(jobs),
+        created_count=created_count,
     )
 
 
@@ -910,7 +1003,7 @@ def create_email_capture(
     ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email body is required")
 
-    email_intake, job, created = create_email_inbox_candidate(
+    email_intake, jobs, created_count = create_email_inbox_candidates(
         db,
         current_user,
         subject=payload.subject,
@@ -920,7 +1013,7 @@ def create_email_capture(
         body_html=payload.body_html,
     )
     db.commit()
-    return _email_response(email_intake, job, created=created)
+    return _email_response(email_intake, jobs, created_count=created_count)
 
 
 @router.post("/inbox/{job_uuid}/accept", include_in_schema=False)

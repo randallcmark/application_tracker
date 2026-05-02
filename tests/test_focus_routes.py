@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.auth.users import create_local_user
 from app.db.models.ai_output import AiOutput
 from app.db.models.ai_provider_setting import AiProviderSetting
+from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
 from app.db.models.interview_event import InterviewEvent
 from app.db.models.job import Job
@@ -95,6 +96,31 @@ def test_focus_shows_owner_scoped_attention_items(tmp_path: Path, monkeypatch) -
             db.flush()
             db.add_all(
                 [
+                    Artefact(
+                        owner_user_id=user.id,
+                        job_id=stale_job.id,
+                        kind="resume",
+                        purpose="Refresh before reuse",
+                        filename="resume-v1.pdf",
+                        storage_key="jobs/stale/artefacts/resume-v1.pdf",
+                        follow_up_at=now - timedelta(days=1),
+                    ),
+                    Artefact(
+                        owner_user_id=user.id,
+                        job_id=recent_job.id,
+                        kind="cover_letter",
+                        filename="future-cover-letter.pdf",
+                        storage_key="jobs/recent/artefacts/future-cover-letter.pdf",
+                        follow_up_at=now + timedelta(days=1),
+                    ),
+                    Artefact(
+                        owner_user_id=other.id,
+                        job_id=other_job.id,
+                        kind="resume",
+                        filename="other-user-resume.pdf",
+                        storage_key="jobs/other/artefacts/other-user-resume.pdf",
+                        follow_up_at=now - timedelta(days=1),
+                    ),
                     Communication(
                         job_id=stale_job.id,
                         owner_user_id=user.id,
@@ -126,11 +152,16 @@ def test_focus_shows_owner_scoped_attention_items(tmp_path: Path, monkeypatch) -
         assert response.status_code == 200
         assert "Complete your job-search profile" not in response.text
         assert "Chase recruiter" in response.text
+        assert "Artefact reviews" in response.text
+        assert "resume-v1.pdf" in response.text
+        assert "Refresh before reuse" in response.text
         assert "Stale applied role" in response.text
         assert "Recent prospect" in response.text
         assert "technical" in response.text
         assert "Video" in response.text
         assert "Other user role" not in response.text
+        assert "other-user-resume.pdf" not in response.text
+        assert "future-cover-letter.pdf" not in response.text
         assert "Hidden archived follow-up" not in response.text
         assert "Archived follow-up role" not in response.text
     finally:

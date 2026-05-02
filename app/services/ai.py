@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.ai_output import AiOutput
+from app.db.models.ai_output_competency_evidence_link import AiOutputCompetencyEvidenceLink
 from app.db.models.ai_provider_setting import AiProviderSetting
 from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
@@ -25,6 +26,20 @@ from app.services.artefacts import (
 )
 
 KNOWN_PROVIDERS = ("openai", "gemini", "anthropic", "openai_compatible")
+PROVIDER_DEFAULTS = {
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "model_name": "gpt-5.2",
+    },
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "model_name": "gemini-2.5-flash",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "model_name": "claude-sonnet-4-20250514",
+    },
+}
 KNOWN_OUTPUT_TYPES = (
     "recommendation",
     "fit_summary",
@@ -67,6 +82,8 @@ def upsert_ai_provider_setting(
 ) -> AiProviderSetting:
     if provider not in KNOWN_PROVIDERS:
         raise ValueError("Unsupported AI provider")
+    defaults = PROVIDER_DEFAULTS.get(provider, {})
+    api_key_value = (api_key or "").strip()
     setting = db.scalar(
         select(AiProviderSetting).where(
             AiProviderSetting.owner_user_id == user.id,
@@ -77,17 +94,112 @@ def upsert_ai_provider_setting(
         setting = AiProviderSetting(owner_user_id=user.id, provider=provider)
         db.add(setting)
     setting.label = (label or "").strip() or None
-    setting.base_url = (base_url or "").strip() or None
-    setting.model_name = (model_name or "").strip() or None
-    api_key_value = (api_key or "").strip()
+    if provider == "openai_compatible":
+        setting.base_url = (base_url or "").strip() or None
+        setting.model_name = (model_name or "").strip() or None
+    else:
+        setting.base_url = None
+        setting.model_name = (model_name or "").strip() or defaults.get("model_name")
     if api_key_value:
         setting.api_key_encrypted = seal_secret(api_key_value)
         setting.api_key_hint = key_hint(api_key_value)
+        setting.discovered_models = None
+        setting.model_discovery_status = None
+        setting.model_discovery_error = None
+    if is_enabled:
+        if not setting.api_key_encrypted:
+            raise ValueError("Enabled AI provider is missing an API key")
+        if provider == "openai_compatible" and not setting.base_url:
+            raise ValueError("OpenAI-compatible provider requires a base URL")
+        if not setting.model_name:
+            raise ValueError("Enabled AI provider is missing a model name")
     setting.is_enabled = is_enabled
     if is_enabled:
         for other_setting in list_user_ai_provider_settings(db, user):
             if other_setting.provider != provider and other_setting.is_enabled:
                 other_setting.is_enabled = False
+    db.flush()
+    return setting
+
+
+def save_ai_provider_key_and_discover_models(
+    db: Session,
+    user: User,
+    *,
+    provider: str,
+    label: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> AiProviderSetting:
+    if provider not in KNOWN_PROVIDERS:
+        raise ValueError("Unsupported AI provider")
+    setting = upsert_ai_provider_setting(
+        db,
+        user,
+        provider=provider,
+        label=label,
+        base_url=base_url,
+        model_name=None,
+        api_key=api_key,
+        is_enabled=False,
+    )
+    api_key_value = (api_key or "").strip()
+    if not api_key_value and not setting.api_key_encrypted:
+        raise ValueError("Save an API key before discovering models")
+    try:
+        models = discover_ai_provider_models(setting, api_key=api_key_value or None)
+    except AiExecutionError as exc:
+        if provider == "openai_compatible":
+            setting.discovered_models = []
+            setting.model_discovery_status = "failed"
+            setting.model_discovery_error = str(exc)
+            db.flush()
+            return setting
+        raise ValueError(str(exc)) from exc
+    setting.discovered_models = models
+    setting.model_discovery_status = "ready"
+    setting.model_discovery_error = None
+    default_model = provider_default_model(provider)
+    discovered_ids = {model["id"] for model in models}
+    if default_model and default_model in discovered_ids:
+        setting.model_name = default_model
+    elif models and setting.model_name not in discovered_ids:
+        setting.model_name = models[0]["id"]
+    db.flush()
+    return setting
+
+
+def enable_ai_provider_model(
+    db: Session,
+    user: User,
+    *,
+    provider: str,
+    model_name: str,
+) -> AiProviderSetting:
+    if provider not in KNOWN_PROVIDERS:
+        raise ValueError("Unsupported AI provider")
+    setting = db.scalar(
+        select(AiProviderSetting).where(
+            AiProviderSetting.owner_user_id == user.id,
+            AiProviderSetting.provider == provider,
+        )
+    )
+    if setting is None or not setting.api_key_encrypted:
+        raise ValueError("Save and validate an API key before enabling this provider")
+    selected = (model_name or "").strip()
+    if not selected:
+        raise ValueError("Select a model before enabling this provider")
+    discovered = setting.discovered_models if isinstance(setting.discovered_models, list) else []
+    discovered_ids = {item.get("id") for item in discovered if isinstance(item, dict)}
+    if discovered_ids and selected not in discovered_ids:
+        raise ValueError("Selected model was not returned by provider discovery")
+    if not discovered_ids and provider != "openai_compatible":
+        raise ValueError("Discover provider models before enabling this provider")
+    setting.model_name = selected
+    setting.is_enabled = True
+    for other_setting in list_user_ai_provider_settings(db, user):
+        if other_setting.provider != provider and other_setting.is_enabled:
+            other_setting.is_enabled = False
     db.flush()
     return setting
 
@@ -151,6 +263,32 @@ def _with_ai_diagnostics(exc: AiExecutionError, **diagnostics: object) -> AiExec
 
 def _provider_label(setting: AiProviderSetting) -> str:
     return PROVIDER_LABELS.get(setting.provider, "AI provider")
+
+
+def provider_default_base_url(provider: str) -> str | None:
+    value = PROVIDER_DEFAULTS.get(provider, {}).get("base_url")
+    return value if isinstance(value, str) else None
+
+
+def provider_default_model(provider: str) -> str | None:
+    value = PROVIDER_DEFAULTS.get(provider, {}).get("model_name")
+    return value if isinstance(value, str) else None
+
+
+def _model_option(model_id: str, *, display_name: str | None = None) -> dict[str, str]:
+    option = {"id": model_id}
+    if display_name and display_name != model_id:
+        option["display_name"] = display_name
+    return option
+
+
+def _sort_model_options(models: list[dict[str, str]]) -> list[dict[str, str]]:
+    def key(model: dict[str, str]) -> tuple[int, str]:
+        model_id = model["id"].lower()
+        preferred = model_id.startswith(("gpt-", "gemini-", "claude-"))
+        return (0 if preferred else 1, model_id)
+
+    return sorted(models, key=key)
 
 
 def _parse_error_detail_payload(detail: str) -> tuple[dict[str, object], str]:
@@ -452,6 +590,78 @@ def _competency_evidence_generation_summary(
             parts.append(f"Latest STAR shaping:\n{shaping.body}")
         rows.append("\n".join(parts))
     return "\n\n".join(rows)
+
+
+def _competency_evidence_source_refs(
+    evidence_items: list[CompetencyEvidence],
+    latest_shaping_by_evidence_uuid: dict[str, AiOutput],
+) -> list[dict[str, object]]:
+    refs: list[dict[str, object]] = []
+    for evidence in evidence_items:
+        shaping = latest_shaping_by_evidence_uuid.get(evidence.uuid)
+        ref: dict[str, object] = {
+            "uuid": evidence.uuid,
+            "title": evidence.title,
+            "competency": evidence.competency,
+            "strength": evidence.strength,
+        }
+        if shaping is not None:
+            ref["latest_star_shaping_output_id"] = shaping.id
+        refs.append(ref)
+    return refs
+
+
+def _competency_evidence_snapshot(evidence: CompetencyEvidence) -> dict[str, object]:
+    return {
+        "uuid": evidence.uuid,
+        "title": evidence.title,
+        "competency": evidence.competency,
+        "situation": evidence.situation,
+        "task": evidence.task,
+        "action": evidence.action,
+        "result": evidence.result,
+        "evidence_notes": evidence.evidence_notes,
+        "strength": evidence.strength,
+        "tags": evidence.tags,
+        "source_kind": evidence.source_kind,
+        "source_job_id": evidence.source_job_id,
+        "source_artefact_id": evidence.source_artefact_id,
+        "source_ai_output_id": evidence.source_ai_output_id,
+    }
+
+
+def _create_competency_evidence_links(
+    db: Session,
+    user: User,
+    output: AiOutput,
+    evidence_items: list[CompetencyEvidence],
+    latest_shaping_by_evidence_uuid: dict[str, AiOutput],
+    *,
+    use_intent: str = "grounding",
+    draft_kind: str | None = None,
+) -> None:
+    for evidence in evidence_items:
+        shaping = latest_shaping_by_evidence_uuid.get(evidence.uuid)
+        db.add(
+            AiOutputCompetencyEvidenceLink(
+                owner_user_id=user.id,
+                ai_output_id=output.id,
+                competency_evidence_id=evidence.id,
+                job_id=output.job_id,
+                artefact_id=output.artefact_id,
+                output_type=output.output_type,
+                draft_kind=draft_kind,
+                use_intent=use_intent,
+                user_selected=True,
+                evidence_uuid=evidence.uuid,
+                evidence_title=evidence.title,
+                evidence_competency=evidence.competency,
+                evidence_strength=evidence.strength,
+                evidence_result_action_snippet=_competency_result_snippet(evidence),
+                latest_star_shaping_output_id=shaping.id if shaping is not None else None,
+                evidence_snapshot=_competency_evidence_snapshot(evidence),
+            )
+        )
 
 
 def _build_artefact_suggestion_prompt(
@@ -1323,13 +1533,124 @@ def _open_provider_api_key(setting: AiProviderSetting) -> str:
     return value
 
 
+def _request_json(setting: AiProviderSetting, req: request.Request) -> dict[str, object]:
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    try:
+        with request.urlopen(req, timeout=_provider_timeout_seconds(setting), context=ssl_context) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise AiExecutionError(_http_error_message(setting, exc)) from exc
+    except error.URLError as exc:
+        raise AiExecutionError(_url_error_message(setting, exc)) from exc
+    except TimeoutError as exc:
+        raise AiExecutionError(_timeout_error_message(setting)) from exc
+    if not isinstance(raw, dict):
+        raise AiExecutionError("AI provider returned an invalid response")
+    return raw
+
+
+def _discover_openai_models(setting: AiProviderSetting, api_key: str) -> list[dict[str, str]]:
+    endpoint_root = (setting.base_url or provider_default_base_url("openai") or "").rstrip("/")
+    req = request.Request(
+        endpoint_root + "/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+        method="GET",
+    )
+    raw = _request_json(setting, req)
+    data = raw.get("data")
+    if not isinstance(data, list):
+        raise AiExecutionError("AI provider returned no models")
+    models = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not isinstance(model_id, str) or not model_id.strip():
+            continue
+        models.append(_model_option(model_id.strip()))
+    if not models:
+        raise AiExecutionError("AI provider returned no usable models")
+    return _sort_model_options(models)
+
+
+def _discover_gemini_models(setting: AiProviderSetting, api_key: str) -> list[dict[str, str]]:
+    endpoint_root = (setting.base_url or provider_default_base_url("gemini") or "").rstrip("/")
+    req = request.Request(
+        endpoint_root + "/models",
+        headers={"x-goog-api-key": api_key},
+        method="GET",
+    )
+    raw = _request_json(setting, req)
+    data = raw.get("models")
+    if not isinstance(data, list):
+        raise AiExecutionError("AI provider returned no models")
+    models = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        methods = item.get("supportedGenerationMethods")
+        if isinstance(methods, list) and "generateContent" not in methods:
+            continue
+        name = item.get("name")
+        model_id = name.removeprefix("models/") if isinstance(name, str) else ""
+        if not model_id:
+            continue
+        display_name = item.get("displayName")
+        models.append(_model_option(model_id, display_name=display_name if isinstance(display_name, str) else None))
+    if not models:
+        raise AiExecutionError("AI provider returned no usable models")
+    return _sort_model_options(models)
+
+
+def _discover_anthropic_models(setting: AiProviderSetting, api_key: str) -> list[dict[str, str]]:
+    endpoint_root = (setting.base_url or provider_default_base_url("anthropic") or "").rstrip("/")
+    req = request.Request(
+        endpoint_root + "/models?limit=1000",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="GET",
+    )
+    raw = _request_json(setting, req)
+    data = raw.get("data")
+    if not isinstance(data, list):
+        raise AiExecutionError("AI provider returned no models")
+    models = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if not isinstance(model_id, str) or not model_id.strip():
+            continue
+        display_name = item.get("display_name")
+        models.append(_model_option(model_id.strip(), display_name=display_name if isinstance(display_name, str) else None))
+    if not models:
+        raise AiExecutionError("AI provider returned no usable models")
+    return models
+
+
+def discover_ai_provider_models(setting: AiProviderSetting, *, api_key: str | None = None) -> list[dict[str, str]]:
+    api_key_value = (api_key or "").strip() or _open_provider_api_key(setting)
+    if setting.provider == "openai":
+        return _discover_openai_models(setting, api_key_value)
+    if setting.provider == "gemini":
+        return _discover_gemini_models(setting, api_key_value)
+    if setting.provider == "anthropic":
+        return _discover_anthropic_models(setting, api_key_value)
+    if setting.provider == "openai_compatible":
+        return _discover_openai_models(setting, api_key_value)
+    raise AiExecutionError("Unsupported AI provider")
+
+
 def _call_openai(setting: AiProviderSetting, prompt: str) -> str:
-    if not setting.model_name:
+    model_name = setting.model_name or provider_default_model("openai")
+    if not model_name:
         raise AiExecutionError("Enabled AI provider is missing a model name")
     api_key = _open_provider_api_key(setting)
-    endpoint_root = (setting.base_url or "https://api.openai.com/v1").rstrip("/")
+    endpoint_root = (setting.base_url or provider_default_base_url("openai") or "").rstrip("/")
     payload = {
-        "model": setting.model_name,
+        "model": model_name,
         "input": prompt,
     }
     data = json.dumps(payload).encode("utf-8")
@@ -1376,10 +1697,11 @@ def _call_gemini(
     *,
     document: dict[str, object] | None = None,
 ) -> str:
-    if not setting.model_name:
+    model_name = setting.model_name or provider_default_model("gemini")
+    if not model_name:
         raise AiExecutionError("Enabled AI provider is missing a model name")
     api_key = _open_provider_api_key(setting)
-    endpoint_root = (setting.base_url or "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
+    endpoint_root = (setting.base_url or provider_default_base_url("gemini") or "").rstrip("/")
     parts: list[dict[str, object]] = [
         {
             "text": (
@@ -1412,7 +1734,7 @@ def _call_gemini(
     }
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(
-        endpoint_root + f"/models/{setting.model_name}:generateContent",
+        endpoint_root + f"/models/{model_name}:generateContent",
         data=data,
         headers={
             "Content-Type": "application/json",
@@ -1452,6 +1774,60 @@ def _call_gemini(
     raise AiExecutionError("AI provider returned an empty response")
 
 
+def _call_anthropic(setting: AiProviderSetting, prompt: str) -> str:
+    model_name = setting.model_name or provider_default_model("anthropic")
+    if not model_name:
+        raise AiExecutionError("Enabled AI provider is missing a model name")
+    api_key = _open_provider_api_key(setting)
+    endpoint_root = (setting.base_url or provider_default_base_url("anthropic") or "").rstrip("/")
+    payload = {
+        "model": model_name,
+        "max_tokens": 4096,
+        "system": "You are an assistant helping a jobseeker inside a private application tracker.",
+        "messages": [
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        endpoint_root + "/messages",
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    try:
+        with request.urlopen(req, timeout=_provider_timeout_seconds(setting), context=ssl_context) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise AiExecutionError(_http_error_message(setting, exc)) from exc
+    except error.URLError as exc:
+        raise AiExecutionError(_url_error_message(setting, exc)) from exc
+    except TimeoutError as exc:
+        raise AiExecutionError(_timeout_error_message(setting)) from exc
+
+    content = raw.get("content")
+    if not isinstance(content, list) or not content:
+        raise AiExecutionError("AI provider returned no content")
+    text_parts: list[str] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") != "text":
+            continue
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            text_parts.append(text.strip())
+    if text_parts:
+        return "\n\n".join(text_parts)
+    raise AiExecutionError("AI provider returned an empty response")
+
+
 def _execute_prompt(
     setting: AiProviderSetting,
     prompt: str,
@@ -1469,9 +1845,9 @@ def _execute_prompt(
             return _call_gemini(setting, prompt, document=document)
         if setting.provider == "openai":
             return _call_openai(setting, prompt)
-        raise AiExecutionError(
-            "Anthropic execution is not implemented yet. Use OpenAI, Gemini, or an OpenAI-compatible endpoint."
-        )
+        if setting.provider == "anthropic":
+            return _call_anthropic(setting, prompt)
+        raise AiExecutionError("Unsupported AI provider")
     except AiExecutionError as exc:
         raise _with_ai_diagnostics(
             exc,
@@ -1798,6 +2174,7 @@ def generate_job_artefact_tailoring_guidance(
     )
     selected_evidence_uuids = [evidence.uuid for evidence in selected_evidence]
     competency_evidence_summary = _competency_evidence_generation_summary(selected_evidence, latest_shaping)
+    competency_evidence_refs = _competency_evidence_source_refs(selected_evidence, latest_shaping)
     if artefact_summary.metadata_quality == "thin" and not used_extracted_text:
         output = AiOutput(
             owner_user_id=user.id,
@@ -1825,6 +2202,7 @@ def generate_job_artefact_tailoring_guidance(
                 "draft_handoff_contract": "artefact_draft_seed_v1",
                 "generation_brief": generation_brief,
                 "selected_competency_evidence_uuids": selected_evidence_uuids,
+                "selected_competency_evidence_refs": competency_evidence_refs,
                 "competency_evidence_contract": "competency_evidence_generation_context_v1",
                 **(
                     {"artefact_suggestion_output_id": prior_suggestion.id}
@@ -1835,6 +2213,7 @@ def generate_job_artefact_tailoring_guidance(
         )
         db.add(output)
         db.flush()
+        _create_competency_evidence_links(db, user, output, selected_evidence, latest_shaping)
         return output
 
     setting = get_enabled_ai_provider(db, user)
@@ -1900,11 +2279,13 @@ def generate_job_artefact_tailoring_guidance(
             "optional_artefact_types": requirement_info["optional"],
             "generation_brief": generation_brief,
             "selected_competency_evidence_uuids": selected_evidence_uuids,
+            "selected_competency_evidence_refs": competency_evidence_refs,
             "competency_evidence_contract": "competency_evidence_generation_context_v1",
         },
     )
     db.add(output)
     db.flush()
+    _create_competency_evidence_links(db, user, output, selected_evidence, latest_shaping)
     return output
 
 
@@ -1966,6 +2347,7 @@ def generate_job_artefact_draft(
     )
     selected_evidence_uuids = [evidence.uuid for evidence in selected_evidence]
     competency_evidence_summary = _competency_evidence_generation_summary(selected_evidence, latest_shaping)
+    competency_evidence_refs = _competency_evidence_source_refs(selected_evidence, latest_shaping)
     section_emphasis_summary = _draft_section_emphasis_summary(
         draft_kind=draft_kind,
         artefact_analysis=artefact_analysis,
@@ -2029,9 +2411,18 @@ def generate_job_artefact_draft(
             "optional_artefact_types": requirement_info["optional"],
             "generation_brief": generation_brief,
             "selected_competency_evidence_uuids": selected_evidence_uuids,
+            "selected_competency_evidence_refs": competency_evidence_refs,
             "competency_evidence_contract": "competency_evidence_generation_context_v1",
         },
     )
     db.add(output)
     db.flush()
+    _create_competency_evidence_links(
+        db,
+        user,
+        output,
+        selected_evidence,
+        latest_shaping,
+        draft_kind=draft_kind,
+    )
     return output

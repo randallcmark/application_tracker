@@ -1,5 +1,6 @@
 from app.db.models.api_token import ApiToken
 from app.db.models.ai_output import AiOutput
+from app.db.models.ai_output_competency_evidence_link import AiOutputCompetencyEvidenceLink
 from app.db.models.ai_provider_setting import AiProviderSetting
 from app.db.models.application import Application
 from app.db.models.artefact import Artefact
@@ -16,6 +17,7 @@ from app.db.models.user_profile import UserProfile
 __all__ = [
     "ApiToken",
     "AiOutput",
+    "AiOutputCompetencyEvidenceLink",
     "AiProviderSetting",
     "Application",
     "Artefact",

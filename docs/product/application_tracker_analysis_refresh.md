@@ -1,5 +1,9 @@
 # Application Tracker Product Analysis Refresh
 
+> Historical analysis note. Current product vision lives in `docs/PRODUCT_VISION.md`; current
+> execution order and task detail live in `docs/roadmap/implementation-sequencing.md` and
+> `docs/roadmap/task-map.md`.
+
 ## Why the previous framing needs expanding
 
 The earlier framing correctly identified that the product should feel calmer, more action-oriented, and more workflow-efficient.

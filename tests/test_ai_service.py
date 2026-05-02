@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -6,6 +7,7 @@ from sqlalchemy import select
 
 from app.auth.users import create_local_user
 from app.db.models.ai_output import AiOutput
+from app.db.models.ai_output_competency_evidence_link import AiOutputCompetencyEvidenceLink
 from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
 from app.db.models.ai_provider_setting import AiProviderSetting
@@ -15,6 +17,7 @@ from app.db.models.user import User
 from app.main import app
 from app.services.ai import (
     _ai_debug_summary,
+    _call_anthropic,
     _call_gemini,
     _build_artefact_analysis_prompt,
     _build_artefact_draft_prompt,
@@ -29,6 +32,7 @@ from app.services.ai import (
     _url_error_message,
     AiExecutionError,
     build_job_artefact_analysis,
+    discover_ai_provider_models,
     generate_job_artefact_analysis,
     generate_job_artefact_draft,
     generate_job_artefact_tailoring_guidance,
@@ -64,6 +68,20 @@ def _http_error(code: int, body: str, *, reason: str = "error") -> HTTPError:
         hdrs=None,
         fp=BytesIO(body.encode("utf-8")),
     )
+
+
+class _JsonResponse:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 def test_http_error_message_maps_openai_quota_errors() -> None:
@@ -146,6 +164,7 @@ def test_provider_timeout_seconds_are_provider_and_payload_aware() -> None:
     assert _provider_timeout_seconds(_setting("openai_compatible")) == 20
     assert _provider_timeout_seconds(_setting("gemini")) == 30
     assert _provider_timeout_seconds(_setting("gemini"), document_attached=True) == 60
+    assert _provider_timeout_seconds(_setting("anthropic")) == 20
 
 
 def test_build_job_prompt_uses_focus_specific_recommendation_instruction() -> None:
@@ -376,8 +395,6 @@ def test_build_job_artefact_analysis_can_run_without_persisting_output(
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
-            artefact_uuid = artefact.uuid
-            artefact_uuid = artefact.uuid
 
         monkeypatch.setattr(
             "app.services.ai.load_artefact_text_excerpt",
@@ -1010,6 +1027,7 @@ def test_generate_job_artefact_tailoring_guidance_uses_selected_competency_evide
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
+            evidence_id = evidence.id
             evidence_uuid = evidence.uuid
             foreign_uuid = foreign_evidence.uuid
 
@@ -1038,10 +1056,43 @@ def test_generate_job_artefact_tailoring_guidance_uses_selected_competency_evide
             db.commit()
 
             assert output.source_context["selected_competency_evidence_uuids"] == [evidence_uuid]
+            evidence_refs = output.source_context["selected_competency_evidence_refs"]
+            assert evidence_refs == [
+                {
+                    "uuid": evidence_uuid,
+                    "title": "Platform migration recovery",
+                    "competency": "Delivery leadership",
+                    "strength": "strong",
+                    "latest_star_shaping_output_id": evidence_refs[0]["latest_star_shaping_output_id"],
+                }
+            ]
+            assert isinstance(evidence_refs[0]["latest_star_shaping_output_id"], int)
             assert (
                 output.source_context["competency_evidence_contract"]
                 == "competency_evidence_generation_context_v1"
             )
+            link = db.scalar(
+                select(AiOutputCompetencyEvidenceLink).where(
+                    AiOutputCompetencyEvidenceLink.ai_output_id == output.id
+                )
+            )
+            assert link is not None
+            assert link.owner_user_id == user_id
+            assert link.competency_evidence_id == evidence_id
+            assert link.job_id == job_id
+            assert link.artefact_id == artefact_id
+            assert link.output_type == "tailoring_guidance"
+            assert link.draft_kind is None
+            assert link.use_intent == "grounding"
+            assert link.user_selected is True
+            assert link.evidence_uuid == evidence_uuid
+            assert link.evidence_title == "Platform migration recovery"
+            assert link.evidence_competency == "Delivery leadership"
+            assert link.evidence_strength == "strong"
+            assert link.evidence_result_action_snippet == "Released on the revised date."
+            assert link.latest_star_shaping_output_id == evidence_refs[0]["latest_star_shaping_output_id"]
+            assert link.evidence_snapshot["action"] == "Reset governance and supplier cadence."
+            assert link.evidence_snapshot["result"] == "Released on the revised date."
     finally:
         app.dependency_overrides.clear()
 
@@ -1072,7 +1123,6 @@ def test_generate_job_artefact_tailoring_guidance_uses_local_fallback_for_thin_m
             user_id = user.id
             job_id = job.id
             artefact_id = artefact.id
-            artefact_uuid = artefact.uuid
 
         with session_local() as db:
             user = db.get(User, user_id)
@@ -1367,10 +1417,30 @@ def test_generate_job_artefact_draft_uses_selected_competency_evidence(
             db.commit()
 
             assert output.source_context["selected_competency_evidence_uuids"] == [evidence_uuid]
+            assert output.source_context["selected_competency_evidence_refs"] == [
+                {
+                    "uuid": evidence_uuid,
+                    "title": "Stakeholder recovery",
+                    "competency": "Stakeholder management",
+                    "strength": "working",
+                }
+            ]
             assert (
                 output.source_context["competency_evidence_contract"]
                 == "competency_evidence_generation_context_v1"
             )
+            link = db.scalar(
+                select(AiOutputCompetencyEvidenceLink).where(
+                    AiOutputCompetencyEvidenceLink.ai_output_id == output.id
+                )
+            )
+            assert link is not None
+            assert link.owner_user_id == user_id
+            assert link.output_type == "draft"
+            assert link.draft_kind == "cover_letter_draft"
+            assert link.evidence_uuid == evidence_uuid
+            assert link.evidence_title == "Stakeholder recovery"
+            assert link.evidence_snapshot["result"] == "Agreement reached before steering group."
     finally:
         app.dependency_overrides.clear()
 
@@ -1510,6 +1580,155 @@ def test_call_gemini_uses_extended_timeout_for_document_payload(monkeypatch) -> 
 
     assert result == "ok"
     assert captured["timeout"] == 60
+
+
+def test_discover_openai_models_uses_provider_key(monkeypatch) -> None:
+    setting = AiProviderSetting(provider="openai", api_key_encrypted="sealed")
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, *args, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        return _JsonResponse({"data": [{"id": "gpt-5-mini"}, {"id": "gpt-5.2"}]})
+
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+
+    models = discover_ai_provider_models(setting, api_key="sk-test-secret-1234")
+
+    assert models == [{"id": "gpt-5-mini"}, {"id": "gpt-5.2"}]
+    assert captured["url"] == "https://api.openai.com/v1/models"
+    headers = {key.lower(): value for key, value in captured["headers"].items()}
+    assert headers["authorization"] == "Bearer sk-test-secret-1234"
+
+
+def test_discover_gemini_models_filters_generate_content(monkeypatch) -> None:
+    setting = AiProviderSetting(provider="gemini", api_key_encrypted="sealed")
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, *args, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        return _JsonResponse(
+            {
+                "models": [
+                    {
+                        "name": "models/gemini-2.5-flash",
+                        "displayName": "Gemini 2.5 Flash",
+                        "supportedGenerationMethods": ["generateContent"],
+                    },
+                    {
+                        "name": "models/embedding-001",
+                        "supportedGenerationMethods": ["embedContent"],
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+
+    models = discover_ai_provider_models(setting, api_key="gemini-secret-1234")
+
+    assert models == [{"id": "gemini-2.5-flash", "display_name": "Gemini 2.5 Flash"}]
+    assert captured["url"] == "https://generativelanguage.googleapis.com/v1beta/models"
+    headers = {key.lower(): value for key, value in captured["headers"].items()}
+    assert headers["x-goog-api-key"] == "gemini-secret-1234"
+
+
+def test_discover_anthropic_models_uses_models_endpoint(monkeypatch) -> None:
+    setting = AiProviderSetting(provider="anthropic", api_key_encrypted="sealed")
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, *args, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        return _JsonResponse(
+            {
+                "data": [
+                    {
+                        "id": "claude-sonnet-4-20250514",
+                        "display_name": "Claude Sonnet 4",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+
+    models = discover_ai_provider_models(setting, api_key="anthropic-secret-1234")
+
+    assert models == [{"id": "claude-sonnet-4-20250514", "display_name": "Claude Sonnet 4"}]
+    assert captured["url"] == "https://api.anthropic.com/v1/models?limit=1000"
+    headers = {key.lower(): value for key, value in captured["headers"].items()}
+    assert headers["x-api-key"] == "anthropic-secret-1234"
+    assert headers["anthropic-version"] == "2023-06-01"
+
+
+def test_call_anthropic_uses_messages_api(monkeypatch) -> None:
+    setting = AiProviderSetting(
+        provider="anthropic",
+        model_name="claude-sonnet-4-20250514",
+        api_key_encrypted="sealed",
+    )
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"content":[{"type":"text","text":"Use the platform migration evidence."}]}'
+
+    def _fake_urlopen(req, *args, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured.update(kwargs)
+        return _FakeResponse()
+
+    monkeypatch.setattr("app.services.ai._open_provider_api_key", lambda setting: "anthropic-secret-1234")
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+
+    result = _call_anthropic(setting, "hello")
+
+    assert result == "Use the platform migration evidence."
+    assert captured["url"] == "https://api.anthropic.com/v1/messages"
+    headers = {key.lower(): value for key, value in captured["headers"].items()}
+    assert headers["x-api-key"] == "anthropic-secret-1234"
+    assert headers["anthropic-version"] == "2023-06-01"
+    assert captured["body"]["model"] == "claude-sonnet-4-20250514"
+    assert captured["body"]["max_tokens"] == 4096
+    assert captured["body"]["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_call_anthropic_rejects_empty_content(monkeypatch) -> None:
+    setting = AiProviderSetting(
+        provider="anthropic",
+        model_name="claude-sonnet-4-20250514",
+        api_key_encrypted="sealed",
+    )
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return b'{"content":[{"type":"text","text":"   "}]}'
+
+    monkeypatch.setattr("app.services.ai._open_provider_api_key", lambda setting: "anthropic-secret-1234")
+    monkeypatch.setattr("app.services.ai.request.urlopen", lambda *args, **kwargs: _FakeResponse())
+
+    try:
+        _call_anthropic(setting, "hello")
+    except AiExecutionError as exc:
+        assert "AI provider returned an empty response" in str(exc)
+    else:
+        raise AssertionError("Expected AiExecutionError")
 
 
 def test_execute_prompt_enriches_ai_execution_error_with_diagnostics(monkeypatch) -> None:

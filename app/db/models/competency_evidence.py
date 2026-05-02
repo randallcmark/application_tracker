@@ -34,3 +34,8 @@ class CompetencyEvidence(IdMixin, TimestampMixin, Base):
     source_job = relationship("Job")
     source_artefact = relationship("Artefact")
     source_ai_output = relationship("AiOutput")
+    ai_output_links = relationship(
+        "AiOutputCompetencyEvidenceLink",
+        back_populates="competency_evidence",
+        cascade="all, delete-orphan",
+    )

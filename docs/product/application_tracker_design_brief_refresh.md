@@ -1,5 +1,8 @@
 # Application Tracker Design Brief Refresh
 
+> Historical design-planning note. Current product vision lives in `docs/PRODUCT_VISION.md`; the
+> canonical visual system remains `docs/design/DESIGN_SYSTEM.md`.
+
 ## Design objective
 
 Design a product experience that helps a jobseeker move from goal to next role with less friction, stronger judgement, and clearer momentum.

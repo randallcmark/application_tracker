@@ -1,5 +1,9 @@
 # Application Tracker Product Document Set
 
+> Historical product-doc index. Current planning starts with `docs/PRODUCT_VISION.md`,
+> `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`. The files listed
+> here are background references, not competing roadmap sources.
+
 This document set reframes Application Tracker as a goal-aware job-seeking workspace rather than only a workflow board.
 
 ## Documents

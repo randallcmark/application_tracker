@@ -2,11 +2,7 @@
 
 Application Tracker is a self-hosted, goal-aware job-search workspace for capturing roles, deciding what deserves attention, preparing applications, managing artefacts, and learning what works during a job search.
 
-This repository is a clean rebuild of the original personal MVP. The previous implementation has been preserved locally at:
-
-```text
-/Volumes/Media/Repository/application_tracker_old
-```
+This repository is a clean rebuild of the original personal MVP.
 
 ## Product Direction
 
@@ -25,18 +21,17 @@ The target product is:
 
 The board remains an important workflow view, especially for active applications, but the planned product direction is a focus-led workspace: the app should help the user understand what matters today, triage new opportunities, prepare strong applications, preserve context across external systems, and reuse artefacts intelligently.
 
-The detailed staged roadmap lives in:
+Current planning starts with the three hub documents:
 
-- `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
-- `docs/PRODUCT_VISION.md`
-- `docs/DELIVERY_PLAN.md`
+- Vision: `docs/PRODUCT_VISION.md`
+- Strategy and order of execution: `docs/roadmap/implementation-sequencing.md`
+- Execution-ready task breakdown: `docs/roadmap/task-map.md`
 
 ### Product strategy and design docs
 
-For the current product framing, longer-term opportunity thinking, and UI handoff artifacts, see:
+For supporting product background and UI handoff artifacts, see:
 
 - `docs/product/application_tracker_product_doc_set_index.md`
-- `docs/product/application_tracker_composite_product_vision.md`
 - `docs/product/application_tracker_inbox_monitoring_decision_memo.md`
 - `docs/ui/application_tracker_ui_mockup_inspectable.html`
 - `docs/ui/handoff/README.md`
@@ -93,11 +88,63 @@ This clean repo now contains a usable authenticated tracker:
 - stage-aging, stale-card, and follow-up indicators;
 - Alembic migrations, Dockerfile, Docker Compose file, and pytest coverage.
 
-The next implementation work should follow the refreshed delivery plan: mobile shell validation,
-Inbox/provider-backed intake follow-ups, Job Workspace refinements, Artefact Library follow-ups,
-embedded AI rendering, scheduler/worker support, and self-hosted operations.
+The next implementation work should follow `docs/roadmap/implementation-sequencing.md` and the
+execution-ready workstream detail in `docs/roadmap/task-map.md`.
 
-## Local Development
+## Local Docker Runtime
+
+Docker Compose is the preferred way to run Application Tracker locally and is the same runtime
+shape used for self-hosted deployment.
+
+Create a local environment file:
+
+```bash
+cp .env.example .env
+```
+
+For real data, replace `SESSION_SECRET_KEY` with a generated value:
+
+```bash
+openssl rand -hex 32
+```
+
+Start the app:
+
+```bash
+make docker-up
+```
+
+Inspect status and logs:
+
+```bash
+make docker-ps
+make docker-logs
+```
+
+Open the app:
+
+```text
+http://localhost:8000/setup
+```
+
+The container runs `alembic upgrade head` automatically on startup when `AUTO_MIGRATE=1`.
+
+Stop the app:
+
+```bash
+make docker-down
+```
+
+Run a lightweight container check:
+
+```bash
+make docker-check
+```
+
+Direct Uvicorn remains available for quick debugging, but it is no longer the preferred runtime
+path.
+
+## Local Virtualenv Development
 
 Create a virtual environment and install development dependencies:
 
@@ -107,7 +154,7 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-Run the API:
+Run the API directly for debugging:
 
 ```bash
 make run
@@ -172,32 +219,53 @@ The setup page is only available while no users exist. A command-line fallback i
 EMAIL=you@example.com make create-admin
 ```
 
-## Docker
+## Docker And QNAP Deployment
 
-Build and run locally:
+The detailed Docker and QNAP deployment guide lives in:
 
-```bash
-docker compose up -d --build
-```
+- `docs/DOCKER_DEPLOYMENT.md`
 
-The container runs `alembic upgrade head` automatically on startup. Set `AUTO_MIGRATE=0` only if
-you want to manage migrations manually.
-
-Then create the first local admin user in the browser:
-
-```text
-http://localhost:8000/setup
-```
-
-The setup page is only available while no users exist. After setup, sign in at `/login`.
-
-A command-line fallback is also available:
+For local Docker usage, prefer the Make targets:
 
 ```bash
-docker compose exec app python -m app.cli users create-admin --email you@example.com
+make docker-up
+make docker-ps
+make docker-logs
+make docker-down
 ```
 
-Admin setup and maintenance tasks are available from the username menu for admin users, or directly:
+For QNAP deployment, the Mac/local machine is the deployment controller. The NAS does not need Git:
+deployment syncs the current working tree with `rsync`, preserves the NAS `.env`, then runs Docker
+Compose remotely over SSH.
+
+```bash
+make qnap-deploy
+```
+
+The QNAP deployment defaults are:
+
+```env
+QNAP_SSH_TARGET=qnap
+QNAP_APP_DIR=/share/Container/application_tracker
+QNAP_COMPOSE_CMD=sudo docker compose
+```
+
+Override them per deploy when needed:
+
+```bash
+QNAP_SSH_TARGET=qnap \
+QNAP_APP_DIR=/share/Container/application_tracker \
+QNAP_COMPOSE_CMD="sudo docker compose" \
+make qnap-deploy
+```
+
+The QNAP must keep its own `.env` in `QNAP_APP_DIR`; deploys deliberately do not overwrite it or
+delete persistent runtime data. On first setup, run `make qnap-deploy` once to sync the application
+files, then SSH to the NAS and create/edit `.env` from `.env.example`, then run `make qnap-deploy`
+again.
+
+After the first admin user is created, admin setup and maintenance tasks are available from the
+username menu for admin users, or directly:
 
 ```text
 http://localhost:8000/admin
@@ -237,13 +305,13 @@ PUBLIC_BASE_URL=http://your-nas-hostname-or-ip:8000
 DATABASE_URL=sqlite:////app/data/app.db
 STORAGE_BACKEND=local
 LOCAL_STORAGE_PATH=/app/data/artefacts
+AUTO_MIGRATE=1
 ```
 
-After pulling updates, rebuild and rerun migrations:
+After syncing updates, rebuild and rerun migrations:
 
 ```bash
-git pull
-docker compose up -d --build
+make docker-up
 ```
 
 The rebuilt container applies any pending Alembic migrations before starting the web server.

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.auth.users import create_local_user
@@ -65,6 +66,7 @@ def test_artefact_library_lists_owned_job_artefacts(tmp_path: Path, monkeypatch)
                 filename="resume.txt",
                 storage_key="jobs/library/artefacts/resume.txt",
                 size_bytes=12,
+                follow_up_at=datetime(2026, 5, 4, tzinfo=UTC),
             )
             other_artefact = Artefact(
                 owner_user_id=other_user.id,
@@ -89,6 +91,7 @@ def test_artefact_library_lists_owned_job_artefacts(tmp_path: Path, monkeypatch)
         assert "Tailored resume" in response.text
         assert "v1" in response.text
         assert "Used for product roles." in response.text
+        assert "2026-05-04 00:00" in response.text
         assert "12 bytes" in response.text
         assert "Library role" in response.text
         assert "Library Co" in response.text
@@ -163,6 +166,7 @@ def test_artefact_library_updates_metadata(tmp_path: Path, monkeypatch) -> None:
                 kind="resume",
                 filename="resume.txt",
                 storage_key="jobs/library/artefacts/resume.txt",
+                follow_up_at=datetime(2026, 4, 30, tzinfo=UTC),
             )
             other_artefact = Artefact(
                 owner_user_id=other_user.id,
@@ -186,6 +190,7 @@ def test_artefact_library_updates_metadata(tmp_path: Path, monkeypatch) -> None:
                 "version_label": "v2",
                 "notes": "Strong opener.",
                 "outcome_context": "interview invite",
+                "follow_up_at": "2026-05-02",
             },
             follow_redirects=False,
         )
@@ -207,6 +212,28 @@ def test_artefact_library_updates_metadata(tmp_path: Path, monkeypatch) -> None:
             assert stored.version_label == "v2"
             assert stored.notes == "Strong opener."
             assert stored.outcome_context == "interview invite"
+            assert stored.follow_up_at == datetime(2026, 5, 2)
+
+        clear_response = client.post(
+            f"/artefacts/{artefact_uuid}/metadata",
+            data={
+                "kind": "cover_letter",
+                "purpose": "Narrative draft",
+                "version_label": "v2",
+                "notes": "Strong opener.",
+                "outcome_context": "interview invite",
+                "follow_up_at": "",
+            },
+            follow_redirects=False,
+        )
+
+        assert clear_response.status_code == 303
+
+        with session_local() as db:
+            stored = db.get(Artefact, artefact_id)
+
+            assert stored is not None
+            assert stored.follow_up_at is None
     finally:
         app.dependency_overrides.clear()
 

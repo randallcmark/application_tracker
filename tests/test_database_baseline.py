@@ -75,7 +75,9 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
     }.issubset(email_intake_columns)
 
     artefact_columns = {column["name"] for column in inspector.get_columns("artefacts")}
-    assert {"purpose", "version_label", "notes", "outcome_context"}.issubset(artefact_columns)
+    assert {"purpose", "version_label", "notes", "outcome_context", "follow_up_at"}.issubset(
+        artefact_columns
+    )
 
     job_artefact_link_columns = {
         column["name"] for column in inspector.get_columns("job_artefact_links")
@@ -103,6 +105,9 @@ def test_baseline_migration_creates_core_tables(tmp_path: Path, monkeypatch) -> 
         "provider",
         "base_url",
         "model_name",
+        "discovered_models",
+        "model_discovery_status",
+        "model_discovery_error",
         "api_key_encrypted",
         "api_key_hint",
         "is_enabled",
@@ -206,6 +211,7 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
             version_label="v1",
             notes="Used for application prep.",
             outcome_context="unknown",
+            follow_up_at=datetime(2026, 4, 30, 9, 0),
             filename="resume.pdf",
             storage_key="jobs/example/resume.pdf",
         )
@@ -258,6 +264,7 @@ def test_core_models_can_persist_lifecycle_records(tmp_path: Path, monkeypatch) 
         assert stored_job.communications[0].event_type == "note"
         assert stored_job.communications[0].follow_up_at is not None
         assert stored_job.artefacts[0].storage_key == "jobs/example/resume.pdf"
+        assert stored_job.artefacts[0].follow_up_at is not None
         assert stored_job.artefact_links[0].artefact.purpose == "Tailored resume"
         assert stored_job.ai_outputs[0].output_type == "fit_summary"
         assert stored_job.owner.ai_provider_settings[0].provider == "openai"

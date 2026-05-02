@@ -1,6 +1,11 @@
 # Product Brief
 
-This is the product source of truth for agents. It summarizes the current product framing and routes to deeper planning docs when more detail is needed.
+This is the product behavior contract for agents. The current planning source of truth is the
+three-hub roadmap surface:
+
+- Vision: `docs/PRODUCT_VISION.md`
+- Strategy and order of execution: `docs/roadmap/implementation-sequencing.md`
+- Execution-ready task breakdown: `docs/roadmap/task-map.md`
 
 ## Product
 
@@ -8,11 +13,11 @@ Application Tracker is a private, self-hosted, local-first job-search workspace.
 
 The product is organized around Focus, Inbox, Active Work, Job Workspace, Artefacts, Capture, and Admin. The board remains a workflow view, not the strategic center.
 
-Primary references:
+Primary behavior references:
 
-- `docs/PRODUCT_VISION.md`
-- `docs/DELIVERY_PLAN.md`
-- `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
+- `docs/product/user-journeys.md`
+- `docs/AUTHENTICATION.md`
+- `docs/ARTEFACT_AI_PLAN.md`
 
 ## Users
 
@@ -51,7 +56,6 @@ Primary references:
 Reference docs for these contracts:
 
 - `docs/PRODUCT_VISION.md`
-- `docs/DELIVERY_PLAN.md`
 - `docs/AUTHENTICATION.md`
 - `docs/ARTEFACT_AI_PLAN.md`
 

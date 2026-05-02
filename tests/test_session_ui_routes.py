@@ -1,5 +1,7 @@
+import json
 from pathlib import Path
 from io import BytesIO
+from urllib.error import URLError
 from zipfile import ZipFile
 
 from sqlalchemy import select
@@ -12,6 +14,20 @@ from app.db.models.job import Job
 from app.db.models.user import User
 from app.main import app
 from tests.test_local_auth_routes import build_client
+
+
+class _JsonResponse:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 def test_login_page_renders_form(tmp_path: Path, monkeypatch) -> None:
@@ -206,7 +222,7 @@ def test_settings_shows_ai_readiness_placeholders(tmp_path: Path, monkeypatch) -
         assert "API key setup help" in response.text
         assert "Consumer chat subscriptions do not configure this app by themselves" in response.text
         assert 'name="api_key"' in response.text
-        assert "Leave blank to keep existing key" in response.text
+        assert "Leave blank to reuse saved key" in response.text
         assert 'href="/help#ai-setup"' in response.text
         assert 'href="https://help.openai.com/en/articles/9039756-billing-settings-in-chatgpt-vs-platform"' in response.text
         assert 'href="https://platform.openai.com/docs/quickstart/using-the-api"' in response.text
@@ -236,7 +252,7 @@ def test_settings_updates_ai_provider_placeholder(tmp_path: Path, monkeypatch) -
                 "label": "Local endpoint",
                 "base_url": "http://localhost:11434/v1",
                 "model_name": "local-model",
-                "api_key": "",
+                "api_key": "local-secret-1234",
                 "is_enabled": "true",
             },
             follow_redirects=False,
@@ -254,14 +270,15 @@ def test_settings_updates_ai_provider_placeholder(tmp_path: Path, monkeypatch) -
             assert setting.label == "Local endpoint"
             assert setting.base_url == "http://localhost:11434/v1"
             assert setting.model_name == "local-model"
-            assert setting.api_key_encrypted is None
-            assert setting.api_key_hint is None
+            assert setting.api_key_encrypted is not None
+            assert setting.api_key_hint == "loca...1234"
             assert setting.is_enabled is True
 
         settings_response = client.get("/settings")
 
         assert "local-model" in settings_response.text
         assert "http://localhost:11434/v1" in settings_response.text
+        assert "loca...1234" in settings_response.text
         assert "Enabled" in settings_response.text
     finally:
         app.dependency_overrides.clear()
@@ -398,6 +415,210 @@ def test_settings_updates_openai_provider_with_encrypted_api_key(tmp_path: Path,
 
         assert "sk-t...1234" in settings_response.text
         assert "sk-test-secret-1234" not in settings_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_standard_provider_uses_default_model_and_no_base_url(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "anthropic",
+                "label": "Claude",
+                "base_url": "https://malicious.example/v1",
+                "model_name": "",
+                "api_key": "anthropic-secret-1234",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+        with session_local() as db:
+            setting = db.scalar(select(AiProviderSetting))
+            assert setting is not None
+            assert setting.provider == "anthropic"
+            assert setting.label == "Claude"
+            assert setting.base_url is None
+            assert setting.model_name == "claude-sonnet-4-20250514"
+            assert setting.is_enabled is True
+
+        settings_response = client.get("/settings")
+
+        assert "claude-sonnet-4-20250514" in settings_response.text
+        assert "https://api.anthropic.com/v1" in settings_response.text
+        assert "https://malicious.example/v1" not in settings_response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_discovers_provider_models_then_enables_selected_model(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, *args, **kwargs):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        return _JsonResponse(
+            {
+                "data": [
+                    {"id": "claude-haiku-4-20250514", "display_name": "Claude Haiku 4"},
+                    {"id": "claude-sonnet-4-20250514", "display_name": "Claude Sonnet 4"},
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        discover_response = client.post(
+            "/settings/ai-provider/discover",
+            data={
+                "provider": "anthropic",
+                "label": "Claude",
+                "api_key": "anthropic-secret-1234",
+            },
+            follow_redirects=False,
+        )
+
+        assert discover_response.status_code == 303
+        assert discover_response.headers["location"] == "/settings#ai"
+        assert captured["url"] == "https://api.anthropic.com/v1/models?limit=1000"
+        headers = {key.lower(): value for key, value in captured["headers"].items()}
+        assert headers["x-api-key"] == "anthropic-secret-1234"
+
+        settings_response = client.get("/settings")
+        assert "Claude Sonnet 4" in settings_response.text
+        assert "claude-sonnet-4-20250514" in settings_response.text
+        assert "Enable selected model" in settings_response.text
+
+        enable_response = client.post(
+            "/settings/ai-provider/enable",
+            data={"provider": "anthropic", "model_name": "claude-haiku-4-20250514"},
+            follow_redirects=False,
+        )
+
+        assert enable_response.status_code == 303
+
+        with session_local() as db:
+            setting = db.scalar(select(AiProviderSetting))
+            assert setting is not None
+            assert setting.provider == "anthropic"
+            assert setting.model_discovery_status == "ready"
+            assert setting.discovered_models == [
+                {"id": "claude-haiku-4-20250514", "display_name": "Claude Haiku 4"},
+                {"id": "claude-sonnet-4-20250514", "display_name": "Claude Sonnet 4"},
+            ]
+            assert setting.model_name == "claude-haiku-4-20250514"
+            assert setting.is_enabled is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_custom_provider_discovery_failure_allows_manual_model(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+
+    def _fake_urlopen(*args, **kwargs):
+        raise URLError("Connection refused")
+
+    monkeypatch.setattr("app.services.ai.request.urlopen", _fake_urlopen)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        discover_response = client.post(
+            "/settings/ai-provider/discover",
+            data={
+                "provider": "openai_compatible",
+                "label": "Local endpoint",
+                "base_url": "http://localhost:11434/v1",
+                "api_key": "local-secret-1234",
+            },
+            follow_redirects=False,
+        )
+
+        assert discover_response.status_code == 303
+
+        settings_response = client.get("/settings")
+        assert "Model discovery failed for this custom endpoint" in settings_response.text
+        assert "Enter model manually" in settings_response.text
+
+        enable_response = client.post(
+            "/settings/ai-provider/enable",
+            data={"provider": "openai_compatible", "model_name": "llama3.2"},
+            follow_redirects=False,
+        )
+
+        assert enable_response.status_code == 303
+
+        with session_local() as db:
+            setting = db.scalar(select(AiProviderSetting))
+            assert setting is not None
+            assert setting.provider == "openai_compatible"
+            assert setting.model_discovery_status == "failed"
+            assert setting.model_discovery_error is not None
+            assert setting.model_name == "llama3.2"
+            assert setting.is_enabled is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_settings_rejects_enabled_provider_without_api_key(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "jobseeker@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/settings/ai-provider",
+            data={
+                "provider": "gemini",
+                "label": "AI Studio",
+                "model_name": "",
+                "api_key": "",
+                "is_enabled": "true",
+            },
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 400
+        assert "Enabled AI provider is missing an API key" in response.text
     finally:
         app.dependency_overrides.clear()
 

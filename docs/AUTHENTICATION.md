@@ -287,7 +287,8 @@ Status: Deferred
 When resuming auth work:
 
 1. Read this file.
-2. Check `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
+2. Check `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and
+   `docs/roadmap/task-map.md`.
 3. Run `git status -sb`.
 4. Continue the next incomplete slice.
 5. Keep each slice small and pushed to `main`.

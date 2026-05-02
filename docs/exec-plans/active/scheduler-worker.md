@@ -20,9 +20,10 @@ Design and implement the smallest self-hosted background runtime that can suppor
 
 ## Context
 
-- `docs/DELIVERY_PLAN.md`
-- `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
-- `README.md`
+- `docs/PRODUCT_VISION.md`
+- `docs/roadmap/implementation-sequencing.md`
+- `docs/roadmap/task-map.md`
+- `docs/DOCKER_DEPLOYMENT.md`
 - `docs/architecture/index.md`
 
 ## Acceptance Criteria

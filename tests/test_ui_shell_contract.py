@@ -148,6 +148,30 @@ def test_shell_responsive_contract_emits_protected_nav_rules(tmp_path: Path, mon
         app.dependency_overrides.clear()
 
 
+def test_shell_desktop_contract_uses_internal_content_scroll_panes(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="scrollpane@example.com", password="password")
+            db.commit()
+        login(client, "scrollpane@example.com")
+
+        response = client.get("/focus")
+
+        assert response.status_code == 200
+        html = response.text
+        assert "@media (min-width: 861px)" in html
+        assert "height: calc(100vh - 68px);" in html
+        assert ".app-content-shell {" in html
+        assert "flex: 1 1 auto;" in html
+        assert "overflow: hidden;" in html
+        assert ".page-main,\n      .page-aside {" in html
+        assert "overscroll-behavior: contain;" in html
+        assert "scrollbar-gutter: stable;" in html
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_shell_contract_pins_user_menu_as_overlay(tmp_path: Path, monkeypatch) -> None:
     client, session_local = build_client(tmp_path, monkeypatch)
     try:

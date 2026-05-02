@@ -6,7 +6,7 @@ Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-04-28
+Last Updated: 2026-05-01
 
 ## Goal
 
@@ -20,8 +20,9 @@ Continue Inbox from the first capture/review slice into richer email review, pro
 
 ## Context
 
-- `docs/DELIVERY_PLAN.md`
-- `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
+- `docs/PRODUCT_VISION.md`
+- `docs/roadmap/implementation-sequencing.md`
+- `docs/roadmap/task-map.md`
 - `docs/INBOX.md`
 - `docs/product/application_tracker_inbox_monitoring_decision_memo.md`
 - `docs/product/user-journeys.md`
@@ -42,10 +43,21 @@ Continue Inbox from the first capture/review slice into richer email review, pro
 ## Progress Log
 
 - 2026-04-28: Created active workstream from roadmap and delivery-plan follow-on work.
+- 2026-04-30: Started the multi-candidate email review slice. The first implementation uses the
+  existing `EmailIntake` to many `Job` relationship: one pasted email can create one Inbox
+  candidate per meaningful job URL, while duplicate URLs link to existing owned jobs.
+- 2026-05-01: Added deterministic parsing for text-only Indeed saved-alert emails. A pasted alert
+  now creates one Inbox candidate per visible job block instead of one generic job containing the
+  whole email body.
+- 2026-05-01: Added review-readiness checks to the Inbox review surface for missing company,
+  location, source URL, description, and low/unknown confidence so partial candidates are cleaned
+  up before acceptance.
 
 ## Decisions
 
 - The existing long-form docs remain the deep source; this plan is the resumable work surface.
+- Multi-candidate email handling does not require a schema change for the first slice because
+  `EmailIntake.jobs` already supports one provenance record tied to multiple candidate jobs.
 
 ## Validation
 

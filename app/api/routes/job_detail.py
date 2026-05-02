@@ -1055,7 +1055,7 @@ def _workspace_score_card(job: Job, artefacts: list[Artefact]) -> str:
 
 
 def _workspace_back_link_card() -> str:
-    return f"""
+    return """
     <section class="workspace-side-card workspace-back-card" data-ui-component="job-summary">
       <a class="workspace-back-link" href="/board">← Back to Board</a>
     </section>
@@ -1449,6 +1449,36 @@ def _generation_brief_items(source_context: dict[str, object] | None) -> list[tu
     return items
 
 
+def _selected_competency_evidence_items(source_context: dict[str, object] | None) -> list[tuple[str, str]]:
+    if not source_context:
+        return []
+    refs = source_context.get("selected_competency_evidence_refs")
+    if not isinstance(refs, list):
+        return []
+    items: list[tuple[str, str]] = []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        title = ref.get("title")
+        if not isinstance(title, str) or not title.strip():
+            continue
+        details = []
+        competency = ref.get("competency")
+        if isinstance(competency, str) and competency.strip():
+            details.append(competency.strip())
+        strength = ref.get("strength")
+        if isinstance(strength, str) and strength.strip():
+            details.append(strength.strip())
+        shaping_output_id = ref.get("latest_star_shaping_output_id")
+        if isinstance(shaping_output_id, int):
+            details.append(f"STAR shaping output #{shaping_output_id}")
+        value = title.strip()
+        if details:
+            value = f"{value} ({'; '.join(details)})"
+        items.append(("Competency evidence", value))
+    return items
+
+
 def _local_ai_metadata_panel(output: AiOutput, source_context: dict[str, object]) -> str:
     metadata_rows: list[str] = []
     prompt_contract = source_context.get("prompt_contract")
@@ -1467,6 +1497,11 @@ def _local_ai_metadata_panel(output: AiOutput, source_context: dict[str, object]
     if brief_items:
         metadata_rows.extend(
             f"<div><dt>{escape(label)}</dt><dd>{escape(value)}</dd></div>" for label, value in brief_items
+        )
+    evidence_items = _selected_competency_evidence_items(source_context)
+    if evidence_items:
+        metadata_rows.extend(
+            f"<div><dt>{escape(label)}</dt><dd>{escape(value)}</dd></div>" for label, value in evidence_items
         )
     if not metadata_rows:
         return ""
@@ -1724,7 +1759,6 @@ def _generation_brief_modal(
 
 
 def _workspace_artefact_item(job: Job, artefact: Artefact) -> str:
-    version = escape(artefact.version_label) if artefact.version_label else escape(_artefact_type_label(artefact))
     updated = escape(_value(artefact.updated_at))
     badges = _artefact_primary_badge(artefact)
     return f"""
@@ -1777,30 +1811,31 @@ def _workspace_artefacts_section(
     if not artefact_list:
         artefact_list = '<p class="empty">No artefacts uploaded yet.</p>'
     body = f"""
-    <div class="workspace-artefact-list" data-ui-component="artefact-list">
-      {artefact_list}
-    </div>
-    {_artefact_local_ai_workspace(job, ai_outputs, artefact_lookup, selected_artefact_uuid=selected_artefact_uuid, selected_tab=selected_ai_tab)}
-    <div class="workspace-support-tools">
-      <details>
-        <summary>Document tools</summary>
-        <div class="workspace-two-up">
-          <div class="workspace-subpanel">
-            <h3>Attach Existing</h3>
+    <div class="workspace-two-up" data-ui-component="documents-workbench">
+      <div class="workspace-subpanel">
+        <h3>Active documents</h3>
+        <div class="workspace-artefact-list" data-ui-component="artefact-list">
+          {artefact_list}
+        </div>
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Document actions</h3>
+        <p class="muted">Attach, upload, or generate only when this opportunity needs artefact work.</p>
+        <details>
+          <summary>Attach or upload</summary>
+          <div class="workspace-stack">
             {_link_existing_artefact_form(job, available_artefacts)}
-          </div>
-          <div class="workspace-subpanel">
-            <h3>Upload artefact</h3>
             {_artefact_form(job)}
           </div>
-        </div>
-        <div class="workspace-subpanel">
-          <h3>Competency evidence</h3>
+        </details>
+        <details>
+          <summary>Competency evidence</summary>
           <p class="muted">Start a reusable STAR example from this role. You can edit it before saving.</p>
           <a class="button-link" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">Create evidence from this role</a>
-        </div>
-      </details>
+        </details>
+      </div>
     </div>
+    {_artefact_local_ai_workspace(job, ai_outputs, artefact_lookup, selected_artefact_uuid=selected_artefact_uuid, selected_tab=selected_ai_tab)}
     """
     return _workspace_section(
         section_id="documents",
@@ -1868,10 +1903,39 @@ def _workspace_follow_ups_section(job: Job) -> str:
 
 def _workspace_tasks_section(job: Job, artefacts: list[Artefact]) -> str:
     body = f"""
-    {_next_action(job)}
-    {_readiness(job, artefacts)}
+    <div class="workspace-two-up" data-ui-component="tasks-workbench">
+      <div class="workspace-subpanel">
+        <h3>Current focus</h3>
+        {_next_action(job)}
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Readiness</h3>
+        {_readiness(job, artefacts)}
+      </div>
+    </div>
+    <div class="workspace-three-up">
+      <div class="workspace-subpanel">
+        <h3>Workflow actions</h3>
+        {_mark_applied_form(job)}
+        {_status_transition_form(job)}
+        {_schedule_interview_form(job)}
+        {_application_started_form(job)}
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Follow-through</h3>
+        {_blocker_form(job)}
+        {_return_note_form(job)}
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Maintenance</h3>
+        {_archive_form(job)}
+        {_unarchive_form(job)}
+        <p class="muted">Go to Documents for uploads, existing artefacts, or local AI drafting.</p>
+        <a class="button-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents</a>
+      </div>
+    </div>
     """
-    return _workspace_section(section_id="tasks", kicker="Tasks", title="Next action and readiness", body=body)
+    return _workspace_section(section_id="tasks", kicker="Tasks", title="Tasks", body=body)
 
 
 def _recent_activity(job: Job, events: list[Communication], artefacts: list[Artefact]) -> str:
@@ -1900,13 +1964,13 @@ def _recent_activity(job: Job, events: list[Communication], artefacts: list[Arte
 
 def _workspace_notes_section(job: Job, events: list[Communication], artefacts: list[Artefact]) -> str:
     body = f"""
-    <div class="workspace-two-up">
+    <div class="workspace-two-up" data-ui-component="notes-workbench">
       <div class="workspace-subpanel">
-        <h3>Recent Activity</h3>
+        <h3>Recent activity</h3>
         {_recent_activity(job, events, artefacts)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Add Note</h3>
+        <h3>Add note</h3>
         {_note_form(job)}
       </div>
     </div>
@@ -2381,7 +2445,9 @@ def render_job_detail(
     brief_draft_kind = _normalize_draft_kind(generation_brief_draft_kind)
     brief_artefact = artefact_lookup.get(selected_ai_artefact_uuid) if brief_action else None
 
+    css_prefix = ""
     extra_styles = f"""
+    {css_prefix}
     h1, h2, h3, p {{ margin: 0; }}
     a {{ color: var(--accent-strong); font-weight: 500; }}
     button {{
@@ -3375,6 +3441,28 @@ def render_job_detail(
     @media (max-width: 1360px) {{
       .workspace-grid {{ grid-template-columns: 220px minmax(0, 1fr) 300px; }}
     }}
+    @media (min-width: 1081px) {{
+      .page-main.standard {{
+        overflow: hidden;
+      }}
+      .workspace-grid {{
+        align-items: stretch;
+        height: 100%;
+        min-height: 0;
+      }}
+      .workspace-left-rail,
+      .workspace-center,
+      .workspace-right-rail {{
+        max-height: 100%;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+      }}
+      .workspace-center {{
+        padding-right: 4px;
+      }}
+    }}
     @media (max-width: 1080px) {{
       .workspace-grid {{ grid-template-columns: 1fr; }}
       .workspace-left-rail {{ order: 2; }}
@@ -3491,7 +3579,6 @@ def render_job_detail(
           {_workspace_utility_strip(job, artefacts)}
         </div>
         {section_map[active_section]}
-        {_workspace_tools_section(job, artefacts) if active_section == "tasks" else ""}
       </section>
       {_workspace_ai_sidebar(job, ai_outputs, artefact_lookup)}
     </div>

@@ -154,6 +154,9 @@ def _ai_shaping_panel(output: AiOutput | None) -> str:
     if output is None:
         return '<p class="muted">No STAR shaping output yet.</p>'
     provider = output.model_name or output.provider or "AI"
+    source_context = output.source_context or {}
+    evidence_uuid = source_context.get("competency_evidence_uuid")
+    evidence_uuid = evidence_uuid if isinstance(evidence_uuid, str) else ""
     return f"""
     <article class="ai-shaping-card" data-ui-component="competency-star-shaping-output">
       <div>
@@ -162,8 +165,57 @@ def _ai_shaping_panel(output: AiOutput | None) -> str:
         <p class="meta">From {escape(provider)} · Updated {escape(_value(output.updated_at))}</p>
       </div>
       {_render_markdown_blocks(output.body)}
+      <form class="inline-action-form" method="post" action="/competencies/{escape(evidence_uuid, quote=True)}/star-shaping/{output.id}/save">
+        <button class="secondary" type="submit">Save shaped STAR to evidence</button>
+      </form>
+      <p class="muted">Saving is explicit. The AI output is copied into this evidence only after this action.</p>
     </article>
     """
+
+
+STAR_LABELS = {
+    "situation": "situation",
+    "task": "task",
+    "action": "action",
+    "result": "result",
+}
+
+
+def _strip_markdown_label(line: str) -> str:
+    cleaned = line.strip()
+    cleaned = re.sub(r"^[*-]\s+", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    return cleaned.strip()
+
+
+def _star_fields_from_ai_output(body: str) -> dict[str, str]:
+    fields: dict[str, list[str]] = {}
+    active_field: str | None = None
+    for raw_line in body.replace("\r\n", "\n").split("\n"):
+        line = _strip_markdown_label(raw_line)
+        if not line:
+            continue
+
+        heading = re.match(r"^#{1,4}\s+(situation|task|action|result)\s*$", line, flags=re.IGNORECASE)
+        if heading:
+            active_field = STAR_LABELS[heading.group(1).lower()]
+            fields.setdefault(active_field, [])
+            continue
+
+        labelled = re.match(r"^(situation|task|action|result)\s*:\s*(.+)$", line, flags=re.IGNORECASE)
+        if labelled:
+            active_field = STAR_LABELS[labelled.group(1).lower()]
+            fields.setdefault(active_field, []).append(labelled.group(2).strip())
+            continue
+
+        if active_field is not None and not line.startswith("#"):
+            fields.setdefault(active_field, []).append(line)
+
+    return {
+        field: " ".join(part for part in parts if part).strip()
+        for field, parts in fields.items()
+        if any(part.strip() for part in parts)
+    }
 
 
 def _evidence_card(evidence: CompetencyEvidence, ai_output: AiOutput | None = None) -> str:
@@ -612,6 +664,48 @@ def create_competency_star_shaping_route(
     db.commit()
     return RedirectResponse(
         url="/competencies?ai_status=STAR%20shaping%20generated",
+        status_code=303,
+    )
+
+
+@router.post("/competencies/{evidence_uuid}/star-shaping/{output_id}/save", include_in_schema=False)
+def save_competency_star_shaping_route(
+    evidence_uuid: str,
+    output_id: int,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> RedirectResponse:
+    evidence = get_user_competency_evidence_by_uuid(db, current_user, evidence_uuid)
+    if evidence is None:
+        raise HTTPException(status_code=404, detail="Competency evidence not found")
+
+    output = db.scalar(
+        select(AiOutput).where(
+            AiOutput.id == output_id,
+            AiOutput.owner_user_id == current_user.id,
+            AiOutput.output_type == "competency_star_shaping",
+            AiOutput.status == "active",
+        )
+    )
+    if output is None:
+        raise HTTPException(status_code=404, detail="STAR shaping output not found")
+    source_context = output.source_context or {}
+    if source_context.get("competency_evidence_uuid") != evidence.uuid:
+        raise HTTPException(status_code=404, detail="STAR shaping output not found")
+
+    star_fields = _star_fields_from_ai_output(output.body)
+    if star_fields:
+        update_competency_evidence(evidence, **star_fields)
+        saved_note = f"Saved from AI STAR shaping output #{output.id}."
+    else:
+        saved_note = f"Saved unstructured AI STAR shaping output #{output.id}:\n\n{output.body}"
+    existing_notes = evidence.evidence_notes or ""
+    evidence.evidence_notes = "\n\n".join(part for part in (existing_notes, saved_note) if part)
+    evidence.source_ai_output_id = output.id
+
+    db.commit()
+    return RedirectResponse(
+        url="/competencies?ai_status=STAR%20shaping%20saved",
         status_code=303,
     )
 

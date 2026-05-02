@@ -46,3 +46,8 @@ class Job(IdMixin, TimestampMixin, Base):
         "JobArtefactLink", back_populates="job", cascade="all, delete-orphan"
     )
     ai_outputs = relationship("AiOutput", back_populates="job")
+    ai_output_competency_evidence_links = relationship(
+        "AiOutputCompetencyEvidenceLink",
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )

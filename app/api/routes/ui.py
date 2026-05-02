@@ -277,6 +277,7 @@ def shell_token_styles() -> str:
       flex: 0 0 auto;
       gap: 8px;
       justify-content: end;
+      min-width: 0;
     }
 
     .shell-topbar-action {
@@ -357,6 +358,7 @@ def shell_token_styles() -> str:
     }
 
     .user-menu {
+      min-width: 0;
       position: relative;
     }
 
@@ -368,7 +370,16 @@ def shell_token_styles() -> str:
       cursor: pointer;
       gap: 10px;
       list-style: none;
+      max-width: 100%;
+      min-width: 0;
       padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    .user-menu > summary span:not(.avatar-mark) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
@@ -789,6 +800,48 @@ def shell_token_styles() -> str:
       }
     }
 
+    @media (min-width: 861px) {
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .page-shell {
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .app-window {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 68px);
+        min-height: 0;
+      }
+
+      .app-content-shell {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .page-main,
+      .page-aside {
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+      }
+
+      .page-main {
+        padding-right: 4px;
+      }
+
+      .page-aside {
+        padding-right: 2px;
+      }
+    }
+
     @media (max-width: 1120px) {
       .header-context {
         flex-basis: 280px;
@@ -841,10 +894,20 @@ def shell_token_styles() -> str:
 
       .topbar-actions {
         justify-content: flex-start;
+        flex-wrap: wrap;
+        min-width: 0;
       }
 
       .shell-topbar-action {
         min-width: 0;
+      }
+
+      .topbar-actions .user-menu {
+        flex: 1 1 190px;
+      }
+
+      .user-menu > summary {
+        width: 100%;
       }
 
       .header-context {

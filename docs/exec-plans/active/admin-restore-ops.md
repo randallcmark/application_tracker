@@ -20,8 +20,9 @@ Expand the self-hosted operations surface so backups, restore validation, operat
 
 ## Context
 
-- `docs/DELIVERY_PLAN.md`
-- `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`
+- `docs/PRODUCT_VISION.md`
+- `docs/roadmap/implementation-sequencing.md`
+- `docs/roadmap/task-map.md`
 - `README.md`
 - `docs/AUTHENTICATION.md`
 - `docs/product/user-journeys.md`

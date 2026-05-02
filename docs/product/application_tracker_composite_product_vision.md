@@ -1,5 +1,9 @@
 # Application Tracker Composite Product Vision
 
+> Historical composite vision note. Current product vision lives in `docs/PRODUCT_VISION.md`;
+> current execution order and task detail live in `docs/roadmap/implementation-sequencing.md` and
+> `docs/roadmap/task-map.md`.
+
 ## Document purpose
 
 This document combines the current product thinking into one concise artifact that can be used for product alignment, design direction, and implementation guidance.

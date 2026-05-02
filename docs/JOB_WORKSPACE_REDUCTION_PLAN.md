@@ -200,9 +200,18 @@ Before returning here, complete pane-specific cleanup for:
 
 Current checkpoint:
 
-- first pane-cleanup pass implemented for `Application`, `Interviews`, and `Follow-ups`;
-- these panes now use calmer titles, clearer workflow grouping, and explicit workbench markers;
-- remaining follow-on panes are `Tasks`, `Notes`, and `Documents`.
+- first pane-cleanup pass implemented for `Application`, `Interviews`, `Follow-ups`, `Tasks`,
+  `Notes`, and `Documents`;
+- these panes now use calmer titles, clearer workflow grouping, explicit workbench markers, and a
+  single primary rendered surface per selected section;
+- browser validation has been run at the available narrow viewport; the first polish fix tightened
+  topbar user-menu wrapping so Job Workspace actions remain visible on mobile-width screens;
+- desktop bounded-pane behavior is now implemented in the shared shell and wide Job Workspace:
+  the app window anchors to the viewport, shared main/aside regions scroll internally, and the
+  workspace left rail, center pane, and AI rail become independent scroll containers when the
+  three-column layout is active;
+- remaining follow-on work is broader desktop/manual validation if a larger browser viewport is
+  available, then only targeted usability polish found from that pass.
 
 Any later utility-card work should start from the stabilised shared workspace
 frame rather than from the older pre-reduction page structure.
@@ -265,7 +274,8 @@ For Job Workspace specifically, preserve coverage for:
 When resuming this work:
 
 1. Read this document first.
-2. Read `docs/DELIVERY_PLAN.md` and `project_tracker/PUBLIC_SELF_HOSTED_ROADMAP.md`.
+2. Read `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and
+   `docs/roadmap/task-map.md`.
 3. Inspect `app/api/routes/job_detail.py` and
    `tests/test_job_workspace_ui_contract.py`.
 4. Continue from the earliest incomplete phase/sub-slice.

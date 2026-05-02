@@ -36,6 +36,8 @@ Keep active plans in `docs/exec-plans/active/`. Move completed plans to `docs/ex
 - Avoid broad formatting churn unless formatting is the task.
 - Do not introduce dependencies without checking architecture and validation docs.
 - Update product, architecture, or validation docs in the same change when behavior changes.
+- When the data model or schema changes, include the migration patch in the work and apply it to
+  the active local database before handoff.
 
 ## Review
 

@@ -1,5 +1,9 @@
 # Delivery Plan
 
+> Supporting historical phase detail. Current planning starts with `docs/PRODUCT_VISION.md`,
+> `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`. Use this file only
+> when the task map routes to it for deeper feature context.
+
 This plan turns Application Tracker from a board-centred tracker into a goal-aware job-search workspace. Phases are ordered so each one creates useful product value and prepares the next.
 
 All new UI work should reference `docs/design/DESIGN_SYSTEM.md` for the intended visual language, design tokens, component states, AI guidance treatment, and external-transition patterns.
@@ -238,10 +242,10 @@ Goal: create stable places for AI outputs before enabling heavy AI features.
 
 Status: schema and settings support are implemented for the first explicit Job Workspace AI
 generation slice. The app now has owner-scoped AI provider records for OpenAI, Anthropic, and
-OpenAI-compatible endpoints, encrypted-at-rest API key storage, owner-scoped AI output records, and
-visible Job Workspace generation actions for fit summaries and recommendations. OpenAI, Gemini, and
-OpenAI-compatible execution are available; Anthropic remains planned. AI does not mutate workflow
-state.
+Gemini, encrypted-at-rest API key storage, authenticated model discovery, owner-scoped AI output
+records, and visible Job Workspace generation actions for fit summaries and recommendations.
+OpenAI, Gemini, Anthropic, and OpenAI-compatible execution are available. AI does not mutate
+workflow state.
 
 Visible AI output rendering now also exists on Inbox review and Focus. Focus uses a distinct
 surface-specific prompt contract for its AI nudge so the recommendation remains tied to the
@@ -250,7 +254,9 @@ Focus-mode "one immediate next move" use case.
 Implementation targets:
 
 - Add visible records for recommendations, fit summaries, drafts, profile observations, and artefact suggestions.
-- Add provider settings placeholders for OpenAI, Anthropic, and OpenAI-compatible local endpoints.
+- Add provider settings for OpenAI, Gemini, Anthropic, and OpenAI-compatible local endpoints.
+- Discover available models after a key is saved and require explicit model selection before
+  enabling a provider.
 - Store AI outputs visibly and auditably.
 - Prevent AI from silently mutating jobs, profile, artefacts, or workflow state.
 

@@ -19,13 +19,14 @@ The application entrypoint is `app/main.py`. Route modules under `app/api/routes
 | Persistence/models/migrations | SQLAlchemy models, session setup, and Alembic-managed schema evolution | `docs/ARCHITECTURE.md` |
 | Storage adapters | Provider abstraction, path safety, and local artefact storage | `docs/ARTEFACTS.md` |
 | AI/provider integrations | Visible AI outputs, provider settings, encrypted key storage, and provider execution paths | `docs/AI_READINESS.md` |
-| Docker/self-hosted runtime | Compose deployment, persistent data, admin setup, backup, and operational guidance | `README.md` |
+| Docker/self-hosted runtime | Compose deployment, persistent data, admin setup, backup, and operational guidance | `docs/DOCKER_DEPLOYMENT.md` |
 
 ## Architecture Routes
 
 - Boundaries and dependency rules: `docs/architecture/boundaries.md`.
 - Decision records: `docs/architecture/decisions/`.
-- Product behavior: `docs/product/product-brief.md`.
+- Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
+- Product behavior contracts: `docs/product/product-brief.md`.
 - Quality gaps: `docs/quality/technical-debt.md`.
 
 ## Dependency Policy

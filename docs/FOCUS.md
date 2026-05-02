@@ -12,10 +12,11 @@ It is intentionally small in the first version. It uses existing data only and d
 
 - A profile-completion prompt when the user has not filled in their job-search profile.
 - Due and overdue follow-ups from job timeline notes.
+- Due and overdue artefact follow-ups from the Artefact Library.
 - Stale active jobs that have not changed recently.
 - Upcoming interviews.
 - Recent saved or interested jobs.
-- Summary counts for due follow-ups, stale jobs, upcoming interviews, and active jobs.
+- Summary counts for due follow-ups, artefact reviews, stale jobs, upcoming interviews, and active jobs.
 
 Archived jobs and other users' jobs are hidden.
 
@@ -40,4 +41,4 @@ corner.
 3. Confirm the browser lands on `/focus`.
 4. Confirm `/focus` shows empty states if there are no jobs or follow-ups.
 5. Add a profile at `/settings#profile` and confirm the profile prompt disappears.
-6. Add jobs, follow-ups, or interviews and confirm they appear on Focus.
+6. Add jobs, follow-ups, artefact follow-ups, or interviews and confirm they appear on Focus.
