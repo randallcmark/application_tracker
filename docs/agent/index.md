@@ -15,6 +15,7 @@ This directory tells agents how to work in this repository. Read this page first
 - Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior: `docs/product/product-brief.md` and `docs/product/user-journeys.md`.
 - Architecture or dependency changes: `docs/architecture/index.md` and `docs/architecture/boundaries.md`.
+- Document handling, Markdown rendering, source preservation, search, or export: `docs/DOCUMENT_HANDLING_STRATEGY.md`, `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`, and `docs/DOCUMENT_HANDLING_TASK_MAP.md`.
 - Complex or multi-step work: `docs/agent/task-protocol.md` and `docs/exec-plans/template.md`.
 - Model/risk/validation routing: `docs/agent/codex-routing.md`.
 - UI work: `docs/agent/ui-ux-rules.md`.

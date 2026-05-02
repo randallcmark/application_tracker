@@ -18,6 +18,7 @@ The application entrypoint is `app/main.py`. Route modules under `app/api/routes
 | Auth/session/token layer | Local auth, sessions, CSRF, API tokens, user ownership, and admin access | `docs/AUTHENTICATION.md` |
 | Persistence/models/migrations | SQLAlchemy models, session setup, and Alembic-managed schema evolution | `docs/ARCHITECTURE.md` |
 | Storage adapters | Provider abstraction, path safety, and local artefact storage | `docs/ARTEFACTS.md` |
+| Document handling | Source-preserving, Markdown-first handling for free text, AI output, artefact working representations, future search, and export | `docs/DOCUMENT_HANDLING_ARCHITECTURE.md` |
 | AI/provider integrations | Visible AI outputs, provider settings, encrypted key storage, and provider execution paths | `docs/AI_READINESS.md` |
 | Docker/self-hosted runtime | Compose deployment, persistent data, admin setup, backup, and operational guidance | `docs/DOCKER_DEPLOYMENT.md` |
 
@@ -25,6 +26,8 @@ The application entrypoint is `app/main.py`. Route modules under `app/api/routes
 
 - Boundaries and dependency rules: `docs/architecture/boundaries.md`.
 - Decision records: `docs/architecture/decisions/`.
+- Document handling strategy: `docs/DOCUMENT_HANDLING_STRATEGY.md`,
+  `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`, and `docs/DOCUMENT_HANDLING_TASK_MAP.md`.
 - Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior contracts: `docs/product/product-brief.md`.
 - Quality gaps: `docs/quality/technical-debt.md`.

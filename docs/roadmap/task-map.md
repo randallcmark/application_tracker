@@ -10,11 +10,12 @@ Use it after reading `docs/PRODUCT_VISION.md` and `docs/roadmap/implementation-s
 | 1 | Planning harness cleanup and doc consolidation | Active | `docs/exec-plans/active/harness-adoption-and-validator.md` | Finish three-hub routing, archive/mark superseded docs, and clean active/completed plans. |
 | 2 | Inbox follow-ons | Active | `docs/exec-plans/active/inbox-follow-up.md` | Validate review-readiness behavior in use, then scope provider-backed ingestion only if needed. |
 | 3 | Job Workspace reduction | Active | `docs/exec-plans/active/job-workspace-reduction.md` | Run any remaining larger-viewport manual validation, then close or defer minor polish. |
-| 4 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | G4 save-back, compact provenance, and model-backed evidence-link history are implemented; next slice is provider expansion. |
-| 5 | AI provider expansion | Active | `docs/exec-plans/active/provider-expansion.md` | Anthropic, minimum-input provider setup, and model discovery are implemented; next slice is provider polish from real use or scheduler/worker. |
-| 6 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape before implementing background jobs. |
-| 7 | Admin, restore, and self-hosted operations | Active planning | `docs/exec-plans/active/admin-restore-ops.md` | Inventory restore and operations gaps, then add restore validation and operational smoke coverage. |
-| 8 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
+| 4 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | G4 save-back, compact provenance, and model-backed evidence-link history are implemented; employer rubric mapping waits for document handling foundation. |
+| 5 | AI provider expansion | Active | `docs/exec-plans/active/provider-expansion.md` | Anthropic, minimum-input provider setup, and model discovery are implemented; next slice is provider polish from real use or document handling needs. |
+| 6 | Document Handling Foundation | Active planning | `docs/exec-plans/active/document-handling-foundation.md` | Start the free-text Markdown rendering audit before renderer, schema, extraction, search, or export work. |
+| 7 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape after document source/Markdown/provenance rules are stable. |
+| 8 | Admin, restore, and self-hosted operations | Active planning | `docs/exec-plans/active/admin-restore-ops.md` | Inventory restore and operations gaps, then add restore validation and operational smoke coverage. |
+| 9 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
 
 ## Planning Harness Cleanup And Doc Consolidation
 
@@ -121,10 +122,11 @@ Current status:
    reporting, audit, and outcome-aware refinement.
 4. Outcome-aware refinement remains deferred until evidence reuse has real usage.
 
-Next slice:
+Next slices:
 
-- Move to AI provider expansion. Do not add outcome-aware refinement until evidence-link history has
-  real usage.
+1. Keep outcome-aware refinement deferred until evidence-link history has real usage.
+2. Add employer competency rubric mapping only after shared Markdown rendering and AI-output
+   Markdown display land through Document Handling Foundation.
 
 Acceptance criteria:
 
@@ -133,6 +135,8 @@ Acceptance criteria:
 - Saving shaped evidence or generated artefacts is an explicit user action.
 - The app still works when no AI provider is configured.
 - Evidence-link history is owner-scoped and queryable without parsing `source_context`.
+- Employer rubric mapping remains preparation support and must not fabricate or silently mutate
+  evidence.
 
 Validation:
 
@@ -145,6 +149,7 @@ Supporting docs:
 - `docs/ARTEFACT_AI_PLAN.md`
 - `docs/COMPETENCY_EVIDENCE_PLAN.md`
 - `docs/AI_READINESS.md`
+- `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - `docs/design/COMPETENCY_EVIDENCE_UX.md`
 
 ## AI Provider Expansion
@@ -162,7 +167,7 @@ Next slices:
 4. Custom OpenAI-compatible setup remains explicit: friendly label, base URL, API token, and
    selected or manually entered model name.
 5. Anthropic provider execution is implemented through the Messages API.
-6. Next provider slice should come from real-use polish, error-message gaps, or scheduler/worker
+6. Next provider slice should come from real-use polish, error-message gaps, or document handling
    needs rather than adding more provider modes speculatively.
 
 Acceptance criteria:
@@ -187,6 +192,49 @@ Supporting docs:
 - `docs/AI_READINESS.md`
 - `docs/agent/ai-feature-rules.md`
 
+## Document Handling Foundation
+
+Goal: establish source-preserving, Markdown-first content handling before adding more
+document-heavy AI, artefact, rubric, search, export, or background automation workflows.
+
+Next slices:
+
+1. Import the document handling strategy, architecture, task map, and ADR as supporting references.
+2. Run the free-text Markdown rendering audit before implementation.
+3. Add one shared safe Markdown renderer and use it on AI outputs plus one low-risk audited surface.
+4. Standardize AI output bodies as Markdown rendered through the shared viewer.
+5. Plan artefact Markdown representation with source preservation, extraction status, confidence,
+   lineage, and source/Markdown UI notes.
+6. Keep employer rubric mapping visible as a future competency-evidence slice that depends on
+   shared Markdown rendering and AI-output Markdown display.
+7. Defer search, FTS, embeddings, DOCX export, and PDF export until explicit decision docs exist.
+
+Acceptance criteria:
+
+- Source material remains canonical and downloadable or inspectable where applicable.
+- Markdown is the internal working representation for rendered text, AI context, generated output,
+  and future export preparation.
+- Rendered Markdown goes through one safe sanitized path.
+- AI prompts treat external source material as data, not instructions.
+- Employer rubric mapping is not implemented before the Markdown foundation is in place.
+- Search and export stay deferred until `docs/SEARCH_AND_RETRIEVAL_DECISION.md` and
+  `docs/EXPORT_STRATEGY.md` are created by future decision work.
+
+Validation:
+
+```sh
+bash scripts/validate-harness.sh
+git diff --check
+```
+
+Supporting docs:
+
+- `docs/DOCUMENT_HANDLING_STRATEGY.md`
+- `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`
+- `docs/DOCUMENT_HANDLING_TASK_MAP.md`
+- `docs/architecture/decisions/2026-05-02-markdown-first-document-handling.md`
+- `docs/exec-plans/active/free-text-markdown-rendering-audit.md`
+
 ## Scheduler And Worker
 
 Goal: add the smallest self-hosted background runtime that can support imports, reminders,
@@ -194,7 +242,8 @@ notifications, stale detection, optional mailbox ingestion, and optional AI proc
 
 Next slices:
 
-1. Decide the minimal runtime shape and Compose impact.
+1. Decide the minimal runtime shape and Compose impact after document source/Markdown/provenance
+   rules are stable.
 2. Add scheduler run records and admin visibility.
 3. Add one background task path at a time, feeding visible surfaces.
 

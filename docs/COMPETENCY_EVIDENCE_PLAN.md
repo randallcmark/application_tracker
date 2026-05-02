@@ -109,6 +109,40 @@ outputs keep visible resolved evidence provenance in metadata, generated output/
 stored as queryable generation-time snapshots, and Job Workspace now links to a prefilled manual
 evidence form from role or artefact context. Evidence is only created after explicit user save.
 
+### S6: Employer Competency Rubric Mapping
+
+Goal: help the user prepare honestly for a specific interview by mapping employer-provided
+competencies, rubrics, values, behaviours, or assessment criteria against existing competency
+evidence.
+
+Dependencies:
+
+- shared safe Markdown rendering;
+- AI-output Markdown display;
+- document handling foundation;
+- existing competency evidence library and evidence-link provenance.
+
+Initial scope:
+
+- pasted employer rubric or interview brief text only;
+- AI output type: `employer_competency_mapping`;
+- structured preparation output with competency name, employer wording, expected behaviours, best
+  evidence, match strength, gaps, suggested sources, and recommended next action;
+- visible source-linked output, not automatic evidence creation or mutation;
+- uploaded rubric documents only after artefact Markdown representation or existing extraction
+  paths can be reused safely.
+
+Acceptance criteria:
+
+- employer material is treated as source data, not prompt instructions;
+- sparse or vague rubric input is labelled as low confidence;
+- missing evidence is reported as a gap instead of fabricated;
+- user-owned evidence and artefacts remain owner-scoped;
+- suggested next actions are preparation-oriented and explicit.
+
+Status: planned. Do not implement before the Document Handling Foundation shared renderer and
+AI-output Markdown slices are complete.
+
 ## Data Model, S1
 
 `CompetencyEvidence`

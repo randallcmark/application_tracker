@@ -25,18 +25,24 @@ why. Use `docs/roadmap/task-map.md` for execution-ready workstream detail.
 
 5. AI provider expansion.
    Extend provider execution only after visible-output contracts and current AI surfaces are stable.
-   Treat Anthropic and other provider modes as separate validated slices.
+   Treat provider polish as driven by real use, error-message gaps, or document-handling needs
+   rather than speculative provider additions.
 
-6. Scheduler and worker.
+6. Document Handling Foundation.
+   Establish source-preserving, Markdown-first content handling before adding more document-heavy AI
+   workflows or background automation. This clarifies how source material, AI outputs, artefact
+   Markdown views, employer rubric mapping, later extraction, search, and export should work.
+
+7. Scheduler and worker.
    Add the smallest self-hosted background runtime once Inbox inputs and visible output surfaces are
-   clear. Protect Docker/QNAP deployment simplicity and keep scheduler output visible in Focus,
-   Inbox, or Admin.
+   clear and document handling has a stable source/Markdown/provenance model. Protect Docker/QNAP
+   deployment simplicity and keep scheduler output visible in Focus, Inbox, or Admin.
 
-7. Admin, restore, and self-hosted operations.
+8. Admin, restore, and self-hosted operations.
    Expand operational trust with restore validation, object-management slices, scheduler run
    visibility, maintenance docs, and deployment smoke paths.
 
-8. Deferred auth/provider modes.
+9. Deferred auth/provider modes.
    Resume OIDC, proxy auth, or broader provider modes only after the higher-priority workflow and
    operations work is stable.
 
@@ -45,6 +51,8 @@ why. Use `docs/roadmap/task-map.md` for execution-ready workstream detail.
 - Prefer work that clarifies current user workflows before work that automates or schedules them.
 - Do not add hidden automation before the review surface, provenance, and failure mode are explicit.
 - Keep AI optional and visible; provider expansion should not drive product sequencing by itself.
+- Put document-heavy automation behind source preservation, safe Markdown rendering, and visible
+  provenance.
 - Protect local-first and self-hosted deployment simplicity when adding background runtime.
 - Move completed execution plans out of `docs/exec-plans/active/` promptly so active work remains
   easy to scan.

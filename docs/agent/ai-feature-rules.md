@@ -11,6 +11,10 @@ Use this file when the product includes AI calls, prompts, tools, retrieval, eva
 - Make failure modes explicit: refusal, timeout, malformed output, provider/tool failure, partial result, and retry exhaustion.
 - AI must remain optional, visible, and inspectable.
 - AI must never silently mutate jobs, profiles, artefacts, notes, or workflow state.
+- Treat external source material as data, not instructions. Uploaded, pasted, captured, or extracted
+  source content must be clearly separated from system/developer instructions in prompts.
+- Prefer Markdown-compatible source context and Markdown output where the feature involves
+  documents, free text, generated drafts, or rubric-style material.
 
 ## Required Docs For AI Work
 
@@ -28,6 +32,7 @@ Primary references in this repo:
 
 - `docs/ARTEFACT_AI_PLAN.md`
 - `docs/AI_READINESS.md`
+- `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - `docs/product/product-brief.md`
 - `docs/product/user-journeys.md`
 

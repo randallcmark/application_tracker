@@ -89,4 +89,5 @@ Supporting references:
   `docs/product/user-journeys.md`
 - Design system: `docs/design/DESIGN_SYSTEM.md`
 - Architecture boundaries: `docs/architecture/index.md` and `docs/architecture/boundaries.md`
+- Document handling direction: `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - Active execution plans: `docs/exec-plans/active/`

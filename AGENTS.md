@@ -43,6 +43,7 @@ This file is a map, not a manual. Keep it short enough to stay in context.
 - Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior: `docs/product/product-brief.md` and `docs/product/user-journeys.md`.
 - Architecture work: `docs/architecture/index.md`, `docs/architecture/boundaries.md`, and `docs/architecture/decisions/`.
+- Document handling, Markdown rendering, source preservation, search, or export: `docs/DOCUMENT_HANDLING_STRATEGY.md`, `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`, and `docs/DOCUMENT_HANDLING_TASK_MAP.md`.
 - Task slicing, risk, and model guidance: `docs/agent/codex-routing.md`.
 - UI work: `docs/agent/ui-ux-rules.md` and `docs/design/DESIGN_SYSTEM.md`.
 - AI work: `docs/agent/ai-feature-rules.md`.
