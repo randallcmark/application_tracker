@@ -19,6 +19,7 @@ from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
 from app.services.ai import AiExecutionError, generate_job_ai_output
 from app.services.artefacts import list_due_artefact_followups
+from app.services.markdown import render_markdown_blocks
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["focus"])
@@ -196,12 +197,12 @@ def _artefact_followup_item(artefact: Artefact) -> str:
     """
 
 
-def _section(title: str, body: str) -> str:
+def _section(title: str, body: str, *, section_id: str, wide: bool = False) -> str:
+    wide_class = " span-wide" if wide else ""
     return f"""
-    <article class="focus-card">
+    <article class="focus-card{wide_class}" id="{escape(section_id, quote=True)}">
       <div class="card-header">
         <div>
-          <p class="panel-micro">Focus queue</p>
           <h2>{escape(title)}</h2>
         </div>
         <span class="status-pill accent">Now</span>
@@ -231,63 +232,6 @@ def _focus_ai_target(
     return None
 
 
-def _render_inline_markdown(text: str) -> str:
-    escaped = escape(text)
-    escaped = escaped.replace("**", "\u0000")
-    parts = escaped.split("\u0000")
-    if len(parts) > 1:
-        rebuilt: list[str] = []
-        for index, part in enumerate(parts):
-            if index % 2 == 1:
-                rebuilt.append(f"<strong>{part}</strong>")
-            else:
-                rebuilt.append(part)
-        escaped = "".join(rebuilt)
-    return escaped
-
-
-def _render_markdown_blocks(text: str, *, class_name: str) -> str:
-    lines = text.replace("\r\n", "\n").split("\n")
-    blocks: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
-        if line.startswith("### "):
-            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
-            i += 1
-            continue
-        if line.startswith("## "):
-            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
-            i += 1
-            continue
-        if line.startswith("# "):
-            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
-            i += 1
-            continue
-        if line.startswith(("* ", "- ")):
-            items: list[str] = []
-            while i < len(lines):
-                bullet = lines[i].strip()
-                if not bullet.startswith(("* ", "- ")):
-                    break
-                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
-                i += 1
-            blocks.append("<ul>" + "".join(items) + "</ul>")
-            continue
-        paragraph_lines: list[str] = []
-        while i < len(lines):
-            paragraph = lines[i].strip()
-            if not paragraph or paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
-                break
-            paragraph_lines.append(paragraph)
-            i += 1
-        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
-    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
-
-
 def _flash_message(message: str, *, tone: str) -> str:
     return f'<section class="page-panel flash flash-{escape(tone, quote=True)}"><p>{escape(message)}</p></section>'
 
@@ -306,18 +250,16 @@ def _focus_redirect(*, ai_status: str | None = None, ai_error: str | None = None
 def _focus_ai_output(output: AiOutput | None, job: Job | None) -> str:
     if output is None or job is None:
         return '<p class="meta">No AI nudge yet. Generate one when you want a quick steer on the next useful move.</p>'
-    provider = output.model_name or output.provider or "AI provider"
     return f"""
     <article class="focus-ai-card">
       <div class="panel-header">
         <div>
-          <p class="panel-micro">Visible AI output</p>
           <h2>AI nudge</h2>
         </div>
         <span class="status-pill accent">Optional</span>
       </div>
-      <p class="meta">For <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a> · From {escape(provider)}</p>
-      {_render_markdown_blocks(output.body, class_name="ai-markdown")}
+      <p class="meta">For <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></p>
+      {render_markdown_blocks(output.body, class_name="ai-markdown")}
     </article>
     """
 
@@ -328,7 +270,6 @@ def _focus_ai_panel(job: Job | None) -> str:
         <section class="page-panel soft">
           <div class="panel-header">
             <div>
-              <p class="panel-micro">AI nudge</p>
               <h2>No current target</h2>
             </div>
           </div>
@@ -339,7 +280,6 @@ def _focus_ai_panel(job: Job | None) -> str:
     <section class="page-panel ai">
       <div class="panel-header">
         <div>
-          <p class="panel-micro">AI nudge</p>
           <h2>Suggest the next useful move</h2>
         </div>
         <span class="status-pill accent">Manual</span>
@@ -349,7 +289,6 @@ def _focus_ai_panel(job: Job | None) -> str:
         <input type="hidden" name="job_uuid" value="{escape(job.uuid, quote=True)}">
         <button type="submit">Suggest next step</button>
       </form>
-      <p class="meta">AI only creates a visible note. It does not move status, add artefacts, or update workflow state.</p>
     </section>
     """
 
@@ -417,12 +356,29 @@ def render_focus(
     interview_items = [_interview_item(interview) for interview in interviews]
     extra_styles = compact_content_rhythm_styles() + """
     .focus-summary {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       margin-bottom: 18px;
+    }
+    .focus-summary .metric-card {
+      color: inherit;
+      min-width: 0;
+      text-decoration: none;
+      transition: border-color 120ms ease-out, transform 120ms ease-out;
+    }
+    .focus-summary .metric-card:hover,
+    .focus-summary .metric-card:focus-visible {
+      border-color: var(--line);
+      transform: translateY(-1px);
     }
     .focus-grid {
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .focus-card.span-wide {
+      grid-column: 1 / -1;
     }
     .focus-card {
       background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
@@ -452,6 +408,13 @@ def render_focus(
     .focus-list li span,
     .focus-list li p,
     .empty { color: var(--muted); }
+    .focus-card.span-wide .focus-list li {
+      align-items: center;
+      grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 0.8fr) minmax(180px, 1fr);
+    }
+    .focus-card.span-wide .focus-list li p {
+      margin: 0;
+    }
     .focus-aside {
       display: grid;
       gap: 18px;
@@ -490,12 +453,28 @@ def render_focus(
       gap: 12px;
       padding: 18px;
     }
+    .focus-ai-card .ai-markdown {
+      max-height: 220px;
+      overflow-y: auto;
+    }
     .focus-aside form { display: grid; gap: 10px; }
     .ai-markdown { display: grid; gap: 10px; }
     .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 { font-size: 1rem; margin: 0; }
     .ai-markdown p, .ai-markdown ul { margin: 0; }
     .ai-markdown ul { padding-left: 18px; }
+    @media (max-width: 1180px) {
+      .focus-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .focus-card.span-wide .focus-list li {
+        align-items: start;
+        grid-template-columns: 1fr;
+      }
+    }
     @media (max-width: 760px) {
+      .focus-summary {
+        grid-template-columns: 1fr;
+      }
       .focus-grid { grid-template-columns: 1fr; }
     }
     """
@@ -507,28 +486,26 @@ def render_focus(
     aside = f"""
     <div class="focus-aside">
       {' '.join(flash_parts)}
-      {_focus_ai_panel(ai_target_job)}
-      {_focus_ai_output(ai_output, ai_target_job)}
       <section class="page-panel soft">
         <div class="panel-header">
           <div>
-            <p class="panel-micro">Resume</p>
             <h2>Where to resume</h2>
           </div>
           <a class="secondary" href="/board">Board</a>
         </div>
-        <p>Use Focus for the next decision, then jump into Board or Job Workspace to keep the application moving.</p>
+        <p>Start with the highest-signal queue, then jump into the matching work surface.</p>
         <div class="mobile-stack">
-          <span class="status-pill accent">{len(due_followups)} due follow-ups</span>
-          <span class="status-pill accent">{len(due_artefact_followups)} artefact reviews</span>
-          <span class="status-pill warn">{len(stale_jobs)} stale jobs</span>
-          <span class="status-pill success">{len(interviews)} interviews</span>
+          <a class="status-pill accent" href="#due-follow-ups">{len(due_followups)} due follow-ups</a>
+          <a class="status-pill accent" href="#artefact-reviews">{len(due_artefact_followups)} artefact reviews</a>
+          <a class="status-pill warn" href="#stale-active-jobs">{len(stale_jobs)} stale jobs</a>
+          <a class="status-pill success" href="#upcoming-interviews">{len(interviews)} interviews</a>
         </div>
       </section>
+      {_focus_ai_panel(ai_target_job)}
+      {_focus_ai_output(ai_output, ai_target_job)}
       <section class="page-panel emphasis">
         <div class="panel-header">
           <div>
-            <p class="panel-micro">Daily rhythm</p>
             <h2>Keep the loop tight</h2>
           </div>
         </div>
@@ -544,18 +521,18 @@ def render_focus(
     body = f"""
     {profile_prompt}
     <div class="metric-grid focus-summary" aria-label="Focus summary">
-      <div class="metric-card"><strong>{len(due_followups)}</strong><span>Due follow-ups</span></div>
-      <div class="metric-card"><strong>{len(due_artefact_followups)}</strong><span>Artefact reviews</span></div>
-      <div class="metric-card"><strong>{len(stale_jobs)}</strong><span>Stale jobs</span></div>
-      <div class="metric-card"><strong>{len(interviews)}</strong><span>Upcoming interviews</span></div>
-      <div class="metric-card"><strong>{active_count}</strong><span>Active jobs</span></div>
+      <a class="metric-card" href="#due-follow-ups"><strong>{len(due_followups)}</strong><span>Due follow-ups</span></a>
+      <a class="metric-card" href="#artefact-reviews"><strong>{len(due_artefact_followups)}</strong><span>Artefact reviews</span></a>
+      <a class="metric-card" href="#stale-active-jobs"><strong>{len(stale_jobs)}</strong><span>Stale jobs</span></a>
+      <a class="metric-card" href="#upcoming-interviews"><strong>{len(interviews)}</strong><span>Upcoming interviews</span></a>
+      <a class="metric-card" href="/board?workflow=in_progress"><strong>{active_count}</strong><span>Active jobs</span></a>
     </div>
     <div class="focus-grid">
-      {_section("Due follow-ups", _list(due_items, "No due follow-ups."))}
-      {_section("Artefact reviews", _list(artefact_followup_items, "No artefact reviews due."))}
-      {_section("Stale active jobs", _list(stale_items, "No stale active jobs."))}
-      {_section("Upcoming interviews", _list(interview_items, "No upcoming interviews."))}
-      {_section("Recent prospects", _list(recent_items, "No recent saved or interested jobs."))}
+      {_section("Due follow-ups", _list(due_items, "No due follow-ups."), section_id="due-follow-ups")}
+      {_section("Artefact reviews", _list(artefact_followup_items, "No artefact reviews due."), section_id="artefact-reviews")}
+      {_section("Stale active jobs", _list(stale_items, "No stale active jobs."), section_id="stale-active-jobs")}
+      {_section("Upcoming interviews", _list(interview_items, "No upcoming interviews."), section_id="upcoming-interviews")}
+      {_section("Recent prospects", _list(recent_items, "No recent saved or interested jobs."), section_id="recent-prospects", wide=True)}
     </div>
     """
     return HTMLResponse(
@@ -563,13 +540,12 @@ def render_focus(
             user,
             page_title="Focus",
             title="Focus",
-            subtitle="What needs attention now",
+            subtitle="",
             active="focus",
             actions=(("Add job", "/jobs/new", "add-job"),),
             body=body,
             aside=aside,
             goal=goal,
-            kicker="Daily command surface",
             container="split",
             extra_styles=extra_styles,
         )

@@ -6,7 +6,7 @@ Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-05-01
+Last Updated: 2026-05-02
 
 ## Goal
 
@@ -40,6 +40,28 @@ Continue the artefact-AI roadmap from the current G4 competency-evidence groundi
 4. Record any model/provider constraints in docs alongside implementation.
 5. Store richer evidence-link history alongside compact source-context provenance so future
    cross-job reporting, audit, and outcome-aware refinement can use structured data.
+
+## Next Slice: Employer Competency Rubric Mapping
+
+Goal: help the user compare pasted employer competencies, values, or assessment criteria against
+their existing competency evidence without mutating evidence records.
+
+Initial scope:
+
+- pasted rubric text only;
+- new visible `AiOutput` type: `employer_competency_mapping`;
+- route and UI live in the competency library surface;
+- output is Markdown-rendered and explicitly source-linked;
+- low-confidence rubric input is labelled instead of overclaimed;
+- no automatic evidence creation, mutation, or save-back.
+
+Acceptance criteria:
+
+- rubric text is treated as source data, not prompt instructions;
+- users without an enabled AI provider get the existing visible error pattern;
+- generated mapping is owner-scoped and visible in the competency library;
+- sparse or vague rubric input is marked low confidence;
+- missing evidence is reported as a gap instead of fabricated.
 
 ## Completed Slice: Richer Evidence-Link History
 
@@ -87,12 +109,28 @@ make test
 - 2026-05-01: Added model-backed `ai_output_competency_evidence_links` provenance. Tailoring and
   draft generation now create owner-scoped link rows with generation-time evidence snapshots while
   preserving the compact `source_context` display contract.
+- 2026-05-02: Document handling prerequisites for employer rubric mapping are now in place:
+  shared safe Markdown rendering is live, AI-output Markdown display is live, and artefact
+  Markdown access has a formal no-schema service boundary.
+- 2026-05-02: Implemented the first employer rubric mapping slice in the competency library.
+  Pasted rubric text now generates visible `employer_competency_mapping` output against saved
+  competency evidence, preserves pasted source text in output context, labels sparse input as low
+  confidence, and leaves evidence non-mutating.
 
 ## Decisions
 
 - Keep `docs/ARTEFACT_AI_PLAN.md` as the deep plan and use this file as the active resumable entry point.
 - Keep compact `source_context` provenance for backwards-compatible display, but store the richer
   evidence-link table from the start because it is useful for audit and later reuse history.
+- Keep the first employer rubric slice pasted-text only. Do not route uploaded rubric documents
+  through this feature until document/source handling for those files is intentionally reused.
+
+## Next Slices
+
+1. Keep outcome-aware refinement deferred until evidence reuse has real usage.
+2. Keep uploaded rubric documents deferred until artefact/document handling reuse is explicit.
+3. Revisit employer rubric mapping only when real use shows gaps in preparation output, evidence
+   selection, or source handling.
 
 ## Validation
 

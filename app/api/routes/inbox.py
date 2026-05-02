@@ -17,6 +17,7 @@ from app.db.models.user import User
 from app.services.ai import AiExecutionError, generate_job_ai_output
 from app.services.email_intake import create_email_inbox_candidate, create_email_inbox_candidates
 from app.services.jobs import BOARD_STATUSES, create_job_note, update_job_board_state
+from app.services.markdown import render_markdown_blocks
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["inbox"])
@@ -169,6 +170,7 @@ def _review_readiness_panel(job: Job) -> str:
 def _job_card(job: Job) -> str:
     source = _source_label(job)
     confidence = job.intake_confidence.replace("_", " ")
+    captured = _value(job.captured_at or job.created_at)
     attention_count = len(_review_attention_items(job))
     attention = (
         f'<span class="status-pill warn">{attention_count} cleanup checks</span>'
@@ -177,20 +179,24 @@ def _job_card(job: Job) -> str:
     )
     return f"""
     <article class="inbox-card">
-      <div class="card-header">
-        <div>
-          <p class="panel-micro">{escape(source)} · {escape(confidence)} confidence</p>
+      <div class="inbox-card-main">
+        <div class="inbox-card-title">
           <h2><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></h2>
+          <span class="status-pill accent">Needs review</span>
         </div>
-        <span class="status-pill accent">Needs review</span>
+        <div class="inbox-card-meta">
+          <span>{escape(job.company or "Company not set")}</span>
+          <span>{escape(job.location or "Location not set")}</span>
+          <span>{escape(source)}</span>
+          <span>{escape(confidence)} confidence</span>
+          <span>Captured {escape(captured)}</span>
+        </div>
+        <div class="inbox-card-summary">
+          {_source_action(job)}
+          {attention}
+        </div>
       </div>
-      <div class="inbox-card-body">
-        <p>{escape(job.company or "Company not set")} · {escape(job.location or "Location not set")}</p>
-        <p>{_source_action(job)}</p>
-        <p class="meta">Captured {_value(job.captured_at or job.created_at)}</p>
-        <p>{attention}</p>
-      </div>
-      <div class="actions">
+      <div class="inbox-card-actions">
         <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/accept">
           <button type="submit">Accept</button>
         </form>
@@ -226,18 +232,75 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
     :root { --warn: #a43d2b; }
     .inbox-list { display: grid; gap: 12px; }
     .inbox-card {
+      align-items: start;
       background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
       border: 1px solid var(--line-soft);
       border-radius: var(--radius-xl);
       box-shadow: var(--shadow-md);
       display: grid;
-      gap: 14px;
+      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) auto;
       padding: 18px;
     }
-    .inbox-card-body { display: grid; gap: 6px; }
+    .inbox-card-main {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .inbox-card-title {
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      min-width: 0;
+    }
+    .inbox-card-title h2 {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .inbox-card-meta,
+    .inbox-card-summary {
+      align-items: center;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+    }
+    .inbox-card-meta span:not(:last-child)::after {
+      color: var(--soft-text);
+      content: "·";
+      margin-left: 12px;
+    }
+    .inbox-card-summary .external-link {
+      white-space: nowrap;
+    }
     .meta { color: var(--muted); }
-    .actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+    .inbox-card-actions {
+      align-items: stretch;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 120px;
+    }
+    .inbox-card-actions form,
+    .inbox-card-actions button,
+    .inbox-card-actions a {
+      width: 100%;
+    }
     .inbox-aside { display: grid; gap: 18px; }
+    .queue-count {
+      align-items: baseline;
+      display: flex;
+      gap: 8px;
+    }
+    .queue-count strong {
+      font-size: 2rem;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .queue-count span {
+      color: var(--muted);
+    }
     .tip-list {
       display: grid;
       gap: 10px;
@@ -249,9 +312,25 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
       border-left: 3px solid rgba(255,255,255,0.28);
       padding-left: 10px;
     }
+    .inbox-aside .mobile-stack {
+      margin-top: 4px;
+    }
     @media (max-width: 760px) {
-      .actions { width: 100%; }
-      .actions > *, .actions button, .actions a { width: 100%; }
+      .inbox-card {
+        grid-template-columns: 1fr;
+      }
+      .inbox-card-title,
+      .inbox-card-meta,
+      .inbox-card-summary {
+        align-items: start;
+        flex-direction: column;
+      }
+      .inbox-card-meta span::after {
+        display: none;
+      }
+      .inbox-card-actions {
+        width: 100%;
+      }
     }
     """
     aside = f"""
@@ -259,22 +338,20 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
       <section class="page-panel soft">
         <div class="panel-header">
           <div>
-            <p class="panel-micro">Triage</p>
-            <h2>Review before effort</h2>
+            <h2>Queue</h2>
           </div>
-          <span class="status-pill accent">{len(jobs)} queued</span>
+          <span class="status-pill accent">Inbox</span>
         </div>
-        <p>Inbox is for judgement. Clean up extracted fields, then accept into active work only when the opportunity deserves attention.</p>
+        <div class="queue-count"><strong>{len(jobs)}</strong><span>queued</span></div>
+        <p>Review only what looks worth effort, then accept, clean up, or dismiss.</p>
         <div class="mobile-stack">
-          <a class="button" href="/inbox/email/new">Paste email</a>
           <a class="secondary" href="/api/capture/bookmarklet">Capture setup</a>
         </div>
       </section>
       <section class="page-panel emphasis">
         <div class="panel-header">
           <div>
-            <p class="panel-micro">Good review habits</p>
-            <h2>Keep provenance visible</h2>
+            <h2>Review habit</h2>
           </div>
         </div>
         <ul class="tip-list">
@@ -295,12 +372,11 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
             user,
             page_title="Inbox",
             title="Inbox",
-            subtitle="Review captured opportunities before they become active work",
+            subtitle="",
             active="inbox",
             actions=(("Paste email", "/inbox/email/new", "paste-email"), ("Add job", "/jobs/new", "add-job")),
             body=body,
             aside=aside,
-            kicker="Triage surface",
             container="split",
             extra_styles=extra_styles,
         )
@@ -373,63 +449,6 @@ def _ai_badge(output_type: str) -> str:
     return f'<span class="status-pill {tone}">{escape(label)}</span>'
 
 
-def _render_inline_markdown(text: str) -> str:
-    escaped = escape(text)
-    escaped = escaped.replace("**", "\u0000")
-    parts = escaped.split("\u0000")
-    if len(parts) > 1:
-        rebuilt: list[str] = []
-        for index, part in enumerate(parts):
-            if index % 2 == 1:
-                rebuilt.append(f"<strong>{part}</strong>")
-            else:
-                rebuilt.append(part)
-        escaped = "".join(rebuilt)
-    return escaped
-
-
-def _render_markdown_blocks(text: str, *, class_name: str) -> str:
-    lines = text.replace("\r\n", "\n").split("\n")
-    blocks: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
-        if line.startswith("### "):
-            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
-            i += 1
-            continue
-        if line.startswith("## "):
-            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
-            i += 1
-            continue
-        if line.startswith("# "):
-            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
-            i += 1
-            continue
-        if line.startswith(("* ", "- ")):
-            items: list[str] = []
-            while i < len(lines):
-                bullet = lines[i].strip()
-                if not bullet.startswith(("* ", "- ")):
-                    break
-                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
-                i += 1
-            blocks.append("<ul>" + "".join(items) + "</ul>")
-            continue
-        paragraph_lines: list[str] = []
-        while i < len(lines):
-            paragraph = lines[i].strip()
-            if not paragraph or paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
-                break
-            paragraph_lines.append(paragraph)
-            i += 1
-        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
-    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
-
-
 def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
     if not outputs:
         return '<p class="empty">No AI output yet. Generate a fit summary or recommendation when you want help deciding whether this role is worth effort.</p>'
@@ -447,7 +466,7 @@ def _ai_outputs_panel(outputs: list[AiOutput]) -> str:
                 {_ai_badge(output.output_type)}
               </div>
               <p class="meta">From {escape(provider)}</p>
-              {_render_markdown_blocks(output.body, class_name="ai-markdown")}
+              {render_markdown_blocks(output.body, class_name="ai-markdown")}
             </article>
             """
         )
@@ -914,11 +933,10 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
             user,
             page_title="Paste email",
             title="Paste email",
-            subtitle="Add an interesting job email to Inbox",
+            subtitle="",
             active="inbox",
             body=body,
             aside=aside,
-            kicker="Capture",
             container="workspace",
             extra_styles=extra_styles,
         )

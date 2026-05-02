@@ -254,10 +254,10 @@ def test_job_detail_renders_existing_ai_output(tmp_path: Path, monkeypatch) -> N
 
         assert response.status_code == 200
         assert 'data-ui-component="ai-assessment-body"' in response.text
-        assert "AI fit summary" in response.text
         assert "Strengths: strong systems background." in response.text
-        assert "local-model" in response.text
-        assert "Overall Assessment" in response.text
+        assert "local-model" not in response.text
+        assert "Overall Assessment" not in response.text
+        assert "Fit summary" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -291,6 +291,11 @@ def test_job_detail_exposes_competency_evidence_source_hooks(tmp_path: Path, mon
         assert "Create evidence from this role" in response.text
         assert f'href="/competencies?source_artefact_uuid={artefact_uuid}"' in response.text
         assert "Create evidence" in response.text
+        assert "AI actions" in response.text
+        assert "Tailor documents" in response.text
+        assert "Prepare interviews" in response.text
+        assert "Draft follow-up notes" in response.text
+        assert "Analyse role fit" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -640,6 +645,14 @@ def test_job_detail_renders_draft_action_for_job_artefacts(tmp_path: Path, monke
         response = client.get(f"/jobs/{job_uuid}?section=documents")
 
         assert response.status_code == 200
+        assert '<a class="workspace-back-link" href="/board">← Back to Board</a>' in response.text
+        assert 'data-ui-component="section-nav"' in response.text
+        assert 'class="workspace-document-actions-quick"' not in response.text
+        assert 'data-ui-scroll-target="documents-attach-tools"' not in response.text
+        assert '<details id="documents-attach-tools">' in response.text
+        assert '<details id="documents-attach-tools" open>' not in response.text
+        assert 'title="baseline.md"' in response.text
+        assert 'class="workspace-artefact-actions"' in response.text
         assert "Analyse" in response.text
         assert "Draft tailored resume" in response.text
         assert "Draft cover letter" in response.text
@@ -648,6 +661,8 @@ def test_job_detail_renders_draft_action_for_job_artefacts(tmp_path: Path, monke
         assert f'action="/jobs/{job_uuid}/artefacts/{artefact_uuid}/analysis"' in response.text
         assert "brief_action=draft" in response.text
         assert "brief_draft_kind=resume_draft" in response.text
+        assert "Attach, upload, or generate only when this opportunity needs artefact work." not in response.text
+        assert "Start a reusable STAR example from this role. You can edit it before saving." not in response.text
         assert artefact_uuid in response.text
     finally:
         app.dependency_overrides.clear()
@@ -2293,6 +2308,8 @@ def test_new_job_form_creates_job_and_redirects(tmp_path: Path, monkeypatch) -> 
 
         assert form_response.status_code == 200
         assert '<form class="job-form" method="post" action="/jobs/new">' in form_response.text
+        assert '<div class="app-content-shell workspace">' in form_response.text
+        assert '<section class="page-panel job-entry-panel">' in form_response.text
 
         response = client.post(
             "/jobs/new",

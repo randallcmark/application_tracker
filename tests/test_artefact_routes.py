@@ -96,6 +96,7 @@ def test_artefact_library_lists_owned_job_artefacts(tmp_path: Path, monkeypatch)
         assert "Library role" in response.text
         assert "Library Co" in response.text
         assert f'href="/jobs/{job_uuid}"' in response.text
+        assert f'href="/artefacts/{artefact_uuid}"' in response.text
         assert f'href="/artefacts/{artefact_uuid}/download"' in response.text
         assert "other.txt" not in response.text
     finally:
@@ -288,6 +289,91 @@ def test_artefact_library_download_is_owner_scoped(tmp_path: Path, monkeypatch) 
         assert response.status_code == 200
         assert response.content == b"resume bytes"
         assert response.headers["content-disposition"].endswith("resume.txt")
+        assert hidden_response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_artefact_detail_renders_markdown_preview_for_source_markdown(tmp_path: Path, monkeypatch) -> None:
+    artefact_root = tmp_path / "artefacts"
+    monkeypatch.setattr(settings, "local_storage_path", str(artefact_root))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            storage_key = "jobs/detail/artefacts/resume.md"
+            (artefact_root / storage_key).parent.mkdir(parents=True)
+            (artefact_root / storage_key).write_text("### Summary\n* **Delivery**", encoding="utf-8")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="resume.md",
+                storage_key=storage_key,
+                content_type="text/markdown",
+                size_bytes=24,
+            )
+            db.add(artefact)
+            db.commit()
+            artefact_uuid = artefact.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/artefacts/{artefact_uuid}")
+
+        assert response.status_code == 200
+        assert 'data-ui-component="artefact-source-card"' in response.text
+        assert 'data-ui-component="artefact-preview"' in response.text
+        assert "Source remains canonical" in response.text
+        assert "Source Markdown" in response.text
+        assert "<h4>Summary</h4>" in response.text
+        assert "<strong>Delivery</strong>" in response.text
+        assert f'href="/artefacts/{artefact_uuid}/download"' in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_artefact_detail_is_owner_scoped_and_shows_unavailable_preview_for_binary_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    artefact_root = tmp_path / "artefacts"
+    monkeypatch.setattr(settings, "local_storage_path", str(artefact_root))
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            other_user = create_local_user(db, email="other@example.com", password="password")
+            db.flush()
+            storage_key = "jobs/detail/artefacts/resume.bin"
+            (artefact_root / storage_key).parent.mkdir(parents=True)
+            (artefact_root / storage_key).write_bytes(b"\x00\x01")
+            artefact = Artefact(
+                owner_user_id=user.id,
+                kind="resume",
+                filename="resume.bin",
+                storage_key=storage_key,
+                content_type="application/octet-stream",
+            )
+            hidden = Artefact(
+                owner_user_id=other_user.id,
+                kind="resume",
+                filename="hidden.md",
+                storage_key="jobs/detail/artefacts/hidden.md",
+                content_type="text/markdown",
+            )
+            db.add_all([artefact, hidden])
+            db.commit()
+            artefact_uuid = artefact.uuid
+            hidden_uuid = hidden.uuid
+
+        login(client, "jobseeker@example.com")
+
+        response = client.get(f"/artefacts/{artefact_uuid}")
+        hidden_response = client.get(f"/artefacts/{hidden_uuid}")
+
+        assert response.status_code == 200
+        assert 'data-ui-component="artefact-preview-unavailable"' in response.text
+        assert "No internal text preview yet" in response.text
         assert hidden_response.status_code == 404
     finally:
         app.dependency_overrides.clear()

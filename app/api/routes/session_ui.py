@@ -591,10 +591,9 @@ def settings_page(
             user,
             page_title="Settings",
             title="Settings",
-            subtitle="Profile, AI providers, and capture tokens",
+            subtitle="",
             active="settings",
             body=body,
-            kicker="User context",
             container="standard",
             extra_styles=extra_styles,
         )

@@ -51,6 +51,7 @@ from app.services.jobs import (
     record_job_status_change,
     update_job_board_state,
 )
+from app.services.markdown import render_markdown_blocks
 from app.services.profiles import get_user_profile
 from app.storage.provider import get_storage_provider
 
@@ -500,63 +501,22 @@ def _ai_badge(output_type: str) -> str:
     return f'<span class="status-pill {tone}">{escape(label)}</span>'
 
 
-def _render_inline_markdown(text: str) -> str:
-    escaped = escape(text)
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    escaped = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"<em>\1</em>", escaped)
-    return escaped
-
-
-def _render_markdown_blocks(text: str, *, class_name: str) -> str:
-    lines = text.replace("\r\n", "\n").split("\n")
-    blocks: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
-        if line.startswith("### "):
-            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
-            i += 1
-            continue
-        if line.startswith("## "):
-            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
-            i += 1
-            continue
-        if line.startswith("# "):
-            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
-            i += 1
-            continue
-        if line.startswith(("* ", "- ")):
-            items: list[str] = []
-            while i < len(lines):
-                bullet = lines[i].strip()
-                if not bullet.startswith(("* ", "- ")):
-                    break
-                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
-                i += 1
-            blocks.append("<ul>" + "".join(items) + "</ul>")
-            continue
-        paragraph_lines: list[str] = []
-        while i < len(lines):
-            paragraph = lines[i].strip()
-            if not paragraph:
-                break
-            if paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
-                break
-            paragraph_lines.append(paragraph)
-            i += 1
-        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
-    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
-
-
 def _render_ai_markdown(text: str) -> str:
-    return _render_markdown_blocks(text, class_name="ai-markdown")
+    cleaned = text.replace("\r\n", "\n").strip()
+    boilerplate_lines = {
+        "here is a concise fit summary for this job:",
+        "here's a concise fit summary for this job:",
+        "here is a concise fit summary:",
+        "here's a concise fit summary:",
+    }
+    lines = cleaned.split("\n")
+    while lines and lines[0].strip().lower() in boilerplate_lines:
+        lines.pop(0)
+    return render_markdown_blocks("\n".join(lines), class_name="ai-markdown")
 
 
 def _render_description_markdown(text: str) -> str:
-    return _render_markdown_blocks(text, class_name="description-markdown")
+    return render_markdown_blocks(text, class_name="description-markdown")
 
 
 def _artefact_suggestion_links(
@@ -1055,11 +1015,7 @@ def _workspace_score_card(job: Job, artefacts: list[Artefact]) -> str:
 
 
 def _workspace_back_link_card() -> str:
-    return """
-    <section class="workspace-side-card workspace-back-card" data-ui-component="job-summary">
-      <a class="workspace-back-link" href="/board">← Back to Board</a>
-    </section>
-    """
+    return '<a class="workspace-back-link" href="/board">← Back to Board</a>'
 
 
 def _progress_step(status_key: str, label: str, current_index: int, index: int, date_label: str | None = None) -> str:
@@ -1766,7 +1722,7 @@ def _workspace_artefact_item(job: Job, artefact: Artefact) -> str:
       <div class="workspace-artefact-left">
         <div class="workspace-doc-icon">▣</div>
         <div>
-          <div class="workspace-artefact-name">{escape(artefact.filename)}</div>
+          <div class="workspace-artefact-name" title="{escape(artefact.filename, quote=True)}">{escape(artefact.filename)}</div>
           <div class="meta-row">
             <span>{escape(_artefact_type_label(artefact))}</span>
             <span>•</span>
@@ -1820,8 +1776,7 @@ def _workspace_artefacts_section(
       </div>
       <div class="workspace-subpanel">
         <h3>Document actions</h3>
-        <p class="muted">Attach, upload, or generate only when this opportunity needs artefact work.</p>
-        <details>
+        <details id="documents-attach-tools">
           <summary>Attach or upload</summary>
           <div class="workspace-stack">
             {_link_existing_artefact_form(job, available_artefacts)}
@@ -1830,7 +1785,6 @@ def _workspace_artefacts_section(
         </details>
         <details>
           <summary>Competency evidence</summary>
-          <p class="muted">Start a reusable STAR example from this role. You can edit it before saving.</p>
           <a class="button-link" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">Create evidence from this role</a>
         </details>
       </div>
@@ -1990,17 +1944,16 @@ def _workspace_ai_assessment(ai_outputs: list[AiOutput]) -> str:
     if fit_output is None:
         return """
         <section class="workspace-rail-panel" data-ui-component="ai-assessment">
-          <div class="workspace-side-heading">Overall Assessment</div>
-          <p class="muted">No fit summary yet. Generate one when you want a current read on the match.</p>
+          <div class="workspace-side-heading">Fit summary</div>
+          <p class="muted">No current fit read yet. Generate one when you want a quick view of strengths, gaps, and watch-outs.</p>
         </section>
         """
+    rendered = _render_ai_markdown(fit_output.body)
     return f"""
     <section class="workspace-rail-panel emphasis" data-ui-component="ai-assessment">
-      <div class="workspace-side-heading">Overall Assessment</div>
-      {_ai_badge(fit_output.output_type)}
-      <p class="muted">From {escape(fit_output.model_name or fit_output.provider or "AI")}</p>
+      <div class="workspace-side-heading">Fit summary</div>
       <div class="workspace-constrained-body ai-assessment-body" data-ui-component="ai-assessment-body">
-        {_render_ai_markdown(fit_output.body)}
+        {rendered}
       </div>
     </section>
     """
@@ -2012,21 +1965,24 @@ def _workspace_ai_sidebar(job: Job, ai_outputs: list[AiOutput], artefact_lookup:
       <section class="workspace-rail-shell">
         <div class="workspace-rail-head">
           <span>AI Assistant</span>
-          <span class="muted">Visible only</span>
+          <span class="muted">Visible output</span>
         </div>
         <div class="workspace-rail-body">
           {_workspace_ai_assessment(ai_outputs)}
         </div>
       </section>
       <section class="workspace-side-card" data-ui-component="ai-help-list">
-        <div class="workspace-side-heading">AI can help you with</div>
+        <div class="workspace-side-heading">AI actions</div>
         <div class="workspace-help-list">
-          <div class="workspace-help-item"><strong>Tailor your resume</strong><span>›</span></div>
-          <div class="workspace-help-item"><strong>Prepare for interviews</strong><span>›</span></div>
-          <div class="workspace-help-item"><strong>Draft follow-up email</strong><span>›</span></div>
-          <div class="workspace-help-item"><strong>Analyse role fit</strong><span>›</span></div>
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=documents"><strong>Tailor documents</strong><span>Open documents</span></a>
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=interviews"><strong>Prepare interviews</strong><span>Open interviews</span></a>
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=follow-ups"><strong>Draft follow-up notes</strong><span>Open follow-ups</span></a>
+          <form class="workspace-help-action" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+            <input type="hidden" name="output_type" value="fit_summary">
+            <button class="workspace-help-item workspace-help-button" type="submit"><strong>Analyse role fit</strong><span>Generate fit summary</span></button>
+          </form>
         </div>
-        <p class="muted">AI uses your job, artefacts, and profile information to generate insights.</p>
+        <p class="muted">AI stays visible and does not change workflow state on its own.</p>
       </section>
     </aside>
     """
@@ -2368,6 +2324,11 @@ def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
 def render_new_job(user: User) -> str:
     extra_styles = """
     h1 { font-size: 2rem; line-height: 1.1; }
+    .job-entry-panel {
+      max-height: 100%;
+      min-height: 0;
+      overflow-y: auto;
+    }
     .job-form { display: grid; gap: 14px; }
     .inline-fields {
       display: grid;
@@ -2403,10 +2364,9 @@ def render_new_job(user: User) -> str:
         user,
         page_title="Add Job",
         title="Add job",
-        subtitle="Create an intentional job entry",
+        subtitle="",
         active=None,
-        body=f'<section class="page-panel">{_new_job_form()}</section>',
-        kicker="Manual entry",
+        body=f'<section class="page-panel job-entry-panel">{_new_job_form()}</section>',
         container="workspace",
         extra_styles=extra_styles,
     )
@@ -2511,6 +2471,7 @@ def render_job_detail(
       gap: 16px;
       align-content: start;
       min-width: 0;
+      position: relative;
     }}
     .workspace-side-card,
     .workspace-surface,
@@ -2580,16 +2541,21 @@ def render_job_detail(
       top: 100%;
       z-index: 8;
     }}
+    .workspace-left-rail {{
+      gap: 12px;
+    }}
+    .workspace-center {{
+      z-index: 2;
+    }}
     .workspace-back-link {{
+      align-items: center;
       color: var(--muted);
       display: inline-flex;
       font-size: 0.92rem;
+      font-weight: 700;
       gap: 8px;
-      margin-bottom: 14px;
+      min-height: 28px;
       text-decoration: none;
-    }}
-    .workspace-back-card {{
-      padding: 12px 16px;
     }}
     .workspace-anchor-nav {{
       display: grid;
@@ -2820,10 +2786,14 @@ def render_job_detail(
       gap: 16px;
     }}
     .workspace-two-up {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    .workspace-two-up[data-ui-component="documents-workbench"] {{
+      align-items: start;
+    }}
     .workspace-three-up {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
     .workspace-subpanel {{
       display: grid;
       gap: 14px;
+      min-width: 0;
       padding: 18px;
     }}
     .workspace-subpanel h3 {{ font-size: 1rem; }}
@@ -3057,6 +3027,7 @@ def render_job_detail(
       max-height: 320px;
     }}
     .workspace-help-list {{ display: grid; gap: 12px; }}
+    .workspace-help-action {{ margin: 0; }}
     .workspace-help-item {{
       align-items: center;
       border-top: 1px solid #f0f1f6;
@@ -3065,10 +3036,22 @@ def render_job_detail(
       font-size: 0.9rem;
       gap: 12px;
       justify-content: space-between;
+      text-decoration: none;
       padding: 14px 0;
     }}
     .workspace-help-item:first-child {{ border-top: 0; }}
     .workspace-help-item strong {{ color: var(--accent-strong); }}
+    .workspace-help-item span {{ color: var(--muted); font-size: 0.82rem; }}
+    .workspace-help-button {{
+      background: transparent;
+      border: 0;
+      border-top: 1px solid #f0f1f6;
+      cursor: pointer;
+      padding-left: 0;
+      padding-right: 0;
+      text-align: left;
+      width: 100%;
+    }}
     .workspace-artefact-list {{
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -3077,12 +3060,12 @@ def render_job_detail(
       position: relative;
     }}
     .workspace-artefact-item {{
-      align-items: center;
+      align-items: start;
       background: #ffffff;
       border-top: 1px solid #f0f1f6;
       display: grid;
-      gap: 16px;
-      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      grid-template-columns: 1fr;
       padding: 14px 16px;
       position: relative;
     }}
@@ -3114,6 +3097,13 @@ def render_job_detail(
       width: 32px;
     }}
     .workspace-artefact-name {{ font-size: 0.95rem; font-weight: 800; margin-bottom: 3px; overflow-wrap: anywhere; }}
+    @media (min-width: 761px) {{
+      .workspace-artefact-name {{
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }}
+    }}
     .meta-row {{
       color: var(--text-muted);
       display: flex;
@@ -3136,7 +3126,10 @@ def render_job_detail(
       align-items: center;
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
+      justify-content: flex-start;
+      min-width: 0;
+      padding-left: 44px;
     }}
     .action-btn {{
       align-items: center;
@@ -3160,7 +3153,7 @@ def render_job_detail(
       position: relative;
     }}
     .workspace-ai-menu[open] {{
-      z-index: 12;
+      z-index: 50;
     }}
     .workspace-ai-menu > summary {{
       list-style: none;
@@ -3178,8 +3171,8 @@ def render_job_detail(
       position: absolute;
       top: calc(100% + 8px);
       right: 0;
-      width: 220px;
-      z-index: 13;
+      width: 240px;
+      z-index: 60;
     }}
     .menu-link {{
       align-items: center;
@@ -3519,6 +3512,13 @@ def render_job_detail(
       .workspace-artefact-item,
       .workspace-local-ai-body {{
         grid-template-columns: 1fr;
+      }}
+      .workspace-artefact-actions {{
+        padding-left: 0;
+        width: 100%;
+      }}
+      .workspace-artefact-actions > * {{
+        flex: 1 1 140px;
       }}
       .workspace-ai-menu-body {{
         position: static;

@@ -15,7 +15,11 @@ from app.db.models.artefact import Artefact
 from app.db.models.competency_evidence import CompetencyEvidence
 from app.db.models.job import Job
 from app.db.models.user import User
-from app.services.ai import AiExecutionError, generate_competency_star_shaping
+from app.services.ai import (
+    AiExecutionError,
+    generate_competency_star_shaping,
+    generate_employer_competency_mapping,
+)
 from app.services.artefacts import get_user_artefact_by_uuid
 from app.services.competency_evidence import (
     create_competency_evidence,
@@ -24,6 +28,7 @@ from app.services.competency_evidence import (
     update_competency_evidence,
 )
 from app.services.jobs import get_user_job_by_uuid
+from app.services.markdown import render_markdown_blocks
 from app.services.profiles import get_user_profile
 
 router = APIRouter(tags=["competencies"])
@@ -77,57 +82,6 @@ def _strength_options(current: str) -> str:
     )
 
 
-def _render_inline_markdown(text: str) -> str:
-    escaped = escape(text)
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    escaped = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"<em>\1</em>", escaped)
-    return escaped
-
-
-def _render_markdown_blocks(text: str, *, class_name: str = "ai-markdown") -> str:
-    lines = text.replace("\r\n", "\n").split("\n")
-    blocks: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
-        if line.startswith("### "):
-            blocks.append(f"<h4>{_render_inline_markdown(line[4:])}</h4>")
-            i += 1
-            continue
-        if line.startswith("## "):
-            blocks.append(f"<h3>{_render_inline_markdown(line[3:])}</h3>")
-            i += 1
-            continue
-        if line.startswith("# "):
-            blocks.append(f"<h2>{_render_inline_markdown(line[2:])}</h2>")
-            i += 1
-            continue
-        if line.startswith(("* ", "- ")):
-            items: list[str] = []
-            while i < len(lines):
-                bullet = lines[i].strip()
-                if not bullet.startswith(("* ", "- ")):
-                    break
-                items.append(f"<li>{_render_inline_markdown(bullet[2:])}</li>")
-                i += 1
-            blocks.append("<ul>" + "".join(items) + "</ul>")
-            continue
-        paragraph_lines: list[str] = []
-        while i < len(lines):
-            paragraph = lines[i].strip()
-            if not paragraph:
-                break
-            if paragraph.startswith(("# ", "## ", "### ", "* ", "- ")):
-                break
-            paragraph_lines.append(paragraph)
-            i += 1
-        blocks.append(f"<p>{_render_inline_markdown(' '.join(paragraph_lines))}</p>")
-    return f'<div class="{escape(class_name, quote=True)}">' + "".join(blocks) + "</div>"
-
-
 def _latest_competency_ai_outputs(
     db: DbSession,
     user: User,
@@ -150,6 +104,22 @@ def _latest_competency_ai_outputs(
     return by_evidence_uuid
 
 
+def _latest_employer_mapping_output(
+    db: DbSession,
+    user: User,
+) -> AiOutput | None:
+    return db.scalar(
+        select(AiOutput)
+        .where(
+            AiOutput.owner_user_id == user.id,
+            AiOutput.output_type == "employer_competency_mapping",
+            AiOutput.status == "active",
+        )
+        .order_by(AiOutput.updated_at.desc(), AiOutput.created_at.desc())
+        .limit(1)
+    )
+
+
 def _ai_shaping_panel(output: AiOutput | None) -> str:
     if output is None:
         return '<p class="muted">No STAR shaping output yet.</p>'
@@ -164,11 +134,46 @@ def _ai_shaping_panel(output: AiOutput | None) -> str:
         <h3>{escape(output.title or "AI STAR shaping")}</h3>
         <p class="meta">From {escape(provider)} · Updated {escape(_value(output.updated_at))}</p>
       </div>
-      {_render_markdown_blocks(output.body)}
+      {render_markdown_blocks(output.body)}
       <form class="inline-action-form" method="post" action="/competencies/{escape(evidence_uuid, quote=True)}/star-shaping/{output.id}/save">
         <button class="secondary" type="submit">Save shaped STAR to evidence</button>
       </form>
       <p class="muted">Saving is explicit. The AI output is copied into this evidence only after this action.</p>
+    </article>
+    """
+
+
+def _employer_mapping_panel(output: AiOutput | None) -> str:
+    if output is None:
+        return '<p class="muted">No employer mapping output yet.</p>'
+    provider = output.model_name or output.provider or "AI"
+    source_context = output.source_context or {}
+    confidence = source_context.get("rubric_input_confidence")
+    summary = source_context.get("rubric_input_summary")
+    rubric_text = source_context.get("rubric_text")
+    confidence_line = (
+        f'<p class="meta">Input confidence: {escape(str(confidence).title())}</p>'
+        if isinstance(confidence, str) and confidence
+        else ""
+    )
+    summary_line = f'<p class="muted">{escape(str(summary))}</p>' if isinstance(summary, str) and summary else ""
+    rubric_block = (
+        f'<details><summary>Original rubric text</summary><pre class="rubric-source">{escape(rubric_text)}</pre></details>'
+        if isinstance(rubric_text, str) and rubric_text
+        else ""
+    )
+    return f"""
+    <article class="ai-shaping-card" data-ui-component="employer-competency-mapping-output">
+      <div>
+        <p class="eyebrow">Employer rubric mapping</p>
+        <h3>{escape(output.title or "Employer competency mapping")}</h3>
+        <p class="meta">From {escape(provider)} · Updated {escape(_value(output.updated_at))}</p>
+        {confidence_line}
+        {summary_line}
+      </div>
+      {render_markdown_blocks(output.body)}
+      {rubric_block}
+      <p class="muted">This output is preparation guidance only. It does not create or update evidence automatically.</p>
     </article>
     """
 
@@ -381,6 +386,7 @@ def render_competency_library(
     evidence_items: list[CompetencyEvidence],
     *,
     ai_outputs_by_evidence_uuid: dict[str, AiOutput] | None = None,
+    employer_mapping_output: AiOutput | None = None,
     ai_error: str | None = None,
     ai_status: str | None = None,
     source_job: Job | None = None,
@@ -425,11 +431,15 @@ def render_competency_library(
       letter-spacing: 0.04em;
       text-transform: uppercase;
     }
-    .evidence-layout {
-      align-items: start;
+    .evidence-workspace,
+    .evidence-library {
       display: grid;
       gap: 14px;
-      grid-template-columns: minmax(0, 1fr) 360px;
+    }
+    .evidence-workspace {
+      align-items: start;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      margin-bottom: 16px;
     }
     .evidence-grid {
       align-items: start;
@@ -437,13 +447,16 @@ def render_competency_library(
       gap: 14px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .evidence-card, .empty-state, .create-panel, .ai-shaping-card {
+    .evidence-card, .empty-state, .create-panel, .mapping-panel, .library-panel, .ai-shaping-card {
       background: var(--panel);
       border: 0.5px solid var(--line);
       border-radius: 8px;
       display: grid;
       gap: 14px;
       padding: 16px;
+    }
+    .library-panel {
+      padding: 18px;
     }
     .evidence-card-head {
       align-items: start;
@@ -479,6 +492,10 @@ def render_competency_library(
     dd { margin: 3px 0 0; overflow-wrap: anywhere; }
     .notes { color: var(--muted); margin-top: 12px; }
     .evidence-form { display: grid; gap: 12px; }
+    .create-panel,
+    .mapping-panel {
+      align-content: start;
+    }
     .prompt-group {
       border: 0.5px solid var(--line);
       border-radius: 8px;
@@ -518,8 +535,16 @@ def render_competency_library(
     .ai-markdown h2, .ai-markdown h3, .ai-markdown h4,
     .ai-markdown p, .ai-markdown ul { margin: 0; }
     .ai-markdown ul { padding-left: 18px; }
+    .rubric-source {
+      background: var(--surface-muted);
+      border-radius: 8px;
+      margin: 10px 0 0;
+      overflow-x: auto;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+    }
     @media (max-width: 980px) {
-      .evidence-layout, .evidence-grid, .star-grid { grid-template-columns: 1fr; }
+      .evidence-workspace, .evidence-grid, .star-grid { grid-template-columns: 1fr; }
     }
     """
     flash = ""
@@ -529,33 +554,51 @@ def render_competency_library(
         flash = _flash_message(ai_status, tone="success")
     body = f"""
     {flash}
-    <div class="evidence-layout" data-ui-component="competency-evidence-library">
-      <section class="evidence-grid">
-        {cards}
-      </section>
-      <aside class="create-panel" data-ui-component="competency-evidence-create">
+    <section class="evidence-workspace" data-ui-component="competency-evidence-library">
+      <section class="create-panel" data-ui-component="competency-evidence-create">
         <div>
-          <p class="eyebrow">New evidence</p>
           <h2>Add competency evidence</h2>
+          <p class="muted">Capture or refine one reusable example without working in a narrow sidebar.</p>
         </div>
         {_source_prefill_panel(source_job, source_artefact)}
         <form class="evidence-form" method="post" action="/competencies">
           {_evidence_form_fields(defaults=_prefill_from_source(source_job, source_artefact))}
           <button type="submit">Add evidence</button>
         </form>
+      </section>
+      <aside class="mapping-panel" data-ui-component="employer-competency-mapping">
+        <div>
+          <h2>Employer rubric mapping</h2>
+          <p class="muted">Paste criteria, behaviours, or interview themes to compare them against your saved evidence.</p>
+        </div>
+        <form class="evidence-form" method="post" action="/competencies/employer-mapping">
+          <label>Employer rubric or competency text
+            <textarea name="rubric_text" rows="8" placeholder="Paste employer competencies, behaviours, values, or interview criteria"></textarea>
+          </label>
+          <button type="submit">Generate mapping</button>
+        </form>
+        {_employer_mapping_panel(employer_mapping_output)}
       </aside>
-    </div>
+    </section>
+    <section class="library-panel">
+      <div>
+        <h2>Evidence library</h2>
+        <p class="muted">Saved examples remain below as a reusable library for shaping, mapping, and future preparation.</p>
+      </div>
+      <section class="evidence-grid">
+        {cards}
+      </section>
+    </section>
     """
     return HTMLResponse(
         render_shell_page(
             user,
             page_title="Competency Evidence",
             title="Competency Evidence",
-            subtitle="Reusable STAR examples for interviews and written applications",
+            subtitle="",
             active="competencies",
             actions=(("Artefacts", "/artefacts", "artefacts"),),
             body=body,
-            kicker="Evidence library",
             container="wide",
             extra_styles=extra_styles,
         )
@@ -581,6 +624,7 @@ def competency_library(
         current_user,
         list_competency_evidence(db, current_user),
         ai_outputs_by_evidence_uuid=_latest_competency_ai_outputs(db, current_user),
+        employer_mapping_output=_latest_employer_mapping_output(db, current_user),
         ai_error=ai_error,
         ai_status=ai_status,
         source_job=source_job,
@@ -664,6 +708,32 @@ def create_competency_star_shaping_route(
     db.commit()
     return RedirectResponse(
         url="/competencies?ai_status=STAR%20shaping%20generated",
+        status_code=303,
+    )
+
+
+@router.post("/competencies/employer-mapping", include_in_schema=False)
+def create_employer_competency_mapping_route(
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+    rubric_text: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    try:
+        generate_employer_competency_mapping(
+            db,
+            current_user,
+            rubric_text,
+            profile=get_user_profile(db, current_user),
+        )
+    except AiExecutionError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/competencies?ai_error={quote(str(exc))}",
+            status_code=303,
+        )
+    db.commit()
+    return RedirectResponse(
+        url="/competencies?ai_status=Employer%20mapping%20generated",
         status_code=303,
     )
 

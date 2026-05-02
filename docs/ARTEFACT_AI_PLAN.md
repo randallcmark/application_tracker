@@ -143,6 +143,11 @@ Prompt rules:
    cross-job reporting, and safer outcome-aware refinement without parsing historical JSON
    metadata.
 4. Return to outcome-aware refinement only after competency evidence reuse has real usage.
+5. Employer competency rubric mapping is implemented for the first pasted-text slice. The
+   competency library can now generate visible `employer_competency_mapping` output against saved
+   competency evidence, label sparse rubric input as low confidence, preserve pasted source text in
+   visible source context, and report missing evidence as gaps. Uploaded rubric documents remain a
+   later document-handling-dependent slice.
 
 ## Regression Expectations
 

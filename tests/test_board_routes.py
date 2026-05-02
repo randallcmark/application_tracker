@@ -77,6 +77,13 @@ def test_board_defaults_to_in_progress_workflow(tmp_path: Path, monkeypatch) -> 
         assert 'data-status="applied"' in response.text
         assert 'data-status="interviewing"' in response.text
         assert 'data-status="saved"' not in response.text
+        assert 'aria-label="Workflow summary"' not in response.text
+        assert ">Preparing <span class=\"lane-count\">0</span></h2>" in response.text
+        assert ">Applied <span class=\"lane-count\">1</span></h2>" in response.text
+        assert ">Interviewing <span class=\"lane-count\">0</span></h2>" in response.text
+        assert "Tailor materials before applying." not in response.text
+        assert "Submitted and waiting for response." not in response.text
+        assert "Conversations in motion." not in response.text
         assert 'draggable="true"' in response.text
         assert 'class="workflow-select"' not in response.text
         assert 'class="job-status-select"' not in response.text
@@ -148,6 +155,7 @@ def test_board_prospects_workflow_shows_discovery_stages(tmp_path: Path, monkeyp
         assert 'class="refined-list"' in response.text
         assert 'class="refined-item status-saved"' in response.text
         assert 'class="refined-item status-interested"' in response.text
+        assert 'aria-label="Workflow summary"' not in response.text
         assert 'data-status-target="archived"' in response.text
         assert 'data-status-target="interested"' in response.text
         assert ">Keep</button>" in response.text

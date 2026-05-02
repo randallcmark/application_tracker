@@ -1,16 +1,17 @@
 # Execution Plan: Harness Adoption And Validator
 
-Status: Active
+Status: Complete
 
 Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-04-30
+Last Updated: 2026-05-02
 
 ## Goal
 
-Adopt the template harness structure into Application Tracker so future agent work routes through tracked docs, execution plans, and a local validator instead of missing local-only `.codex` state.
+Adopt the template harness structure into Application Tracker so future agent work routes through
+tracked docs, execution plans, and a local validator instead of missing local-only `.codex` state.
 
 ## Non-Goals
 
@@ -48,21 +49,25 @@ Adopt the template harness structure into Application Tracker so future agent wo
 - 2026-04-30: Consolidated planning into `docs/PRODUCT_VISION.md`,
   `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`; older planning docs
   are now historical/supporting references.
+- 2026-05-02: Confirmed the harness acceptance criteria remain met, the validator passes, and the
+  completed plan can move out of `docs/exec-plans/active/` so future sessions do not restart from
+  a finished housekeeping task.
 
 ## Decisions
 
-- Use `docs/agent/codex-routing.md` as the tracked replacement for the missing `.codex/application_tracker.toml`.
-- Keep existing long-form planning docs as source material and normalize active work into `docs/exec-plans/active/`.
+- Use `docs/agent/codex-routing.md` as the tracked replacement for the missing
+  `.codex/application_tracker.toml`.
+- Keep existing long-form planning docs as source material and normalize active work into
+  `docs/exec-plans/active/`.
 - Use the three planning hubs as the current route for product vision, priority order, and
   execution-ready workstream detail.
 
 ## Validation
 
-Commands to run before completion:
+Commands run for completion:
 
 ```sh
 bash scripts/validate-harness.sh
-make test
 ```
 
 ## Risks

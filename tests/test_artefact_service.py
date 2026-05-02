@@ -8,7 +8,11 @@ from app.db.models.artefact import Artefact
 from app.db.models.job import Job
 from app.main import app
 from app.services.artefacts import (
+    ArtefactMarkdownAccess,
+    ArtefactMarkdownPreview,
+    get_artefact_markdown_access,
     list_candidate_artefacts_for_job,
+    load_artefact_markdown_preview,
     load_artefact_document_payload,
     load_artefact_text_excerpt,
     summarise_artefact_outcome_signals,
@@ -344,6 +348,105 @@ def test_load_artefact_text_excerpt_extracts_pdf_text_when_adapter_available(mon
     excerpt = load_artefact_text_excerpt(artefact, storage=FakeProvider())
 
     assert excerpt == "Platform delivery from PDF"
+
+
+def test_load_artefact_markdown_preview_reads_markdown_source() -> None:
+    class StubStorage:
+        def load(self, storage_key: str) -> bytes:
+            assert storage_key == "artefacts/resume.md"
+            return b"### Summary\n* Strong delivery"
+
+    artefact = Artefact(
+        kind="resume",
+        filename="resume.md",
+        storage_key="artefacts/resume.md",
+        content_type="text/markdown",
+    )
+
+    preview = load_artefact_markdown_preview(artefact, storage=StubStorage())
+
+    assert preview == ArtefactMarkdownPreview(
+        body="### Summary\n* Strong delivery",
+        source_kind="source_markdown",
+        source_label="Source Markdown",
+        confidence_label="Exact source text",
+        warning=None,
+    )
+
+
+def test_get_artefact_markdown_access_reports_source_download_only_for_unsupported_binary() -> None:
+    artefact = Artefact(
+        kind="resume",
+        filename="resume.bin",
+        storage_key="artefacts/resume.bin",
+        content_type="application/octet-stream",
+    )
+
+    access = get_artefact_markdown_access(artefact)
+
+    assert access == ArtefactMarkdownAccess(
+        markdown_text=None,
+        source_kind="unsupported",
+        source_label="Preview unavailable",
+        confidence_label="No preview available",
+        warning="This artefact type currently supports source download only.",
+        is_canonical_source=False,
+    )
+
+
+def test_load_artefact_markdown_preview_reports_pdf_extraction_warning(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.artefacts.load_artefact_text_excerpt",
+        lambda artefact, storage=None, max_chars=12000: "Responsibilities:\nPlatform delivery\n\n- Stakeholder leadership",
+    )
+    artefact = Artefact(
+        kind="resume",
+        filename="resume.pdf",
+        storage_key="artefacts/resume.pdf",
+        content_type="application/pdf",
+    )
+
+    preview = load_artefact_markdown_preview(artefact)
+
+    assert preview is not None
+    assert preview.source_kind == "derived_text"
+    assert preview.confidence_label == "Low confidence extraction"
+    assert preview.body == "## Responsibilities\n\nPlatform delivery\n\n* Stakeholder leadership"
+    assert "extracted PDF text" in (preview.warning or "")
+
+
+def test_get_artefact_markdown_access_formats_docx_paragraphs_as_markdown() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                "<w:body>"
+                "<w:p><w:r><w:t>Experience</w:t></w:r></w:p>"
+                "<w:p><w:r><w:t>Platform delivery across three teams</w:t></w:r></w:p>"
+                "<w:p><w:r><w:t>Stakeholder leadership</w:t></w:r></w:p>"
+                "</w:body></w:document>"
+            ),
+        )
+
+    class StubStorage:
+        def load(self, storage_key: str) -> bytes:
+            assert storage_key == "artefacts/baseline.docx"
+            return buffer.getvalue()
+
+    artefact = Artefact(
+        kind="resume",
+        filename="baseline.docx",
+        storage_key="artefacts/baseline.docx",
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    access = get_artefact_markdown_access(artefact, storage=StubStorage())
+
+    assert access.markdown_text == "Experience\n\nPlatform delivery across three teams\n\nStakeholder leadership"
+    assert access.source_kind == "derived_text"
 
 
 def test_load_artefact_document_payload_returns_pdf_bytes() -> None:

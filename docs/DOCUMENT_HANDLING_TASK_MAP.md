@@ -29,7 +29,7 @@ AI-generated text.
 
 Deliverable:
 
-- `docs/exec-plans/active/free-text-markdown-rendering-audit.md`
+- `docs/exec-plans/completed/free-text-markdown-rendering-audit.md`
 
 Audit table should cover field, source model, storage field, current rendering, risk, and
 recommended handling.
@@ -51,6 +51,9 @@ Acceptance criteria:
 - no code changes unless a read-only audit helper is explicitly needed;
 - audit identifies the first implementation slice;
 - unsafe rendering risks are visible.
+
+Status: complete. This audit led directly to the shared safe Markdown renderer for AI outputs and
+Job Workspace descriptions.
 
 ## Task 3: Shared Safe Markdown Renderer
 
@@ -74,6 +77,9 @@ Acceptance criteria:
 - unsafe content is escaped or removed;
 - tests cover Markdown basics and unsafe content.
 
+Status: complete. `app/services/markdown.py` now provides the shared sanitized renderer used by AI
+output surfaces and Job Workspace descriptions.
+
 ## Task 4: AI Output Markdown Standardization
 
 Goal: ensure AI-generated content is treated as Markdown and rendered through the shared viewer.
@@ -91,6 +97,9 @@ Acceptance criteria:
 - long AI outputs do not appear as raw unformatted text;
 - existing output types continue to work.
 
+Status: complete. Focus, Inbox, Job Workspace, and competency-library AI outputs now render through
+the shared Markdown helper.
+
 ## Task 5: Artefact Markdown Representation Design
 
 Goal: plan how artefacts get internal Markdown representations while preserving source.
@@ -107,6 +116,10 @@ Acceptance criteria:
 - existing source data is not overwritten;
 - extraction status/confidence and lineage are defined;
 - fallback behavior for unsupported extraction is clear.
+
+Status: complete. The first slice stays no-schema, and the repo now has a formal Markdown access
+contract plus a completed execution plan in
+`docs/exec-plans/completed/artefact-markdown-representation.md`.
 
 ## Task 6: Artefact Markdown First Implementation Slice
 
@@ -126,6 +139,9 @@ Acceptance criteria:
 - unsupported artefacts show clear status;
 - no source data is overwritten.
 
+Status: complete for the first slice. A source-first artefact detail view now renders supported
+Markdown/text and derived extracted-text previews through the shared safe renderer.
+
 ## Task 7: Employer Rubric And Competency Evidence Integration
 
 Goal: use Markdown-first handling to support employer competency rubric intake.
@@ -143,6 +159,9 @@ Acceptance criteria:
 - AI mapping consumes Markdown context;
 - mapping output renders as Markdown or structured cards;
 - source material remains visible.
+
+Status: implemented for the first pasted-text slice in the competency library. Uploaded rubric
+documents remain deferred until artefact/document handling reuse is explicit.
 
 ## Task 8: Search And Retrieval Decision
 

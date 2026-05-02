@@ -140,8 +140,12 @@ Acceptance criteria:
 - user-owned evidence and artefacts remain owner-scoped;
 - suggested next actions are preparation-oriented and explicit.
 
-Status: planned. Do not implement before the Document Handling Foundation shared renderer and
-AI-output Markdown slices are complete.
+Status: implemented for the first pasted-text slice. The competency library now supports visible
+`employer_competency_mapping` output from pasted employer rubric text, labels sparse input as
+low confidence, renders the mapping through the shared Markdown viewer, keeps evidence
+non-mutating, and now places the mapping beside a full-width creation workspace rather than in a
+narrow sidebar. Uploaded rubric documents remain deferred until artefact/document handling for
+those sources is intentionally reused.
 
 ## Data Model, S1
 
@@ -173,6 +177,7 @@ library behaviour is proven.
 - Entry cards should be compact by default.
 - Full STAR fields should be segmented and expandable.
 - Creation/refinement should use a modal or focused work panel, not a long dashboard form.
+  The current library now uses a full-width work panel with the saved library rendered below it.
 - Existing surfaces should add small hooks only:
   - `Create evidence from this role`
   - `Create evidence from this artefact`

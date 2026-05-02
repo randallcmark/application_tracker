@@ -60,7 +60,8 @@ def test_focus_shell_contract_preserves_nav_with_context_chip(tmp_path: Path, mo
         assert_primary_shell_contract(response.text)
         assert 'data-has-chip="true"' in response.text
         assert 'data-shell-chip="context"' in response.text
-        assert "Daily command surface" in response.text
+        assert '<p class="page-kicker">' not in response.text
+        assert '<p class="page-subtitle">' not in response.text
         assert "Technical Program Manager" in response.text
     finally:
         app.dependency_overrides.clear()
@@ -80,8 +81,8 @@ def test_inbox_shell_contract_keeps_shared_hero_without_chip_placeholder(tmp_pat
         assert_primary_shell_contract(response.text)
         assert 'data-has-chip="false"' in response.text
         assert 'data-shell-chip="context"' not in response.text
-        assert "Triage surface" in response.text
-        assert "Review captured opportunities before they become active work" in response.text
+        assert '<p class="page-kicker">' not in response.text
+        assert '<p class="page-subtitle">' not in response.text
         assert "goal-chip-slot" not in response.text
     finally:
         app.dependency_overrides.clear()
@@ -112,7 +113,37 @@ def test_board_shell_contract_keeps_nav_visible_with_workflow_chip(tmp_path: Pat
         assert 'data-has-chip="true"' in response.text
         assert 'data-shell-chip="context"' in response.text
         assert "Workflow:" in response.text
-        assert "Active work" in response.text
+        assert '<p class="page-kicker">' not in response.text
+        assert '<p class="page-subtitle">' not in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_main_authenticated_pages_use_compact_headers(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+        login(client, "jobseeker@example.com")
+
+        compact_pages = {
+            "/focus": "Focus",
+            "/inbox": "Inbox",
+            "/board": "In Progress",
+            "/jobs/new": "Add job",
+            "/inbox/email/new": "Paste email",
+            "/settings": "Settings",
+            "/artefacts": "Artefacts",
+            "/competencies": "Competency Evidence",
+        }
+        for route, title in compact_pages.items():
+            response = client.get(route)
+
+            assert response.status_code == 200
+            assert f"<h1>{title}</h1>" in response.text
+            assert '<p class="page-kicker">' not in response.text
+            assert '<p class="page-subtitle">' not in response.text
     finally:
         app.dependency_overrides.clear()
 

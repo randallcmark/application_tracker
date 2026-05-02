@@ -69,9 +69,15 @@ def test_capture_job_lands_in_inbox_and_is_hidden_from_board(tmp_path: Path, mon
         board_response = client.get("/board?workflow=prospects")
 
         assert "Inbox role" in inbox_response.text
+        assert '<div class="inbox-card-main">' in inbox_response.text
+        assert '<div class="inbox-card-actions">' in inbox_response.text
+        assert '<div class="queue-count"><strong>1</strong><span>queued</span></div>' in inbox_response.text
         assert "jobs.example.com" in inbox_response.text
         assert "medium confidence" in inbox_response.text
         assert "Open source" in inbox_response.text
+        assert "Review before effort" not in inbox_response.text
+        assert "Triage" not in inbox_response.text
+        assert inbox_response.text.count('href="/inbox/email/new"') == 1
         assert 'class="source-url"' not in inbox_response.text
         assert "Inbox role" not in board_response.text
 

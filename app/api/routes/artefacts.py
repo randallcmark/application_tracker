@@ -13,9 +13,11 @@ from app.db.models.artefact import Artefact
 from app.db.models.user import User
 from app.services.artefacts import (
     get_user_artefact_by_uuid,
+    get_artefact_markdown_access,
     list_user_artefacts,
     update_artefact_metadata,
 )
+from app.services.markdown import render_markdown_blocks
 from app.storage.provider import get_storage_provider
 
 router = APIRouter(tags=["artefacts"])
@@ -115,7 +117,7 @@ def _artefact_card(artefact: Artefact, artefact_lookup: dict[str, Artefact]) -> 
     <article class="artefact-card">
       <div>
         <p class="eyebrow">{escape(artefact.kind)}</p>
-        <h2>{escape(artefact.filename)}</h2>
+        <h2><a href="/artefacts/{escape(artefact.uuid, quote=True)}">{escape(artefact.filename)}</a></h2>
         <p class="meta">{escape(_size(artefact.size_bytes))} · Updated {escape(_value(artefact.updated_at))}</p>
       </div>
       <dl>
@@ -169,9 +171,69 @@ def _artefact_card(artefact: Artefact, artefact_lookup: dict[str, Artefact]) -> 
         </form>
       </details>
       <div class="actions">
+        <a class="button secondary" href="/artefacts/{escape(artefact.uuid, quote=True)}">Open</a>
         <a class="button" href="/artefacts/{escape(artefact.uuid, quote=True)}/download">Download</a>
       </div>
     </article>
+    """
+
+
+def _artefact_preview_panel(artefact: Artefact) -> str:
+    access = get_artefact_markdown_access(artefact)
+    if access.markdown_text is None:
+        return """
+        <section class="artefact-preview empty-state" data-ui-component="artefact-preview-unavailable">
+          <h2>No internal text preview yet</h2>
+          <p>Download the source file to inspect the original document. A Markdown preview is only available for supported text and extracted-document types.</p>
+        </section>
+        """
+
+    warning = f'<p class="warning">{escape(access.warning)}</p>' if access.warning else ""
+    return f"""
+    <section class="artefact-preview" data-ui-component="artefact-preview">
+      <div class="panel-header">
+        <div>
+          <p class="panel-micro">{escape(access.source_label)}</p>
+          <h2>Markdown view</h2>
+        </div>
+        <span class="status-pill accent">{escape(access.confidence_label)}</span>
+      </div>
+      {warning}
+      {render_markdown_blocks(access.markdown_text, class_name="artefact-markdown")}
+    </section>
+    """
+
+
+def _artefact_detail_context(artefact: Artefact) -> str:
+    linked_jobs = {link.job.id: link.job for link in artefact.job_links}
+    if artefact.job:
+        linked_jobs[artefact.job.id] = artefact.job
+    linked_jobs_html = "".join(
+        f'<li><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a>'
+        f' <span>{escape(job.company or "Company not set")}</span></li>'
+        for job in sorted(linked_jobs.values(), key=lambda item: item.title.lower())
+    )
+    if not linked_jobs_html:
+        linked_jobs_html = '<li><span class="muted">No linked jobs</span></li>'
+    return f"""
+    <section class="artefact-context" data-ui-component="artefact-detail-meta">
+      <div class="context-grid">
+        <div><dt>Kind</dt><dd>{escape(artefact.kind)}</dd></div>
+        <div><dt>Source file</dt><dd>{escape(artefact.filename)}</dd></div>
+        <div><dt>Content type</dt><dd>{escape(artefact.content_type or "Not set")}</dd></div>
+        <div><dt>Size</dt><dd>{escape(_size(artefact.size_bytes))}</dd></div>
+        <div><dt>Purpose</dt><dd>{escape(artefact.purpose or "Not set")}</dd></div>
+        <div><dt>Version</dt><dd>{escape(artefact.version_label or "Not set")}</dd></div>
+      </div>
+      <div class="context-block">
+        <p class="eyebrow">Notes</p>
+        <p>{escape(artefact.notes or "No notes")}</p>
+      </div>
+      <div class="context-block">
+        <p class="eyebrow">Linked jobs</p>
+        <ol class="linked-jobs">{linked_jobs_html}</ol>
+      </div>
+    </section>
     """
 
 
@@ -282,11 +344,10 @@ def render_artefact_library(user: User, artefacts: list[Artefact]) -> HTMLRespon
             user,
             page_title="Artefacts",
             title="Artefacts",
-            subtitle="Resumes, cover letters, notes, and prep files",
+            subtitle="",
             active="artefacts",
             actions=(("Add job", "/jobs/new", "add-job"),),
             body=body,
-            kicker="Library",
             container="wide",
             extra_styles=extra_styles,
         )
@@ -299,6 +360,107 @@ def artefact_library(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> HTMLResponse:
     return render_artefact_library(current_user, list_user_artefacts(db, current_user))
+
+
+@router.get("/artefacts/{artefact_uuid}", response_class=HTMLResponse, include_in_schema=False)
+def artefact_detail(
+    artefact_uuid: str,
+    db: DbSession,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> HTMLResponse:
+    artefact = get_user_artefact_by_uuid(db, current_user, artefact_uuid)
+    if artefact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    artefact_lookup = {artefact.uuid: artefact}
+    provenance = _artefact_provenance(artefact, artefact_lookup)
+    body = f"""
+    <div class="artefact-detail-layout">
+      <section class="artefact-source-card" data-ui-component="artefact-source-card">
+        <div class="panel-header">
+          <div>
+            <p class="panel-micro">Source remains canonical</p>
+            <h2>{escape(artefact.filename)}</h2>
+          </div>
+          <span class="status-pill accent">{escape(artefact.kind)}</span>
+        </div>
+        <p class="meta">Download the original file whenever you need the exact source document.</p>
+        <div class="actions">
+          <a class="button" href="/artefacts/{escape(artefact.uuid, quote=True)}/download">Download source</a>
+          <a class="button secondary" href="/artefacts">Back to library</a>
+        </div>
+        {provenance}
+      </section>
+      {_artefact_detail_context(artefact)}
+      {_artefact_preview_panel(artefact)}
+    </div>
+    """
+    extra_styles = compact_content_rhythm_styles() + """
+    .muted, .meta { color: var(--muted); }
+    .artefact-detail-layout {
+      display: grid;
+      gap: 16px;
+    }
+    .artefact-source-card, .artefact-context, .artefact-preview, .empty-state {
+      background: var(--panel);
+      border: 0.5px solid var(--line);
+      border-radius: 14px;
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+    }
+    .context-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .context-grid dt, .context-block .eyebrow {
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      margin: 0 0 4px;
+      text-transform: uppercase;
+    }
+    .context-grid dd { margin: 0; overflow-wrap: anywhere; }
+    .context-block { display: grid; gap: 6px; }
+    .warning {
+      background: color-mix(in srgb, var(--warning-soft) 40%, white);
+      border: 0.5px solid color-mix(in srgb, var(--warning) 28%, var(--line));
+      border-radius: 10px;
+      margin: 0;
+      padding: 10px 12px;
+    }
+    .artefact-markdown {
+      display: grid;
+      gap: 10px;
+    }
+    .artefact-markdown h2, .artefact-markdown h3, .artefact-markdown h4,
+    .artefact-markdown p, .artefact-markdown ul { margin: 0; }
+    .artefact-markdown ul { padding-left: 18px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .button.secondary {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+    @media (max-width: 760px) {
+      .context-grid { grid-template-columns: 1fr; }
+      .actions, .actions .button { width: 100%; }
+    }
+    """
+    return HTMLResponse(
+        render_shell_page(
+            current_user,
+            page_title=artefact.filename,
+            title=artefact.filename,
+            subtitle="",
+            active="artefacts",
+            actions=(("Back to artefacts", "/artefacts", "artefacts"),),
+            body=body,
+            container="wide",
+            extra_styles=extra_styles,
+        )
+    )
 
 
 @router.post("/artefacts/{artefact_uuid}/metadata", include_in_schema=False)

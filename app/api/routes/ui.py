@@ -1084,7 +1084,7 @@ def render_page_hero(*, title: str, subtitle: str, kicker: str | None = None, he
           <div class="page-hero" data-shell-hero="shared" data-hero-variant="{escape(hero_variant, quote=True)}">
             {f'<p class="page-kicker">{escape(kicker)}</p>' if kicker else ""}
             <h1>{escape(title)}</h1>
-            <p class="page-subtitle">{escape(subtitle)}</p>
+            {f'<p class="page-subtitle">{escape(subtitle)}</p>' if subtitle else ""}
           </div>
     """
 

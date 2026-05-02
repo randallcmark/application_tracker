@@ -79,6 +79,10 @@ promoted source material.
 It would represent extracted, normalized, user-authored, AI-generated, or export-ready Markdown tied
 to a source.
 
+Before that persistence exists, artefact consumers should use a service-layer Markdown access
+contract rather than calling extraction helpers directly. The current contract is
+`app.services.artefacts.get_artefact_markdown_access(...)`.
+
 ## Markdown Storage Rules
 
 - Store Markdown as text, not rendered HTML.
@@ -102,6 +106,10 @@ avoid over-formatting, and escape unsafe HTML.
 Uploaded documents should reuse existing extraction support first. Do not build a new extraction
 subsystem until the product need is clear. Record extraction status and confidence, preserve
 original file download, and label low-confidence extraction.
+
+Computed extraction remains acceptable for now, but feature call sites should depend on the
+Markdown access contract so persisted Markdown can replace on-demand extraction later without
+rewiring UI or AI surfaces.
 
 AI-generated content should be requested and stored as Markdown where appropriate. Generated
 content remains working output until the user saves or promotes it.

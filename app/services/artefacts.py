@@ -145,6 +145,25 @@ class ArtefactOutcomeSignalSummary:
     summary_text: str
 
 
+@dataclass(frozen=True)
+class ArtefactMarkdownPreview:
+    body: str
+    source_kind: str
+    source_label: str
+    confidence_label: str
+    warning: str | None = None
+
+
+@dataclass(frozen=True)
+class ArtefactMarkdownAccess:
+    markdown_text: str | None
+    source_kind: str
+    source_label: str
+    confidence_label: str
+    warning: str | None = None
+    is_canonical_source: bool = False
+
+
 def _related_jobs_for_artefact(artefact: Artefact) -> list[Job]:
     jobs: dict[int, Job] = {}
     if artefact.job is not None:
@@ -588,6 +607,38 @@ def _clip_text(text: str, *, max_chars: int) -> str | None:
     return cleaned[: max_chars - 16].rstrip() + "\n\n[truncated]"
 
 
+def _normalise_extracted_text_to_markdown(text: str) -> str | None:
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned:
+        return None
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for raw_line in cleaned.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            continue
+        bullet = line.lstrip("\u2022*- ").strip()
+        if raw_line.lstrip().startswith(("\u2022", "-", "*")) and bullet:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            paragraphs.append(f"* {bullet}")
+            continue
+        if line.endswith(":") and len(line.split()) <= 8:
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+            paragraphs.append(f"## {line[:-1]}")
+            continue
+        current.append(line)
+    if current:
+        paragraphs.append(" ".join(current))
+    return "\n\n".join(paragraphs) or None
+
+
 def _extract_docx_text(raw: bytes) -> str | None:
     try:
         archive = zipfile.ZipFile(io.BytesIO(raw))
@@ -602,8 +653,14 @@ def _extract_docx_text(raw: bytes) -> str | None:
         root = ElementTree.fromstring(document_xml)
     except ElementTree.ParseError:
         return None
-    text_parts = [node.text for node in root.iter() if node.tag.endswith("}t") and node.text]
-    return "\n".join(part.strip() for part in text_parts if part and part.strip()) or None
+    paragraphs: list[str] = []
+    for paragraph in root.iter():
+        if not paragraph.tag.endswith("}p"):
+            continue
+        text_parts = [node.text.strip() for node in paragraph.iter() if node.tag.endswith("}t") and node.text and node.text.strip()]
+        if text_parts:
+            paragraphs.append(" ".join(text_parts))
+    return "\n\n".join(paragraphs) or None
 
 
 def _local_storage_path(artefact: Artefact, provider: StorageProvider) -> Path | None:
@@ -681,6 +738,123 @@ def load_artefact_text_excerpt(
         return _clip_text(_extract_pdf_text(local_path) or "", max_chars=max_chars)
 
     return None
+
+
+def get_artefact_markdown_access(
+    artefact: Artefact,
+    *,
+    storage: StorageProvider | None = None,
+    max_chars: int = 12000,
+) -> ArtefactMarkdownAccess:
+    content_type = (artefact.content_type or "").strip().lower()
+    filename = (artefact.filename or "").strip().lower()
+    provider = storage or get_storage_provider()
+
+    is_markdown_source = content_type in {
+        "text/markdown",
+        "text/x-markdown",
+        "application/markdown",
+    } or filename.endswith((".md", ".markdown"))
+    is_plaintext_source = content_type == "text/plain" or filename.endswith(".txt")
+
+    if is_markdown_source or is_plaintext_source:
+        try:
+            raw = provider.load(artefact.storage_key)
+        except FileNotFoundError:
+            return ArtefactMarkdownAccess(
+                markdown_text=None,
+                source_kind="source_missing",
+                source_label="Source unavailable",
+                confidence_label="No preview available",
+                warning="The source file could not be loaded from storage.",
+            )
+        body = _clip_text(raw.decode("utf-8", errors="ignore"), max_chars=max_chars)
+        if is_markdown_source:
+            return ArtefactMarkdownAccess(
+                markdown_text=body,
+                source_kind="source_markdown",
+                source_label="Source Markdown",
+                confidence_label="Exact source text",
+                is_canonical_source=True,
+            )
+        return ArtefactMarkdownAccess(
+            markdown_text=body,
+            source_kind="source_text",
+            source_label="Source text",
+            confidence_label="Rendered from stored source text",
+            is_canonical_source=True,
+        )
+
+    if filename.endswith(DOCXLIKE_SUFFIXES):
+        body = load_artefact_text_excerpt(artefact, storage=provider, max_chars=max_chars)
+        markdown_body = _normalise_extracted_text_to_markdown(body or "")
+        return ArtefactMarkdownAccess(
+            markdown_text=markdown_body,
+            source_kind="derived_text" if markdown_body else "unavailable",
+            source_label="Derived text preview" if markdown_body else "Preview unavailable",
+            confidence_label="Medium confidence extraction" if markdown_body else "No preview available",
+            warning=(
+                "Formatting and layout may differ from the original document."
+                if markdown_body
+                else "A text preview could not be derived from this document."
+            ),
+        )
+
+    if filename.endswith(TEXTUTIL_SUFFIXES):
+        body = load_artefact_text_excerpt(artefact, storage=provider, max_chars=max_chars)
+        markdown_body = _normalise_extracted_text_to_markdown(body or "")
+        return ArtefactMarkdownAccess(
+            markdown_text=markdown_body,
+            source_kind="derived_text" if markdown_body else "unavailable",
+            source_label="Derived text preview" if markdown_body else "Preview unavailable",
+            confidence_label="Low confidence extraction" if markdown_body else "No preview available",
+            warning=(
+                "This preview is derived from best-effort document extraction."
+                if markdown_body
+                else "A text preview could not be derived from this document."
+            ),
+        )
+
+    if filename.endswith(PDF_SUFFIXES):
+        body = load_artefact_text_excerpt(artefact, storage=provider, max_chars=max_chars)
+        markdown_body = _normalise_extracted_text_to_markdown(body or "")
+        return ArtefactMarkdownAccess(
+            markdown_text=markdown_body,
+            source_kind="derived_text" if markdown_body else "unavailable",
+            source_label="Derived text preview" if markdown_body else "Preview unavailable",
+            confidence_label="Low confidence extraction" if markdown_body else "No preview available",
+            warning=(
+                "This preview is derived from extracted PDF text and may omit layout or ordering."
+                if markdown_body
+                else "A text preview could not be derived from this document."
+            ),
+        )
+
+    return ArtefactMarkdownAccess(
+        markdown_text=None,
+        source_kind="unsupported",
+        source_label="Preview unavailable",
+        confidence_label="No preview available",
+        warning="This artefact type currently supports source download only.",
+    )
+
+
+def load_artefact_markdown_preview(
+    artefact: Artefact,
+    *,
+    storage: StorageProvider | None = None,
+    max_chars: int = 12000,
+) -> ArtefactMarkdownPreview | None:
+    access = get_artefact_markdown_access(artefact, storage=storage, max_chars=max_chars)
+    if not access.markdown_text:
+        return None
+    return ArtefactMarkdownPreview(
+        body=access.markdown_text,
+        source_kind=access.source_kind,
+        source_label=access.source_label,
+        confidence_label=access.confidence_label,
+        warning=access.warning,
+    )
 
 
 def load_artefact_document_payload(

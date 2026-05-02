@@ -45,10 +45,14 @@ def test_competency_library_renders_empty_state_and_shell_entry(tmp_path: Path, 
         assert 'data-ui-component="competency-prompt-star"' in response.text
         assert 'data-ui-component="competency-prompt-credibility"' in response.text
         assert 'data-ui-component="competency-prompt-reuse"' in response.text
+        assert 'data-ui-component="employer-competency-mapping"' in response.text
         assert "What competency or theme does this example demonstrate?" in response.text
         assert "What changed as a result?" in response.text
+        assert "Employer rubric mapping" in response.text
         assert "No competency evidence yet" in response.text
         assert "Competency Evidence" in response.text
+        assert "Evidence library" in response.text
+        assert "Add competency evidence" in response.text
         assert '<a class="active" href="/competencies">Competency Evidence</a>' in response.text
     finally:
         app.dependency_overrides.clear()
@@ -329,6 +333,102 @@ def test_competency_star_shaping_route_creates_visible_output_without_mutating_e
             assert evidence.result == "Agreement reached before steering group."
             assert output is not None
             assert output.source_context["competency_evidence_uuid"] == evidence_uuid
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_employer_mapping_route_creates_visible_output_without_mutating_evidence(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            user = create_local_user(db, email="jobseeker@example.com", password="password")
+            db.flush()
+            evidence = create_competency_evidence(
+                db,
+                user,
+                title="Stakeholder recovery",
+                competency="Stakeholder management",
+                result="Agreement reached before steering group.",
+                strength="working",
+            )
+            db.commit()
+            evidence_uuid = evidence.uuid
+        login(client, "jobseeker@example.com")
+
+        def fake_generate_employer_competency_mapping(db, user, rubric_text, *, profile=None):
+            output = AiOutput(
+                owner_user_id=user.id,
+                output_type="employer_competency_mapping",
+                title="Employer competency mapping",
+                body="### Input confidence\n* Low confidence",
+                provider="system",
+                source_context={
+                    "surface": "competency_library",
+                    "prompt_contract": "employer_competency_mapping_v1",
+                    "rubric_text": rubric_text,
+                    "rubric_input_confidence": "low",
+                },
+            )
+            db.add(output)
+            db.flush()
+            return output
+
+        monkeypatch.setattr(
+            "app.api.routes.competencies.generate_employer_competency_mapping",
+            fake_generate_employer_competency_mapping,
+        )
+
+        response = client.post(
+            "/competencies/employer-mapping",
+            data={"rubric_text": "Communication\nLeadership"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/competencies?ai_status=Employer%20mapping%20generated"
+
+        detail_response = client.get("/competencies")
+        assert detail_response.status_code == 200
+        assert 'data-ui-component="employer-competency-mapping-output"' in detail_response.text
+        assert "Employer competency mapping" in detail_response.text
+        assert "Low confidence" in detail_response.text
+        assert "Original rubric text" in detail_response.text
+
+        with session_local() as db:
+            evidence = db.query(CompetencyEvidence).filter_by(uuid=evidence_uuid).one()
+            output = db.scalar(
+                select(AiOutput).where(AiOutput.output_type == "employer_competency_mapping")
+            )
+            assert evidence.result == "Agreement reached before steering group."
+            assert output is not None
+            assert output.source_context["prompt_contract"] == "employer_competency_mapping_v1"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_competency_employer_mapping_route_shows_visible_error_when_provider_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="jobseeker@example.com", password="password")
+            db.commit()
+        login(client, "jobseeker@example.com")
+
+        response = client.post(
+            "/competencies/employer-mapping",
+            data={"rubric_text": "Communication\nLeadership"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert "ai_error=" in response.headers["location"]
+
+        detail_response = client.get(response.headers["location"])
+        assert "Enable an AI provider in Settings before generating AI output" in detail_response.text
     finally:
         app.dependency_overrides.clear()
 

@@ -7,44 +7,60 @@ Use it after reading `docs/PRODUCT_VISION.md` and `docs/roadmap/implementation-s
 
 | Order | Workstream | Status | Entry Point | Next Slice |
 | --- | --- | --- | --- | --- |
-| 1 | Planning harness cleanup and doc consolidation | Active | `docs/exec-plans/active/harness-adoption-and-validator.md` | Finish three-hub routing, archive/mark superseded docs, and clean active/completed plans. |
+| 1 | UI density, layout, and AI surface cleanup | Active | `docs/exec-plans/active/ui-density-layout-ai-cleanup.md` | Core QA cleanup is complete: compact headings, Focus, Inbox, Board, Job Workspace AI/documents polish, Competency Evidence workspace redesign, and the first artefact Markdown preview quality pass. |
 | 2 | Inbox follow-ons | Active | `docs/exec-plans/active/inbox-follow-up.md` | Validate review-readiness behavior in use, then scope provider-backed ingestion only if needed. |
-| 3 | Job Workspace reduction | Active | `docs/exec-plans/active/job-workspace-reduction.md` | Run any remaining larger-viewport manual validation, then close or defer minor polish. |
-| 4 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | G4 save-back, compact provenance, and model-backed evidence-link history are implemented; employer rubric mapping waits for document handling foundation. |
-| 5 | AI provider expansion | Active | `docs/exec-plans/active/provider-expansion.md` | Anthropic, minimum-input provider setup, and model discovery are implemented; next slice is provider polish from real use or document handling needs. |
-| 6 | Document Handling Foundation | Active planning | `docs/exec-plans/active/document-handling-foundation.md` | Start the free-text Markdown rendering audit before renderer, schema, extraction, search, or export work. |
-| 7 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape after document source/Markdown/provenance rules are stable. |
-| 8 | Admin, restore, and self-hosted operations | Active planning | `docs/exec-plans/active/admin-restore-ops.md` | Inventory restore and operations gaps, then add restore validation and operational smoke coverage. |
-| 9 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
+| 3 | Job Workspace reduction | Active | `docs/exec-plans/active/job-workspace-reduction.md` | Core pane cleanup and QA-driven polish are complete; next work should follow the dedicated section-workbench plan rather than ad hoc workspace patches. |
+| 4 | Job Detail section workbenches | Active | `docs/exec-plans/active/job-detail-section-workbenches.md` | Define and then implement compact workbenches for Application, Interviews, Follow-Ups, Tasks, and Notes one section at a time. |
+| 5 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | Pasted-text employer rubric mapping is implemented; keep uploaded rubric documents and outcome-aware refinement deferred until real usage or document-handling needs justify them. |
+| 6 | AI provider expansion | Active | `docs/exec-plans/active/provider-expansion.md` | Anthropic, minimum-input provider setup, and model discovery are implemented; next slice is provider polish from real use or document handling needs. |
+| 7 | Document Handling Foundation | Active planning | `docs/exec-plans/active/document-handling-foundation.md` | Shared renderer now covers AI outputs and Job Workspace descriptions; artefact access is formalized behind a no-schema Markdown contract and the next slice should build on that boundary. |
+| 8 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape after document source/Markdown/provenance rules are stable. |
+| 9 | Admin, restore, and self-hosted operations | Active planning | `docs/exec-plans/active/admin-restore-ops.md` | Inventory restore and operations gaps, then add restore validation and operational smoke coverage. |
+| 10 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
 
-## Planning Harness Cleanup And Doc Consolidation
+Harness cleanup baseline is complete. Historical context now lives in
+`docs/exec-plans/completed/harness-adoption-and-validator.md`; keep `bash scripts/validate-harness.sh`
+passing and continue moving finished plans out of `docs/exec-plans/active/` promptly.
 
-Goal: keep future sessions from restarting from stale roadmap surfaces.
+## UI Density, Layout, And AI Surface Cleanup
+
+Goal: incorporate the latest UI QA backlog into repository-owned planning and make the core
+authenticated pages cleaner, denser, and more action-oriented without changing workflow semantics.
+
+Next slices:
+
+1. Compact page headers are implemented for Focus, Inbox, Board, Add Job, Paste Email, Settings,
+   Artefacts, and Competency Evidence.
+2. Focus counters and priority surfaces are compact and actionable.
+3. Inbox cards and right rail are compacted.
+4. Board count/subtext duplication is removed.
+5. Job Workspace AI, navigation, and document layout cleanup is complete for the current QA pass.
+6. Competency Evidence workspace redesign is complete.
+7. The first artefact Markdown preview quality pass is complete.
+8. Job Detail section workbenches now continue through a dedicated active plan instead of this
+   cleanup checklist.
 
 Acceptance criteria:
 
-- `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and this file are the
-  only current planning hubs.
-- README, AGENTS, product brief, agent index, and architecture index route readers to the three
-  hubs.
-- Superseded planning docs are archived or clearly marked historical.
-- Completed execution plans are moved out of `docs/exec-plans/active/`.
+- Main page headers use compact title-first hierarchy.
+- Primary actions remain visible and unchanged.
+- UI changes preserve owner scoping, route compatibility, and AI non-mutation rules.
+- Browser validation is included for layout-affecting slices when feasible.
 
 Validation:
 
 ```sh
 bash scripts/validate-harness.sh
+git diff --check
 ```
-
-Also run a targeted `rg` stale-reference scan for old "start here", public-roadmap, and
-multi-roadmap guidance in README, AGENTS, agent docs, product brief, architecture index, and
-roadmap docs.
 
 Supporting docs:
 
-- `docs/agent/doc-maintenance.md`
-- `docs/quality/technical-debt.md`
-- `docs/quality/quality-score.md`
+- `docs/exec-plans/active/ui-density-layout-ai-cleanup.md`
+- `docs/agent/ui-ux-rules.md`
+- `docs/design/DESIGN_SYSTEM.md`
+- `docs/exec-plans/active/job-workspace-reduction.md`
+- `docs/exec-plans/active/job-detail-section-workbenches.md`
 
 ## Inbox Follow-Ons
 
@@ -84,8 +100,9 @@ Goal: make the Job Workspace calmer and easier to execute from, especially on na
 Next slices:
 
 1. Run any remaining larger-viewport manual checks not covered by the available browser viewport.
-2. Polish Tasks, Notes, and Documents only where validation exposes usability issues.
-3. Reassess utility cards only after validation is complete.
+2. Treat further section redesign through `docs/exec-plans/active/job-detail-section-workbenches.md`
+   rather than ad hoc workspace polish.
+3. Reassess utility cards only after section-workbench changes expose a concrete need.
 
 Acceptance criteria:
 
@@ -120,13 +137,16 @@ Current status:
    evidence references in output metadata, and model-backed evidence-link history.
 3. The model-backed evidence-link history stores generation-time evidence snapshots for later reuse
    reporting, audit, and outcome-aware refinement.
-4. Outcome-aware refinement remains deferred until evidence reuse has real usage.
+4. Employer rubric mapping is implemented for the first pasted-text slice through visible
+   `employer_competency_mapping` output in the competency library.
+5. Outcome-aware refinement remains deferred until evidence reuse has real usage.
 
 Next slices:
 
 1. Keep outcome-aware refinement deferred until evidence-link history has real usage.
-2. Add employer competency rubric mapping only after shared Markdown rendering and AI-output
-   Markdown display land through Document Handling Foundation.
+2. Keep uploaded rubric documents deferred until artefact/document handling reuse is explicit.
+3. Revisit rubric mapping only when real usage exposes gaps in preparation output or source
+   handling.
 
 Acceptance criteria:
 
@@ -199,14 +219,18 @@ document-heavy AI, artefact, rubric, search, export, or background automation wo
 
 Next slices:
 
-1. Import the document handling strategy, architecture, task map, and ADR as supporting references.
-2. Run the free-text Markdown rendering audit before implementation.
-3. Add one shared safe Markdown renderer and use it on AI outputs plus one low-risk audited surface.
-4. Standardize AI output bodies as Markdown rendered through the shared viewer.
-5. Plan artefact Markdown representation with source preservation, extraction status, confidence,
-   lineage, and source/Markdown UI notes.
-6. Keep employer rubric mapping visible as a future competency-evidence slice that depends on
-   shared Markdown rendering and AI-output Markdown display.
+1. Free-text Markdown rendering audit is complete. Historical audit:
+   `docs/exec-plans/completed/free-text-markdown-rendering-audit.md`.
+2. A shared safe Markdown renderer now covers AI outputs and Job Workspace
+   `Job.description_raw`.
+3. First artefact Markdown representation slice is complete in
+   `docs/exec-plans/completed/artefact-markdown-representation.md`.
+4. Keep current artefact behaviour computed/no-schema and route future feature work through the
+   Markdown access contract instead of direct extraction helpers.
+5. Move to persisted Markdown records only when the decision triggers in
+   `docs/architecture/decisions/2026-05-02-artefact-markdown-access-contract.md` are met.
+6. Keep uploaded rubric documents and richer rubric-source handling deferred until artefact/document
+   handling reuse is explicit.
 7. Defer search, FTS, embeddings, DOCX export, and PDF export until explicit decision docs exist.
 
 Acceptance criteria:
@@ -233,7 +257,9 @@ Supporting docs:
 - `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`
 - `docs/DOCUMENT_HANDLING_TASK_MAP.md`
 - `docs/architecture/decisions/2026-05-02-markdown-first-document-handling.md`
-- `docs/exec-plans/active/free-text-markdown-rendering-audit.md`
+- `docs/architecture/decisions/2026-05-02-artefact-markdown-access-contract.md`
+- `docs/exec-plans/completed/free-text-markdown-rendering-audit.md`
+- `docs/exec-plans/completed/artefact-markdown-representation.md`
 
 ## Scheduler And Worker
 

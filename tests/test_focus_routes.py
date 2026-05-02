@@ -44,6 +44,13 @@ def test_focus_empty_state_prompts_for_profile(tmp_path: Path, monkeypatch) -> N
 
         assert response.status_code == 200
         assert "<h1>Focus</h1>" in response.text
+        assert "Focus queue" not in response.text
+        assert '<a class="metric-card" href="#due-follow-ups"><strong>0</strong><span>Due follow-ups</span></a>' in response.text
+        assert '<a class="metric-card" href="#artefact-reviews"><strong>0</strong><span>Artefact reviews</span></a>' in response.text
+        assert '<a class="metric-card" href="#stale-active-jobs"><strong>0</strong><span>Stale jobs</span></a>' in response.text
+        assert '<a class="metric-card" href="#upcoming-interviews"><strong>0</strong><span>Upcoming interviews</span></a>' in response.text
+        assert '<a class="metric-card" href="/board?workflow=in_progress"><strong>0</strong><span>Active jobs</span></a>' in response.text
+        assert '<article class="focus-card span-wide" id="recent-prospects">' in response.text
         assert "Complete your job-search profile" in response.text
         assert "No due follow-ups." in response.text
         assert "No stale active jobs." in response.text
@@ -233,7 +240,8 @@ def test_focus_renders_visible_ai_nudge_for_priority_job(tmp_path: Path, monkeyp
         assert response.status_code == 200
         assert "AI nudge" in response.text
         assert "Priority role" in response.text
-        assert "gemini-flash-latest" in response.text
+        assert "gemini-flash-latest" not in response.text
+        assert "AI only creates a visible note" not in response.text
         assert "Email the recruiter today" in response.text
         assert "<strong>Email the recruiter today</strong>" in response.text
         assert 'action="/focus/ai-nudge"' in response.text

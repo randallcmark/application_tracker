@@ -41,14 +41,6 @@ WORKFLOW_LABELS = {
     "archived": "Archived",
 }
 
-WORKFLOW_PROMPTS = {
-    "prospects": "Decide what deserves attention.",
-    "in_progress": "Keep applications moving.",
-    "outcomes": "Review decisions and close the loop.",
-    "all": "Scan every active opportunity.",
-    "archived": "Review work removed from the board.",
-}
-
 STATUS_HINTS = {
     "saved": "Fresh leads waiting for a decision.",
     "interested": "Worth time and preparation.",
@@ -165,22 +157,6 @@ def _refined_workflow_nav(current_workflow: str) -> str:
     return "\n".join(links)
 
 
-def _refined_status_summary(jobs_by_status: dict[str, list[Job]], statuses: Iterable[str]) -> str:
-    items = []
-    for job_status in statuses:
-        label = BOARD_LABELS[job_status]
-        count = len(jobs_by_status[job_status])
-        items.append(
-            f"""
-            <div class="metric">
-              <strong>{count}</strong>
-              <span>{escape(label)}</span>
-            </div>
-            """
-        )
-    return "\n".join(items)
-
-
 def _refined_action_buttons(job: Job) -> str:
     buttons = []
     for target_status, label in REFINED_STATUS_ACTIONS.get(job.status, ()):
@@ -241,13 +217,13 @@ def _refined_item(job: Job, *, draggable: bool = False, show_status: bool = True
 
 
 def _refined_lane(status_name: str, jobs: Iterable[Job]) -> str:
-    cards = "\n".join(_refined_item(job, draggable=True, show_status=False) for job in jobs)
+    job_list = list(jobs)
+    cards = "\n".join(_refined_item(job, draggable=True, show_status=False) for job in job_list)
     empty = '<p class="empty refined-empty">Nothing here.</p>' if not cards else ""
     return f"""
     <section class="refined-lane" data-status="{escape(status_name, quote=True)}">
       <header>
-        <h2>{escape(BOARD_LABELS[status_name])}</h2>
-        <span>{escape(STATUS_HINTS[status_name])}</span>
+        <h2>{escape(BOARD_LABELS[status_name])} <span class="lane-count">{len(job_list)}</span></h2>
       </header>
       <div class="refined-lane-body">
         {cards}
@@ -325,8 +301,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     .workflow-tabs,
-    .item-actions,
-    .metrics {{
+    .item-actions {{
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
@@ -367,34 +342,6 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
       margin-bottom: 14px;
     }}
 
-    .metrics {{
-      margin-bottom: 18px;
-    }}
-
-    .metric {{
-      background: rgba(255,255,255,0.86);
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-sm);
-      flex: 0 0 auto;
-      min-width: 126px;
-      padding: 12px;
-    }}
-
-    .metric strong {{
-      display: block;
-      font-size: 1.6rem;
-      font-weight: 500;
-      line-height: 1;
-      margin-bottom: 5px;
-    }}
-
-    .metric span {{
-      color: var(--muted);
-      font-size: 0.86rem;
-      font-weight: 500;
-    }}
-
     .refined-list,
     .refined-lane-body {{
       display: grid;
@@ -420,14 +367,28 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     }}
 
     .refined-lane header {{
-      display: grid;
-      gap: 3px;
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
       padding: 4px 2px 10px;
     }}
 
     h2 {{
       font-size: 0.98rem;
       line-height: 1.25;
+    }}
+
+    .lane-count {{
+      border: 0.5px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1;
+      margin-left: 8px;
+      padding: 4px 7px;
+      vertical-align: middle;
     }}
 
     .refined-item {{
@@ -636,8 +597,7 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         grid-template-columns: repeat({len(statuses)}, minmax(260px, 86vw));
       }}
 
-      .workflow-tabs,
-      .metrics {{
+      .workflow-tabs {{
         flex-wrap: nowrap;
         overflow-x: auto;
         padding-bottom: 5px;
@@ -669,10 +629,6 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
     <nav class="workflow-tabs" aria-label="Workflow views">
       {_refined_workflow_nav(workflow)}
     </nav>
-
-    <section class="metrics" aria-label="Workflow summary">
-      {_refined_status_summary(jobs_by_status, statuses)}
-    </section>
 
     <p class="notice" role="status" aria-live="polite"></p>
     <div class="refined-board" data-statuses="{escape(status_list, quote=True)}">
@@ -807,11 +763,10 @@ def render_refined_board(user: User, jobs: list[Job], *, workflow: str = "in_pro
         user,
         page_title=workflow_label,
         title=workflow_label,
-        subtitle=WORKFLOW_PROMPTS[workflow],
+        subtitle="",
         active="board",
         actions=(("Add job", "/jobs/new", "add-job"),),
         body=body,
-        kicker="Active work",
         goal=f"<span>Workflow:</span> <strong>{escape(workflow_label)}</strong>",
         container="kanban",
         extra_styles=extra_styles,
