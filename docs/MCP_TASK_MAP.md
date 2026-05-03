@@ -4,7 +4,7 @@
 
 This task map breaks MCP exploration into safe, reviewable tasks.
 
-The first tasks are planning and contract definition only. Runtime implementation should follow only after the taxonomy, security, and interaction model are agreed.
+The first tasks are planning and contract definition only. Runtime implementation should follow only after the taxonomy, OAuth/DCR prerequisite, security, and interaction model are agreed.
 
 ---
 
@@ -76,7 +76,40 @@ Constraints:
 
 ---
 
-## Task 3: MCP deployment decision
+## Task 3: OAuth 2.0 and Dynamic Client Registration prerequisite
+
+### Goal
+
+Design the OAuth/DCR foundation required before production MCP runtime exposure.
+
+### Deliverables
+
+- `docs/MCP_OAUTH_DCR_PLAN.md`
+- later implementation execution plan for OAuth/DCR
+
+### Include
+
+- Dynamic Client Registration
+- Authorization Code with PKCE where applicable
+- registered client records
+- redirect URI validation
+- scope consent
+- token issuance, expiry, and revocation
+- client revocation
+- client management UI
+- owner-scoped resource access
+- tests for insufficient scope and revoked clients
+
+### Acceptance criteria
+
+- MCP runtime is not treated as a simple static-token feature
+- development-only token shortcuts are clearly labelled non-production
+- scopes map to MCP tool permissions
+- user consent and revocation are explicitly planned
+
+---
+
+## Task 4: MCP deployment decision
 
 ### Goal
 
@@ -97,12 +130,39 @@ Decide whether MCP starts as embedded server, sidecar, or local CLI server.
 
 - QNAP/local Docker deployment considered
 - network exposure considered
-- auth/token model considered
+- OAuth/DCR model considered
 - first implementation mode selected
 
 ---
 
-## Task 4: MCP V1 read-only prototype
+## Task 5: OAuth/DCR foundation implementation
+
+### Goal
+
+Implement the minimum auth foundation needed before exposing production MCP tools.
+
+### Scope
+
+- client registration model
+- client registration endpoint or documented self-hosted equivalent
+- authorization/consent flow
+- scoped token issuance
+- token revocation
+- scope enforcement helper
+- audit metadata foundation
+
+### Acceptance criteria
+
+- clients are registered before production MCP access
+- tokens are scoped and revocable
+- owner scoping is enforced
+- consent records are stored
+- insufficient scopes are rejected
+- revoked clients/tokens cannot access tools
+
+---
+
+## Task 6: MCP V1 read-only prototype
 
 ### Goal
 
@@ -113,6 +173,7 @@ Implement a minimal MCP server exposing read-only scoped context tools.
 - no writes except possibly feature-flagged stub responses
 - no AI generation
 - no workflow mutation
+- must use OAuth/DCR foundation for production mode
 
 ### Candidate tools
 
@@ -133,11 +194,12 @@ competency_evidence_list
 - tool names obey taxonomy
 - descriptions are 250 characters or fewer
 - tests cover unauthorised access
+- tests cover insufficient scope
 - docs explain local setup
 
 ---
 
-## Task 5: MCP visible output write tool
+## Task 7: MCP visible output write tool
 
 ### Goal
 
@@ -164,12 +226,13 @@ ai_output_create
 - no workflow state mutation
 - Markdown sanitized on render
 - output is marked `created_via = mcp`
+- client id is recorded where available
 - owner scoped
 - tests cover invalid ownership and missing permissions
 
 ---
 
-## Task 6: First external-reasoning workflow validation
+## Task 8: First external-reasoning workflow validation
 
 ### Goal
 
@@ -191,12 +254,13 @@ ai_output_create
 - job fit report can be created without app-owned provider call
 - output is visible in Job Workspace
 - source context is preserved
+- client id/tool metadata is preserved
 - no job status changes
 - flow is documented
 
 ---
 
-## Task 7: MCP V2 UI-operation read tools
+## Task 9: MCP V2 UI-operation read tools
 
 ### Goal
 
@@ -222,11 +286,12 @@ ai_output_list
 - tools map to real UI data needs
 - tools return compact summaries by default
 - tools obey naming and description constraints
+- tools require appropriate OAuth scopes
 - no mutation tools included
 
 ---
 
-## Task 8: Higher-level workflow tools
+## Task 10: Higher-level workflow tools
 
 ### Goal
 
@@ -254,7 +319,7 @@ For the API-token friction problem, prefer external AI reasoning first.
 
 ---
 
-## Task 9: Deferred mutation tools and headless guardrails
+## Task 11: Deferred mutation tools and headless guardrails
 
 ### Goal
 
@@ -289,7 +354,7 @@ ai_output_promote
 Start with docs only:
 
 ```text
-Add MCP integration strategy, architecture, security model, taxonomy-driven tool contracts, and task map. Do not implement runtime MCP support yet.
+Add MCP integration strategy, architecture, OAuth/DCR prerequisite plan, security model, taxonomy-driven tool contracts, and task map. Do not implement runtime MCP support yet.
 ```
 
-This lets the project settle interaction, security, and naming before code is added.
+This lets the project settle interaction, security, naming, and auth prerequisites before code is added.
