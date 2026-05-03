@@ -20,6 +20,7 @@ The goal is to allow external AI clients to interact with Application Tracker th
 8. Owner scoping is mandatory.
 9. MCP must not bypass existing auth, permission, or provenance rules.
 10. The app must still work with no AI and no MCP.
+11. Production-quality MCP requires OAuth 2.0 with Dynamic Client Registration or a documented self-hosted equivalent.
 
 ---
 
@@ -27,6 +28,8 @@ The goal is to allow external AI clients to interact with Application Tracker th
 
 ```text
 External AI Client
+        ↓
+OAuth/DCR client registration and consent
         ↓
 MCP Server / Adapter
         ↓
@@ -53,6 +56,7 @@ Pros:
 - shares configuration and services
 - easiest local deployment
 - fewer moving parts
+- can share OAuth/DCR implementation with the web app
 
 Cons:
 
@@ -74,6 +78,7 @@ Cons:
 - more deployment complexity
 - needs shared config/auth
 - needs service-to-service access to app or DB
+- must integrate with OAuth/DCR or delegate auth to the app
 
 ### Option C: MCP CLI/server launched locally by user
 
@@ -89,6 +94,7 @@ Cons:
 - harder setup
 - less friendly for QNAP/headless deployment
 - depends on user machine availability
+- may still need OAuth/DCR for standards-compatible external clients
 
 ### Recommendation
 
@@ -108,52 +114,46 @@ Do not expose MCP publicly by default.
 
 ---
 
-## Authentication model
+## Authentication and authorization model
 
-MCP should use explicit user-created tokens or local-only trust boundaries.
+MCP should use OAuth 2.0 with Dynamic Client Registration for production-quality support.
 
-Possible approaches:
+Static tokens or local-only trust may be acceptable for constrained development mode, but they are not the production model.
 
-### API token approach
-
-Use existing scoped API tokens if they support enough permissions.
-
-Create specific scopes such as:
+Application Tracker should conceptually act as:
 
 ```text
-mcp:read_profile
-mcp:read_jobs
-mcp:read_artefacts
-mcp:read_competencies
-mcp:read_focus
-mcp:write_ai_outputs
+Authorization Server
+  registers MCP clients
+  collects user consent
+  issues scoped tokens
+
+Resource Server
+  serves MCP tools and resources
+  enforces scopes and owner access
 ```
 
-Default token should be read + write AI outputs only.
+In a small self-hosted deployment these may run inside the same FastAPI app.
 
-### Local session approach
+---
 
-Only allow MCP from localhost with authenticated app session.
+## OAuth/DCR responsibilities
 
-This is convenient but harder to reason about for headless deployment.
+The architecture needs support for:
 
-### Dedicated MCP token approach
+- dynamic client registration
+- registered client records
+- redirect URI validation
+- Authorization Code with PKCE for user-facing clients where applicable
+- scoped access tokens
+- token expiry
+- token revocation
+- client revocation
+- consent records
+- client management UI
+- audit logging
 
-Create a dedicated token type for MCP.
-
-This is probably best long term.
-
-Fields:
-
-```text
-token_id
-owner_id
-name
-scopes
-created_at
-last_used_at
-revoked_at
-```
+See `docs/MCP_OAUTH_DCR_PLAN.md`.
 
 ---
 
@@ -203,7 +203,7 @@ If the app performs the model call, these require app AI provider configuration.
 - mark follow-up complete
 - archive job
 
-Initial implementation should stop at Tier 2.
+Initial production implementation should not expose runtime tools until OAuth/DCR foundations are in place. A constrained local prototype may stop at Tier 2.
 
 ---
 
@@ -266,6 +266,7 @@ Headless mode should mean agent-operable, not uncontrolled.
 
 Minimum requirements:
 
+- OAuth/DCR client registration and scoped authorization
 - read-only summary tools
 - create visible Markdown output tools
 - links back into the UI for review
@@ -282,6 +283,7 @@ Every MCP-created output should record:
 
 ```text
 created_via = mcp
+client_id
 tool_name
 tool_version
 mcp_client_name if available
@@ -297,17 +299,19 @@ Do not store full external AI conversation transcripts by default.
 
 ## Initial implementation target
 
-Start with a planning/prototype slice:
+Start with planning and prerequisites:
 
 1. Document MCP architecture and security model.
 2. Define tool taxonomy and V1 tool contracts.
-3. Decide deployment mode.
-4. Implement no MCP runtime yet unless approved.
+3. Add OAuth/DCR architecture and task plan.
+4. Decide deployment mode.
+5. Implement no production runtime MCP support until auth prerequisites are designed.
 
-Then first technical slice:
+Then first technical slices:
 
-1. MCP disabled by default.
-2. Expose read-only V1 context tools.
-3. Add `ai_output_create` as the only write tool.
-4. Store generated Markdown as visible output with `created_via = mcp`.
-5. Do not mutate workflow state.
+1. OAuth/DCR foundation.
+2. MCP disabled by default.
+3. Expose read-only V1 context tools behind scoped authorization.
+4. Add `ai_output_create` as the only write tool.
+5. Store generated Markdown as visible output with `created_via = mcp`.
+6. Do not mutate workflow state.
