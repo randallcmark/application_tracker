@@ -1,4 +1,4 @@
-# Codex Task: Plan MCP Integration With Tool Taxonomy
+# Codex Task: Plan MCP Integration With Tool Taxonomy and OAuth DCR
 
 ## Goal
 
@@ -27,6 +27,30 @@ The existing AI principles must remain true:
 
 ---
 
+## OAuth/DCR prerequisite
+
+Production-quality MCP runtime support requires OAuth 2.0 with Dynamic Client Registration, or a deliberate documented equivalent for constrained self-hosted deployments.
+
+MCP must not be planned as a simple static API-token integration for production use.
+
+The plan must cover:
+
+- Dynamic Client Registration
+- Authorization Code with PKCE where applicable
+- registered client records
+- redirect URI validation
+- user consent
+- OAuth scopes mapped to MCP permissions
+- token expiry
+- token revocation
+- client revocation
+- client management UI
+- audit logging
+
+Static tokens may be acceptable only for local development mode and must be clearly marked as non-production.
+
+---
+
 ## Core question
 
 Can Application Tracker support an MCP mode where:
@@ -35,6 +59,7 @@ Can Application Tracker support an MCP mode where:
 - the user's external AI client performs reasoning/generation
 - the AI client calls MCP tools to save visible Markdown outputs back into the app
 - the app avoids requiring its own provider API key for these workflows
+- access is granted through OAuth/DCR-compatible client registration, consent, and scoped authorization
 
 ---
 
@@ -96,6 +121,7 @@ docs/MCP_ARCHITECTURE_PLAN.md
 docs/MCP_SECURITY_MODEL.md
 docs/MCP_TOOL_CONTRACTS.md
 docs/MCP_TASK_MAP.md
+docs/MCP_OAUTH_DCR_PLAN.md
 ```
 
 Update any relevant doc index if one exists.
@@ -112,6 +138,7 @@ The docs should cover:
 - embedded AI versus MCP-assisted AI
 - app remains system of record
 - MCP as optional mode
+- OAuth/DCR prerequisite
 - feasibility and interaction model
 - security hardening
 - domain_object_action tool taxonomy
@@ -133,12 +160,13 @@ MCP should be treated as an alternative AI execution path, not as a replacement 
 
 The safest early model is:
 
-1. expose read-only scoped context tools
-2. allow creation of visible Markdown AI outputs
-3. avoid workflow state mutation
-4. defer destructive/state-changing tools
-5. keep all writes auditable
-6. use external AI reasoning first to avoid app-owned provider API dependency
+1. design OAuth/DCR prerequisite before production runtime exposure
+2. expose read-only scoped context tools
+3. allow creation of visible Markdown AI outputs
+4. avoid workflow state mutation
+5. defer destructive/state-changing tools
+6. keep all writes auditable
+7. use external AI reasoning first to avoid app-owned provider API dependency
 
 ---
 
@@ -254,6 +282,7 @@ Headless mode should be possible eventually, but not uncontrolled.
 
 Capture guardrails:
 
+- OAuth/DCR client registration and scoped authorization
 - explicit scopes
 - visible outputs
 - audit logs
@@ -269,12 +298,13 @@ Capture guardrails:
 
 Include:
 
+- OAuth/DCR model
 - token/scopes model
 - owner scoping
 - prompt injection from external documents
 - avoiding broad data exfiltration
 - no public network exposure by default
-- token revocation
+- token and client revocation
 - auditability
 - safe Markdown rendering
 - no hidden state mutation
@@ -307,6 +337,7 @@ The task is complete when:
 
 - MCP strategy is documented
 - architecture options are documented
+- OAuth/DCR prerequisite is documented
 - security model is documented
 - tool taxonomy is documented
 - initial tool contracts are drafted
@@ -328,13 +359,14 @@ Do not claim application tests are required unless code changes are made.
 
 ## First implementation recommendation to document
 
-The recommended first technical slice should be:
+The recommended first technical sequence should be:
 
-1. MCP disabled by default.
-2. Read-only context tools.
-3. One safe write tool: `ai_output_create`.
-4. No workflow state mutation.
-5. Owner-scoped access only.
-6. Generated content saved as visible Markdown output with `created_via = mcp`.
+1. OAuth/DCR foundation.
+2. MCP disabled by default.
+3. Read-only context tools.
+4. One safe write tool: `ai_output_create`.
+5. No workflow state mutation.
+6. Owner-scoped access only.
+7. Generated content saved as visible Markdown output with `created_via = mcp`.
 
-This allows an external AI client to perform reasoning and save results back to the app without requiring the app to call a provider API.
+This allows an external AI client to perform reasoning and save results back to the app without requiring the app to call a provider API, while still preserving client registration, consent, scope enforcement, and revocation.
