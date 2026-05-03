@@ -43,19 +43,16 @@ def test_focus_empty_state_prompts_for_profile(tmp_path: Path, monkeypatch) -> N
         response = client.get("/focus")
 
         assert response.status_code == 200
-        assert "<h1>Focus</h1>" in response.text
-        assert "Focus queue" not in response.text
-        assert '<a class="metric-card" href="#due-follow-ups"><strong>0</strong><span>Due follow-ups</span></a>' in response.text
-        assert '<a class="metric-card" href="#artefact-reviews"><strong>0</strong><span>Artefact reviews</span></a>' in response.text
-        assert '<a class="metric-card" href="#stale-active-jobs"><strong>0</strong><span>Stale jobs</span></a>' in response.text
-        assert '<a class="metric-card" href="#upcoming-interviews"><strong>0</strong><span>Upcoming interviews</span></a>' in response.text
-        assert '<a class="metric-card" href="/board?workflow=in_progress"><strong>0</strong><span>Active jobs</span></a>' in response.text
-        assert '<article class="focus-card span-wide" id="recent-prospects">' in response.text
-        assert "Complete your job-search profile" in response.text
-        assert "No due follow-ups." in response.text
-        assert "No stale active jobs." in response.text
-        assert "No upcoming interviews." in response.text
-        assert "No recent saved or interested jobs." in response.text
+        assert 'data-shell-hero="shared"' not in response.text
+        assert "Complete your search profile" in response.text
+        assert "No follow-ups due — all clear." in response.text
+        assert "No stale jobs — everything is moving." in response.text
+        assert "No interviews scheduled." in response.text
+        assert "No new saved or interested jobs." in response.text
+        assert "Need next action" in response.text
+        assert 'id="at-recents-panel"' in response.text
+        assert 'class="aside-nav-list recents-list"' in response.text
+        assert "sessionStorage.getItem('at-recents')" in response.text
         assert 'href="/board"' in response.text
     finally:
         app.dependency_overrides.clear()
@@ -157,15 +154,15 @@ def test_focus_shows_owner_scoped_attention_items(tmp_path: Path, monkeypatch) -
         response = client.get("/focus")
 
         assert response.status_code == 200
-        assert "Complete your job-search profile" not in response.text
+        assert "Complete your search profile" not in response.text
         assert "Chase recruiter" in response.text
-        assert "Artefact reviews" in response.text
         assert "resume-v1.pdf" in response.text
         assert "Refresh before reuse" in response.text
         assert "Stale applied role" in response.text
         assert "Recent prospect" in response.text
         assert "technical" in response.text
         assert "Video" in response.text
+        assert "Need next action" in response.text
         assert "Other user role" not in response.text
         assert "other-user-resume.pdf" not in response.text
         assert "future-cover-letter.pdf" not in response.text
@@ -241,7 +238,6 @@ def test_focus_renders_visible_ai_nudge_for_priority_job(tmp_path: Path, monkeyp
         assert "AI nudge" in response.text
         assert "Priority role" in response.text
         assert "gemini-flash-latest" not in response.text
-        assert "AI only creates a visible note" not in response.text
         assert "Email the recruiter today" in response.text
         assert "<strong>Email the recruiter today</strong>" in response.text
         assert 'action="/focus/ai-nudge"' in response.text
@@ -324,17 +320,17 @@ def test_focus_ai_nudge_creates_visible_recommendation(tmp_path: Path, monkeypat
         )
 
         assert response.status_code == 303
-        assert "ai_status=AI%20nudge%20generated" in response.headers["location"]
+        assert "ai_status=Next%20step%20suggestion%20generated%20for%20AI%20focus%20success" in response.headers["location"]
 
         detail_response = client.get(response.headers["location"])
         assert detail_response.status_code == 200
-        assert "AI nudge generated" in detail_response.text
-        assert "Prepare a tailored CV" in detail_response.text
+        assert "Next step suggestion generated for AI focus success" in detail_response.text
 
         with session_local() as db:
             output = db.scalar(select(AiOutput))
             assert output is not None
             assert output.output_type == "recommendation"
+            assert "Prepare a tailored CV" in output.body
             assert output.job.uuid == job_uuid
     finally:
         app.dependency_overrides.clear()

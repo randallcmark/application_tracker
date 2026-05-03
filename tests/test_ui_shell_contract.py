@@ -20,20 +20,22 @@ def assert_primary_shell_contract(html: str) -> None:
     assert 'data-shell-topbar="protected"' in html
     assert 'data-shell-nav="primary"' in html
     assert 'data-shell-actions="primary"' in html
-    assert ">Focus</a>" in html
-    assert ">Inbox</a>" in html
-    assert ">Board</a>" in html
-    assert ">Boa</a>" not in html
-    assert ">Boar</a>" not in html
+    assert 'href="/focus"' in html
+    assert 'href="/inbox"' in html
+    assert 'href="/board"' in html
+    assert "<span>Focus</span>" in html
+    assert "<span>Inbox</span>" in html
+    assert "<span>Board</span>" in html
     assert 'aria-label="User menu"' in html
     assert 'class="shell-topbar-action"' in html
     assert 'class="user-menu"' in html
     assert 'class="user-menu-panel"' in html
+    assert 'id="at-scheme-btn"' in html
     assert 'href="/competencies">Competency Evidence</a>' in html
-    assert 'data-shell-hero="shared"' in html
-    assert 'data-hero-variant="standard"' in html
     assert '.app-topbar[data-chip-state="hidden"] .header-context' in html
     assert 'requestAnimationFrame(refreshTopbar);' in html
+    assert "localStorage.getItem('at-scheme')" in html
+    assert "localStorage.getItem('at-theme')" in html
 
 
 def test_focus_shell_contract_preserves_nav_with_context_chip(tmp_path: Path, monkeypatch) -> None:
@@ -60,6 +62,7 @@ def test_focus_shell_contract_preserves_nav_with_context_chip(tmp_path: Path, mo
         assert_primary_shell_contract(response.text)
         assert 'data-has-chip="true"' in response.text
         assert 'data-shell-chip="context"' in response.text
+        assert 'data-shell-hero="shared"' not in response.text
         assert '<p class="page-kicker">' not in response.text
         assert '<p class="page-subtitle">' not in response.text
         assert "Technical Program Manager" in response.text
@@ -81,6 +84,7 @@ def test_inbox_shell_contract_keeps_shared_hero_without_chip_placeholder(tmp_pat
         assert_primary_shell_contract(response.text)
         assert 'data-has-chip="false"' in response.text
         assert 'data-shell-chip="context"' not in response.text
+        assert 'data-shell-hero="shared"' not in response.text
         assert '<p class="page-kicker">' not in response.text
         assert '<p class="page-subtitle">' not in response.text
         assert "goal-chip-slot" not in response.text
@@ -112,6 +116,7 @@ def test_board_shell_contract_keeps_nav_visible_with_workflow_chip(tmp_path: Pat
         assert_primary_shell_contract(response.text)
         assert 'data-has-chip="true"' in response.text
         assert 'data-shell-chip="context"' in response.text
+        assert 'data-shell-hero="shared"' not in response.text
         assert "Workflow:" in response.text
         assert '<p class="page-kicker">' not in response.text
         assert '<p class="page-subtitle">' not in response.text
@@ -127,21 +132,25 @@ def test_main_authenticated_pages_use_compact_headers(tmp_path: Path, monkeypatc
             db.commit()
         login(client, "jobseeker@example.com")
 
-        compact_pages = {
-            "/focus": "Focus",
-            "/inbox": "Inbox",
-            "/board": "In Progress",
+        title_pages = {
             "/jobs/new": "Add job",
             "/inbox/email/new": "Paste email",
             "/settings": "Settings",
             "/artefacts": "Artefacts",
             "/competencies": "Competency Evidence",
         }
-        for route, title in compact_pages.items():
+        for route, title in title_pages.items():
             response = client.get(route)
 
             assert response.status_code == 200
             assert f"<h1>{title}</h1>" in response.text
+            assert '<p class="page-kicker">' not in response.text
+            assert '<p class="page-subtitle">' not in response.text
+        for route in ("/focus", "/inbox", "/board"):
+            response = client.get(route)
+
+            assert response.status_code == 200
+            assert 'data-shell-hero="shared"' not in response.text
             assert '<p class="page-kicker">' not in response.text
             assert '<p class="page-subtitle">' not in response.text
     finally:

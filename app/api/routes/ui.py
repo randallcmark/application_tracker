@@ -14,6 +14,62 @@ PRIMARY_NAV: tuple[NavLink, ...] = (
 )
 
 
+def _icon(path: str, *, w: int = 15, h: int = 15) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+        f'viewBox="0 0 20 20" fill="none" stroke="currentColor" '
+        f'stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" '
+        f'aria-hidden="true">{path}</svg>'
+    )
+
+
+ICON_PLUS = _icon(
+    '<line x1="10" y1="3" x2="10" y2="17"/>'
+    '<line x1="3" y1="10" x2="17" y2="10"/>',
+    w=14, h=14,
+)
+ICON_FOCUS = _icon(
+    '<circle cx="10" cy="10" r="2.5"/>'
+    '<circle cx="10" cy="10" r="7.5"/>'
+    '<line x1="10" y1="1" x2="10" y2="4.5"/>'
+    '<line x1="10" y1="15.5" x2="10" y2="19"/>'
+    '<line x1="1" y1="10" x2="4.5" y2="10"/>'
+    '<line x1="15.5" y1="10" x2="19" y2="10"/>',
+    w=14, h=14,
+)
+ICON_INBOX = _icon(
+    '<path d="M3 10h4l1.5 2.5h3L13 10h4"/>'
+    '<rect x="2" y="4" width="16" height="13" rx="1.5"/>',
+    w=14, h=14,
+)
+ICON_BOARD = _icon(
+    '<rect x="2" y="2" width="6" height="16" rx="1.5"/>'
+    '<rect x="12" y="2" width="6" height="10" rx="1.5"/>',
+    w=14, h=14,
+)
+ICON_SETTINGS = _icon(
+    '<circle cx="10" cy="10" r="2.5"/>'
+    '<path d="M10 1.5v2.5M10 16v2.5M1.5 10H4M16 10h2.5'
+    'M4.4 4.4l1.8 1.8M13.8 13.8l1.8 1.8M4.4 15.6l1.8-1.8M13.8 6.2l1.8-1.8"/>',
+    w=14, h=14,
+)
+ICON_USER = _icon(
+    '<circle cx="10" cy="6.5" r="3.5"/>'
+    '<path d="M2.5 18a7.5 7.5 0 0115 0"/>',
+    w=14, h=14,
+)
+ICON_CHEVRON_DOWN = _icon(
+    '<polyline points="5 8 10 13 15 8"/>',
+    w=13, h=13,
+)
+
+_NAV_ICONS: dict[str, str] = {
+    "focus": ICON_FOCUS,
+    "inbox": ICON_INBOX,
+    "board": ICON_BOARD,
+}
+
+
 def shell_token_styles() -> str:
     return """
     :root {
@@ -32,17 +88,30 @@ def shell_token_styles() -> str:
       --soft-text: #7e90a5;
       --line: #d7dee8;
       --line-soft: #e7edf3;
-      --accent: #1e73d9;
-      --accent-strong: #105ec0;
-      --accent-soft: #edf5ff;
-      --danger: #e25b4c;
-      --danger-soft: rgba(226, 91, 76, 0.12);
-      --amber: #e39b3d;
-      --amber-soft: rgba(227, 155, 61, 0.14);
-      --success: #3ba786;
-      --success-soft: rgba(59, 167, 134, 0.14);
-      --ai-bg: #e8efff;
-      --ai-line: #c6d6f4;
+      --accent: #4F67E4;
+      --accent-strong: #2D3A9A;
+      --accent-soft: #E8EBF8;
+      --danger: #D64535;
+      --danger-soft: #FDEFED;
+      --amber: #E8A020;
+      --amber-soft: #FDF3E6;
+      --success: #2A8A58;
+      --success-soft: #EAF4EE;
+      --ai-bg: #E8EBF8;
+      --ai-line: #C3CCF0;
+      --border-width: 0.5px;
+      --border-default: 0.5px solid rgba(0,0,0,0.10);
+      --border-hover: 0.5px solid rgba(0,0,0,0.22);
+      --transition-fast: 120ms ease-out;
+      --transition-base: 200ms ease-out;
+      --transition-slow: 350ms ease-out;
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 12px;
+      --space-lg: 16px;
+      --space-xl: 24px;
+      --space-2xl: 32px;
+      --space-3xl: 48px;
       --shadow-xl: 0 28px 70px rgba(16, 34, 52, 0.20);
       --shadow-lg: 0 16px 40px rgba(16, 34, 52, 0.12);
       --shadow-md: 0 10px 24px rgba(16, 34, 52, 0.10);
@@ -51,7 +120,7 @@ def shell_token_styles() -> str:
       --radius-2xl: 18px;
       --radius-xl: 16px;
       --radius-lg: 14px;
-      --radius-md: 12px;
+      --radius-md: 10px;
       --radius-sm: 8px;
       --topbar-h: 78px;
       --content-gap: 22px;
@@ -124,7 +193,7 @@ def shell_token_styles() -> str:
     .app-topbar {
       align-items: center;
       background: rgba(255,255,255,0.78);
-      border-bottom: 1px solid var(--line);
+      border-bottom: var(--border-default);
       display: flex;
       gap: 16px;
       min-height: var(--topbar-h);
@@ -170,33 +239,46 @@ def shell_token_styles() -> str:
     }
 
     .app-nav a {
+      align-items: center;
+      border: 0.5px solid transparent;
       border-radius: 10px;
       color: var(--muted);
       display: inline-flex;
       flex: 0 0 auto;
-      font-size: 0.98rem;
-      font-weight: 600;
-      min-height: 42px;
-      padding: 0 12px;
-      position: relative;
+      font-size: 0.9rem;
+      font-weight: 400;
+      gap: 6px;
+      min-height: 34px;
+      padding: 0 10px;
+      transition: color var(--transition-fast), background var(--transition-fast);
       white-space: nowrap;
-      align-items: center;
+    }
+
+    .app-nav a:hover:not(.active) {
+      background: var(--surface-muted);
+      color: var(--ink);
+    }
+
+    .app-nav a svg {
+      flex-shrink: 0;
+      opacity: 0.72;
+      transition: opacity var(--transition-fast);
+    }
+
+    .app-nav a:hover svg,
+    .app-nav a.active svg {
+      opacity: 1;
     }
 
     .app-nav a.active {
-      color: var(--ink);
-      font-weight: 800;
+      background: var(--accent-soft);
+      border-color: #C3CCF0;
+      color: var(--accent-strong);
+      font-weight: 500;
     }
 
     .app-nav a.active::after {
-      background: var(--accent);
-      border-radius: 999px;
-      bottom: -15px;
-      content: "";
-      height: 3px;
-      left: 12px;
-      position: absolute;
-      right: 12px;
+      display: none;
     }
 
     .header-context {
@@ -210,23 +292,22 @@ def shell_token_styles() -> str:
     .header-context-chip {
       align-items: center;
       background: rgba(255,255,255,0.78);
-      border: 1px solid var(--line);
+      border: var(--border-default);
       border-radius: 999px;
       color: var(--muted);
       display: inline-flex;
       gap: 8px;
       justify-self: end;
       max-width: 100%;
-      min-height: 40px;
+      min-height: 32px;
       min-width: 0;
       overflow: hidden;
-      padding: 0 14px;
-      box-shadow: var(--shadow-sm);
+      padding: 0 12px;
     }
 
     .header-context-chip strong {
       color: var(--ink);
-      font-weight: 800;
+      font-weight: 500;
     }
 
     .header-context-chip span,
@@ -295,21 +376,37 @@ def shell_token_styles() -> str:
       border-radius: var(--radius-md);
       display: inline-flex;
       font: inherit;
-      font-weight: 700;
+      font-weight: 500;
+      gap: 6px;
       justify-content: center;
-      min-height: 40px;
-      padding: 0 16px;
+      padding: 6px 14px;
       white-space: nowrap;
+    }
+
+    .button svg,
+    .btn svg,
+    button svg,
+    .secondary svg,
+    .ghost svg,
+    .icon-btn svg {
+      flex-shrink: 0;
     }
 
     .button,
     .btn,
     button {
-      background: linear-gradient(180deg, #2a81e7, var(--accent));
-      border: 1px solid #1b6fce;
-      box-shadow: var(--shadow-sm);
+      background: var(--accent);
+      border: 0.5px solid var(--accent-strong);
+      box-shadow: none;
       color: #ffffff;
       cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    .button:hover,
+    .btn:hover,
+    button:hover:not(:disabled) {
+      background: var(--accent-strong);
     }
 
     .button.secondary,
@@ -317,24 +414,23 @@ def shell_token_styles() -> str:
     .secondary,
     button.secondary {
       background: rgba(255,255,255,0.78);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-sm);
+      border: var(--border-default);
+      box-shadow: none;
       color: var(--ink);
     }
 
     .ghost,
     button.ghost {
       background: transparent;
-      border: 1px solid var(--line);
+      border: var(--border-default);
       color: var(--danger);
     }
 
     .icon-btn {
       background: rgba(255,255,255,0.78);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-sm);
+      border: var(--border-default);
       color: var(--soft-text);
-      min-width: 40px;
+      min-width: 34px;
       padding: 0;
       position: relative;
     }
@@ -364,8 +460,7 @@ def shell_token_styles() -> str:
 
     .user-menu > summary {
       background: rgba(255,255,255,0.78);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow-sm);
+      border: var(--border-default);
       color: var(--ink);
       cursor: pointer;
       gap: 10px;
@@ -390,12 +485,12 @@ def shell_token_styles() -> str:
     .avatar-mark {
       align-items: center;
       background: linear-gradient(180deg, #f0f3f8, #dfe7ef);
-      border: 1px solid var(--line);
+      border: var(--border-default);
       border-radius: 999px;
       color: var(--ink);
       display: inline-flex;
       font-size: 0.8rem;
-      font-weight: 800;
+      font-weight: 500;
       height: 28px;
       justify-content: center;
       width: 28px;
@@ -403,7 +498,7 @@ def shell_token_styles() -> str:
 
     .user-menu-panel {
       background: rgba(255,255,255,0.96);
-      border: 1px solid var(--line);
+      border: var(--border-default);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow-lg);
       display: grid;
@@ -419,10 +514,12 @@ def shell_token_styles() -> str:
 
     .user-menu-head {
       color: var(--muted);
-      font-size: 0.82rem;
-      font-weight: 600;
+      font-size: 0.78rem;
+      font-weight: 400;
+      letter-spacing: 0.05em;
       margin: 0;
       padding: 6px 8px 8px;
+      text-transform: uppercase;
     }
 
     .user-menu-panel a,
@@ -515,17 +612,17 @@ def shell_token_styles() -> str:
 
     .page-kicker {
       color: var(--soft-text);
-      font-size: 0.84rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
+      font-size: 0.78rem;
+      font-weight: 400;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
     .page-hero h1 {
-      font-size: clamp(1.95rem, 3vw, 2.55rem);
-      font-weight: 800;
+      font-size: clamp(1.65rem, 2.6vw, 2.1rem);
+      font-weight: 500;
       letter-spacing: -0.02em;
-      line-height: 1.05;
+      line-height: 1.1;
       margin: 0;
       overflow-wrap: anywhere;
     }
@@ -540,9 +637,9 @@ def shell_token_styles() -> str:
 
     .page-panel {
       background: var(--panel);
-      border: 1px solid var(--line-soft);
+      border: var(--border-default);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
+      box-shadow: var(--shadow-sm);
       display: grid;
       gap: 12px;
       overflow: hidden;
@@ -579,9 +676,9 @@ def shell_token_styles() -> str:
     }
 
     .panel-title {
-      font-size: 1.08rem;
-      font-weight: 800;
-      line-height: 1.2;
+      font-size: 1rem;
+      font-weight: 500;
+      line-height: 1.25;
       margin: 0;
     }
 
@@ -595,22 +692,23 @@ def shell_token_styles() -> str:
 
     .panel-micro {
       color: var(--soft-text);
-      font-size: 0.84rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      font-size: 0.76rem;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
 
     h2 {
-      font-size: 1.12rem;
-      font-weight: 800;
+      font-size: 1.05rem;
+      font-weight: 500;
       letter-spacing: -0.01em;
-      line-height: 1.2;
+      line-height: 1.3;
       margin: 0;
     }
 
     h3 {
-      font-size: 0.98rem;
-      font-weight: 800;
+      font-size: 0.9rem;
+      font-weight: 500;
       margin: 0;
     }
 
@@ -621,25 +719,28 @@ def shell_token_styles() -> str:
 
     label {
       display: grid;
-      font-weight: 700;
-      gap: 6px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      gap: 5px;
     }
 
     input,
     select,
     textarea {
       background: rgba(255,255,255,0.92);
-      border: 1px solid var(--line);
+      border: var(--border-default);
       border-radius: var(--radius-md);
       color: var(--ink);
       font: inherit;
-      min-height: 40px;
-      padding: 10px 12px;
+      height: 36px;
+      padding: 0 12px;
       width: 100%;
     }
 
     textarea {
-      min-height: 120px;
+      height: auto;
+      min-height: 100px;
+      padding: 8px 12px;
       resize: vertical;
     }
 
@@ -649,17 +750,17 @@ def shell_token_styles() -> str:
     }
 
     th, td {
-      border-bottom: 1px solid var(--line-soft);
-      padding: 12px 10px;
+      border-bottom: var(--border-default);
+      padding: 10px;
       text-align: left;
       vertical-align: middle;
     }
 
     th {
       color: var(--soft-text);
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
+      font-size: 0.76rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
@@ -671,17 +772,17 @@ def shell_token_styles() -> str:
 
     .metric-card {
       background: rgba(255,255,255,0.86);
-      border: 1px solid var(--line-soft);
+      border: var(--border-default);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-sm);
+      box-shadow: none;
       display: grid;
-      gap: 6px;
-      padding: 16px;
+      gap: 5px;
+      padding: 14px 16px;
     }
 
     .metric-card strong {
-      font-size: 1.65rem;
-      font-weight: 800;
+      font-size: 1.5rem;
+      font-weight: 500;
       letter-spacing: -0.02em;
     }
 
@@ -695,43 +796,42 @@ def shell_token_styles() -> str:
     .pill {
       align-items: center;
       background: var(--surface-muted);
-      border: 1px solid var(--line);
+      border: var(--border-default);
       border-radius: 999px;
       color: var(--muted);
       display: inline-flex;
-      font-size: 0.76rem;
-      font-weight: 800;
-      min-height: 28px;
-      padding: 0 10px;
+      font-size: 0.73rem;
+      font-weight: 500;
+      padding: 3px 8px;
       white-space: nowrap;
     }
 
     .status-pill.accent,
     .pill.accent {
       background: var(--accent-soft);
-      border-color: #c9daf3;
+      border-color: #C3CCF0;
       color: var(--accent-strong);
     }
 
     .status-pill.success,
     .pill.success {
       background: var(--success-soft);
-      border-color: rgba(59,167,134,0.28);
-      color: #257a61;
+      border-color: #b6dfc5;
+      color: var(--success);
     }
 
     .status-pill.warn,
     .pill.warn {
       background: var(--amber-soft);
-      border-color: rgba(227,155,61,0.32);
-      color: #b06c18;
+      border-color: #f9d9a0;
+      color: #8c5000;
     }
 
     .status-pill.danger,
     .pill.danger {
       background: var(--danger-soft);
-      border-color: rgba(226,91,76,0.32);
-      color: #c94d3e;
+      border-color: #f8c4be;
+      color: var(--danger);
     }
 
     .card-list {
@@ -740,14 +840,14 @@ def shell_token_styles() -> str:
     }
 
     .elevated-card {
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
-      border: 1px solid var(--line-soft);
+      background: #ffffff;
+      border: var(--border-default);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
+      box-shadow: none;
       display: grid;
       gap: 14px;
       overflow: hidden;
-      padding: 18px;
+      padding: 16px 18px;
     }
 
     .card-header {
@@ -779,17 +879,21 @@ def shell_token_styles() -> str:
 
     .auth-panel {
       background: rgba(255,255,255,0.94);
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius-2xl);
-      box-shadow: var(--shadow-lg);
+      border: var(--border-default);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
       display: grid;
-      gap: 18px;
-      padding: 24px;
+      gap: 16px;
+      padding: 22px 24px;
+    }
+
+    .auth-panel button {
+      width: 100%;
     }
 
     .error {
-      color: #bb4538;
-      font-weight: 700;
+      color: var(--danger);
+      font-weight: 500;
       margin: 0;
     }
 
@@ -928,6 +1032,138 @@ def shell_token_styles() -> str:
       }
     }
 
+    /* ── Preset colour themes ───────────────────────────────────────── */
+    [data-theme="ocean"]  { --accent:#0B9090; --accent-strong:#065f5f; --accent-soft:#d6f2f2; --ai-bg:#d6f2f2; --ai-line:#8fd6d6; --bg-start:#083840; --bg-mid:#0a4550; }
+    [data-theme="forest"] { --accent:#2E7D46; --accent-strong:#1a5230; --accent-soft:#e0f0e8; --ai-bg:#e0f0e8; --ai-line:#90c8a8; --bg-start:#183828; --bg-mid:#1c4030; }
+    [data-theme="rose"]   { --accent:#C0395D; --accent-strong:#8a1f3f; --accent-soft:#fde8ef; --ai-bg:#fde8ef; --ai-line:#e8a0b8; --bg-start:#481220; --bg-mid:#58192c; }
+    [data-theme="amber"]  { --accent:#B06000; --accent-strong:#7a4000; --accent-soft:#fde8c0; --ai-bg:#fde8c0; --ai-line:#d4a060; --bg-start:#3a2200; --bg-mid:#462a00; }
+    [data-theme="slate"]  { --accent:#3D5475; --accent-strong:#243550; --accent-soft:#dde4ef; --ai-bg:#dde4ef; --ai-line:#9aaac0; --bg-start:#1c2a3c; --bg-mid:#22344a; }
+    [data-theme="violet"] { --accent:#7C4DDB; --accent-strong:#5530a0; --accent-soft:#ede6fb; --ai-bg:#ede6fb; --ai-line:#b898e8; --bg-start:#281250; --bg-mid:#321a62; }
+
+    /* ── Dark mode ──────────────────────────────────────────────────── */
+    html[data-scheme="dark"] {
+      color-scheme: dark;
+      --shell-bg: rgba(12,20,34,0.97);
+      --shell-line: rgba(255,255,255,0.08);
+      --surface: #16243a;
+      --surface-soft: #1a2c40;
+      --surface-muted: #121e2e;
+      --panel: rgba(18,28,44,0.99);
+      --ink: #dce8f2;
+      --muted: #7888a2;
+      --soft-text: #4e647e;
+      --line: rgba(255,255,255,0.07);
+      --line-soft: rgba(255,255,255,0.04);
+      --border-default: 0.5px solid rgba(255,255,255,0.07);
+      --border-hover: 0.5px solid rgba(255,255,255,0.15);
+      --success-soft: #0e2618;
+      --danger-soft: #2c1012;
+      --amber-soft: #281c06;
+      --accent-soft: #18205c;
+      --ai-bg: #18205c;
+      --ai-line: #283488;
+      --shadow-xl: 0 28px 70px rgba(0,0,0,0.55);
+      --shadow-lg: 0 16px 40px rgba(0,0,0,0.42);
+      --shadow-md: 0 10px 24px rgba(0,0,0,0.36);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.32);
+    }
+    html[data-scheme="dark"] body {
+      background:
+        radial-gradient(circle at top center, rgba(18,38,70,0.15), transparent 38%),
+        linear-gradient(90deg, #07111e 0%, #0a1624 18%, #0e1a2c 58%, #0b1520 100%);
+    }
+    html[data-scheme="dark"] .scenic-backdrop {
+      background:
+        linear-gradient(to top, rgba(0,6,16,0.9), transparent 80%),
+        radial-gradient(110% 90% at 10% 100%, rgba(0,10,30,0.95), transparent 38%);
+    }
+    html[data-scheme="dark"] .app-topbar {
+      background: rgba(12,20,34,0.96);
+      border-bottom-color: rgba(255,255,255,0.06);
+    }
+    html[data-scheme="dark"] .app-window {
+      background: rgba(10,18,30,0.99);
+      border-color: rgba(255,255,255,0.06);
+    }
+    html[data-scheme="dark"] .app-brand { color: var(--ink); }
+    html[data-scheme="dark"] .app-nav a { color: var(--muted); }
+    html[data-scheme="dark"] .app-nav a.active {
+      background: rgba(79,103,228,0.18);
+      border-color: rgba(79,103,228,0.35);
+      color: #90a8ff;
+    }
+    html[data-scheme="dark"] .shell-topbar-action,
+    html[data-scheme="dark"] .user-menu > summary,
+    html[data-scheme="dark"] .icon-btn {
+      background: rgba(22,34,52,0.92);
+      border-color: rgba(255,255,255,0.09);
+      color: var(--ink);
+    }
+    html[data-scheme="dark"] .secondary,
+    html[data-scheme="dark"] button.secondary {
+      background: rgba(22,34,52,0.92);
+      border-color: rgba(255,255,255,0.09);
+      color: var(--ink);
+    }
+    html[data-scheme="dark"] .avatar-mark {
+      background: linear-gradient(180deg, #1c3050, #142440);
+      border-color: rgba(255,255,255,0.09);
+      color: var(--ink);
+    }
+    html[data-scheme="dark"] .user-menu-panel {
+      background: rgba(16,26,42,0.99);
+      border-color: rgba(255,255,255,0.09);
+    }
+    html[data-scheme="dark"] .user-menu-panel a,
+    html[data-scheme="dark"] .user-menu-panel button { color: var(--ink); }
+    html[data-scheme="dark"] .user-menu-panel a:hover,
+    html[data-scheme="dark"] .user-menu-panel button:hover { background: rgba(255,255,255,0.06); }
+    html[data-scheme="dark"] input,
+    html[data-scheme="dark"] select,
+    html[data-scheme="dark"] textarea {
+      background: var(--surface-soft);
+      border-color: rgba(255,255,255,0.08);
+      color: var(--ink);
+    }
+    html[data-scheme="dark"] .page-panel { background: var(--panel); }
+    html[data-scheme="dark"] .inbox-card,
+    html[data-scheme="dark"] .focus-section,
+    html[data-scheme="dark"] .aside-panel,
+    html[data-scheme="dark"] .stat-card,
+    html[data-scheme="dark"] .inbox-empty { background: var(--surface); }
+    html[data-scheme="dark"] .section-head { border-bottom-color: rgba(255,255,255,0.06); }
+    html[data-scheme="dark"] .focus-row { border-bottom-color: rgba(255,255,255,0.05); }
+    html[data-scheme="dark"] .aside-nav-list li { border-bottom-color: rgba(255,255,255,0.05); }
+    html[data-scheme="dark"] .focus-row:hover,
+    html[data-scheme="dark"] .aside-nav-item:hover { background: rgba(255,255,255,0.04); }
+    html[data-scheme="dark"] .header-context-chip {
+      background: rgba(22,34,52,0.92);
+      border-color: rgba(255,255,255,0.09);
+    }
+
+    /* ── Scheme toggle button ───────────────────────────────────────── */
+    #at-scheme-btn {
+      align-items: center;
+      background: rgba(255,255,255,0.78);
+      border: var(--border-default);
+      border-radius: var(--radius-md);
+      color: var(--soft-text);
+      cursor: pointer;
+      display: inline-flex;
+      flex-shrink: 0;
+      font: inherit;
+      height: 34px;
+      justify-content: center;
+      padding: 0;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+      width: 34px;
+    }
+    #at-scheme-btn:hover { color: var(--ink); }
+    html[data-scheme="dark"] #at-scheme-btn {
+      background: rgba(22,34,52,0.92);
+      border-color: rgba(255,255,255,0.09);
+    }
+
     """
 
 
@@ -957,6 +1193,7 @@ def render_public_shell_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {_fouc_script()}
   <title>{escape(page_title)} - Application Tracker</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="shortcut icon" href="/favicon.ico">
@@ -984,6 +1221,84 @@ def render_public_shell_page(
 </html>"""
 
 
+def _fouc_script() -> str:
+    return (
+        "<script>try{"
+        "var _s=localStorage.getItem('at-scheme')||'system',"
+        "_p=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';"
+        "document.documentElement.dataset.scheme=_s==='system'?_p:_s;"
+        "var _t=localStorage.getItem('at-theme')||'';"
+        "if(_t&&_t!=='custom')document.documentElement.dataset.theme=_t;"
+        "var _ca=localStorage.getItem('at-custom-accent')||'';"
+        "if(_ca){"
+        "document.documentElement.style.setProperty('--accent',_ca);"
+        "document.documentElement.style.setProperty('--accent-strong',_ca);}"
+        "}catch(e){}</script>"
+    )
+
+
+def _scheme_js() -> str:
+    sun = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20"'
+        ' fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"'
+        ' stroke-linejoin="round" aria-hidden="true">'
+        '<circle cx="10" cy="10" r="3.5"/>'
+        '<line x1="10" y1="1.5" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18.5"/>'
+        '<line x1="1.5" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18.5" y2="10"/>'
+        '<line x1="4.4" y1="4.4" x2="6.2" y2="6.2"/>'
+        '<line x1="13.8" y1="13.8" x2="15.6" y2="15.6"/>'
+        '<line x1="4.4" y1="15.6" x2="6.2" y2="13.8"/>'
+        '<line x1="13.8" y1="6.2" x2="15.6" y2="4.4"/></svg>'
+    )
+    moon = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20"'
+        ' fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"'
+        ' stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M16 10.8A7 7 0 019.2 4c0-.9.1-1.8.4-2.6A7.5 7.5 0 1018.6 10.4 7 7 0 0116 10.8z"/>'
+        '</svg>'
+    )
+    monitor = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20"'
+        ' fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"'
+        ' stroke-linejoin="round" aria-hidden="true">'
+        '<rect x="2" y="3" width="16" height="11" rx="1.5"/>'
+        '<line x1="7" y1="18" x2="13" y2="18"/>'
+        '<line x1="10" y1="14" x2="10" y2="18"/></svg>'
+    )
+    return f"""  <script>
+    (() => {{
+      const ICONS = {{ light: `{sun}`, system: `{monitor}`, dark: `{moon}` }};
+      const btn = document.getElementById('at-scheme-btn');
+      if (!btn) return;
+      function getScheme() {{ try {{ return localStorage.getItem('at-scheme') || 'system'; }} catch(e) {{ return 'system'; }} }}
+      function setScheme(s) {{
+        try {{ localStorage.setItem('at-scheme', s); }} catch(e) {{}}
+        const pref = window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.scheme = s === 'system' ? pref : s;
+        updateBtn(s);
+      }}
+      function updateBtn(s) {{
+        btn.innerHTML = ICONS[s] || ICONS.system;
+        const labels = {{ light: 'Light mode', system: 'System mode', dark: 'Dark mode' }};
+        btn.title = labels[s] || 'Colour scheme';
+        btn.setAttribute('aria-label', btn.title);
+      }}
+      btn.addEventListener('click', () => {{
+        const order = ['light', 'system', 'dark'];
+        const cur = getScheme();
+        const next = order[(order.indexOf(cur) + 1) % order.length];
+        setScheme(next);
+      }});
+      if (window.matchMedia) {{
+        window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', e => {{
+          if (getScheme() === 'system') document.documentElement.dataset.scheme = e.matches ? 'dark' : 'light';
+        }});
+      }}
+      updateBtn(getScheme());
+    }})();
+  </script>"""
+
+
 def render_shell_page(
     user: User,
     *,
@@ -1007,6 +1322,7 @@ def render_shell_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {_fouc_script()}
   <title>{escape(page_title)} - Application Tracker</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="shortcut icon" href="/favicon.ico">
@@ -1074,6 +1390,40 @@ def render_shell_page(
       requestAnimationFrame(refreshTopbar);
     }})();
   </script>
+  <script>
+    (() => {{
+      const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+      function inEditable() {{
+        const el = document.activeElement;
+        return el && (EDITABLE.has(el.tagName) || el.isContentEditable);
+      }}
+      let pending = null;
+      document.addEventListener("keydown", e => {{
+        if (e.altKey || e.ctrlKey || e.metaKey) {{
+          if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {{
+            const form = document.activeElement && document.activeElement.closest("form");
+            if (form) {{
+              const btn = form.querySelector('button[type="submit"]');
+              if (btn) {{ btn.click(); }}
+            }}
+          }}
+          return;
+        }}
+        if (inEditable()) return;
+        const key = e.key;
+        if (pending === "g") {{
+          pending = null;
+          const map = {{ f: "/focus", i: "/inbox", b: "/board", h: "/help" }};
+          if (map[key]) {{ e.preventDefault(); location.href = map[key]; }}
+          return;
+        }}
+        if (key === "g") {{ pending = "g"; setTimeout(() => {{ pending = null; }}, 1200); return; }}
+        if (key === "n") {{ e.preventDefault(); location.href = "/jobs/new"; return; }}
+        if (key === "?") {{ e.preventDefault(); location.href = "/help"; return; }}
+      }});
+    }})();
+  </script>
+  {_scheme_js()}
   {scripts}
 </body>
 </html>"""
@@ -1142,11 +1492,12 @@ def app_header(
       {goal_slot}
       <div class="topbar-actions" data-shell-actions="primary">
         {action_links}
+        <button id="at-scheme-btn" type="button" title="Colour scheme" aria-label="Toggle colour scheme"></button>
         <details class="user-menu">
           <summary class="shell-topbar-action" aria-label="User menu">
             <span class="avatar-mark">{escape(_initials(user.email))}</span>
             <span>{escape(user.email)}</span>
-            <span aria-hidden="true">⌄</span>
+            {ICON_CHEVRON_DOWN}
           </summary>
           <div class="user-menu-panel">
             <p class="user-menu-head">{escape(user.email)}</p>
@@ -1171,12 +1522,13 @@ def _initials(value: str) -> str:
 def _render_link(label: str, href: str, key: str, *, active: str | None) -> str:
     class_attr = ' class="active"' if active == key else ""
     escaped_href = escape(href, quote=True).replace("&amp;", "&")
-    return f'<a{class_attr} href="{escaped_href}">{escape(label)}</a>'
+    icon = _NAV_ICONS.get(key, "")
+    return f'<a{class_attr} href="{escaped_href}">{icon}<span>{escape(label)}</span></a>'
 
 
 def _render_action_link(label: str, href: str) -> str:
     escaped_href = escape(href, quote=True).replace("&amp;", "&")
-    return f'<a class="btn shell-topbar-action" href="{escaped_href}">{escape(label)}</a>'
+    return f'<a class="btn shell-topbar-action" href="{escaped_href}">{ICON_PLUS}<span>{escape(label)}</span></a>'
 
 
 def _render_user_menu_link(label: str, href: str, *, active: bool) -> str:

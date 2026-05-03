@@ -38,12 +38,12 @@ def test_inbox_empty_state(tmp_path: Path, monkeypatch) -> None:
         response = client.get("/inbox")
 
         assert response.status_code == 200
-        assert "<h1>Inbox</h1>" in response.text
+        assert 'data-shell-hero="shared"' not in response.text
         assert "Inbox is clear" in response.text
         assert 'href="/focus"' in response.text
         assert 'data-has-chip="false"' in response.text
         assert 'data-shell-chip="context"' not in response.text
-        assert ">Board</a>" in response.text
+        assert 'href="/board"' in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -69,14 +69,12 @@ def test_capture_job_lands_in_inbox_and_is_hidden_from_board(tmp_path: Path, mon
         board_response = client.get("/board?workflow=prospects")
 
         assert "Inbox role" in inbox_response.text
-        assert '<div class="inbox-card-main">' in inbox_response.text
+        assert '<div class="inbox-card-body">' in inbox_response.text
         assert '<div class="inbox-card-actions">' in inbox_response.text
         assert '<div class="queue-count"><strong>1</strong><span>queued</span></div>' in inbox_response.text
         assert "jobs.example.com" in inbox_response.text
         assert "medium confidence" in inbox_response.text
         assert "Open source" in inbox_response.text
-        assert "Review before effort" not in inbox_response.text
-        assert "Triage" not in inbox_response.text
         assert inbox_response.text.count('href="/inbox/email/new"') == 1
         assert 'class="source-url"' not in inbox_response.text
         assert "Inbox role" not in board_response.text
@@ -207,6 +205,7 @@ def test_email_capture_form_renders(tmp_path: Path, monkeypatch) -> None:
         response = client.get("/inbox/email/new")
 
         assert response.status_code == 200
+        assert '<section class="page-panel email-entry-panel">' in response.text
         assert '<form method="post" action="/inbox/email">' in response.text
         assert 'name="subject"' in response.text
         assert 'name="body_text"' in response.text

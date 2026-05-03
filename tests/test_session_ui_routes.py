@@ -213,6 +213,12 @@ def test_settings_shows_ai_readiness_placeholders(tmp_path: Path, monkeypatch) -
         response = client.get("/settings")
 
         assert response.status_code == 200
+        assert "Appearance" in response.text
+        assert 'id="at-theme-swatches"' in response.text
+        assert 'data-theme="ocean"' in response.text
+        assert 'data-theme="custom"' in response.text
+        assert 'id="at-theme-custom-row"' in response.text
+        assert "localStorage.setItem('at-theme'" in response.text
         assert "AI readiness" in response.text
         assert "OpenAI" in response.text
         assert "Google Gemini (AI Studio)" in response.text

@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
+import json
 import logging
 import re
 from typing import Annotated
@@ -1221,17 +1222,46 @@ def _workspace_role_notes_section(job: Job) -> str:
     )
 
 
-def _workspace_application_section(job: Job) -> str:
-    actions = f"""
-    <div class="workspace-inline-actions">
-      {_button_link("Open apply link", job.apply_url, primary=True)}
-      {_button_link("Open source", job.source_url)}
+def _application_state_bar(job: Job) -> str:
+    pill = _stage_pill(job.status)
+    apply_btn = _button_link("Open apply link ↗", job.apply_url, primary=True)
+    source_btn = _button_link("Open source ↗", job.source_url)
+    next_action_map = {
+        "saved": ("Make a decision", "Mark interested to start spending attention on this role."),
+        "interested": ("Prepare your application", "Confirm the description, links, and artefacts are in place."),
+        "preparing": ("Submit when ready", "Use the apply link to submit, then record it here."),
+        "applied": ("Track the response", "Record recruiter contact, interview scheduling, and follow-ups as they arrive."),
+        "interviewing": ("Prepare for interviews", "Keep prep notes, participants, and follow-up actions attached."),
+        "offer": ("Decide on the offer", "Record your decision and archive when the outcome is complete."),
+        "rejected": ("Capture the learning", "Add notes and archive when no longer needed."),
+        "archived": ("Archived", "Restore only if this role needs active work again."),
+    }
+    action_title, action_body = next_action_map.get(job.status, ("Choose the next step", "Use workflow controls below to move forward."))
+    return f"""
+    <div class="app-state-bar" data-ui-component="application-state-bar">
+      <div class="app-state-context">
+        {pill}
+        <div>
+          <strong class="app-state-title">{escape(action_title)}</strong>
+          <p class="muted">{escape(action_body)}</p>
+        </div>
+      </div>
+      <div class="app-state-cta">
+        {apply_btn}
+        {source_btn}
+      </div>
     </div>
     """
+
+
+def _workspace_application_section(job: Job) -> str:
+    has_applications = bool(job.applications)
+    history_html = _applications(job.applications) if has_applications else '<p class="empty">No submission recorded yet.</p>'
     body = f"""
+    {_application_state_bar(job)}
     <div class="workspace-two-up" data-ui-component="application-workbench">
       <div class="workspace-subpanel">
-        <h3>Submission essentials</h3>
+        <h3>Role details</h3>
         <dl class="overview-grid">
           {_editable_text("Company", "company", job.company)}
           {_editable_text("Location", "location", job.location)}
@@ -1242,37 +1272,40 @@ def _workspace_application_section(job: Job) -> str:
         </dl>
       </div>
       <div class="workspace-subpanel">
-        <h3>Workflow route</h3>
+        <h3>Application route</h3>
         <dl>
           {_editable_select("Status", "status", job.status)}
-          {_field("Board position", job.board_position)}
           {_editable_text("Source", "source", job.source)}
           {_editable_url("Source URL", "source_url", job.source_url, "Open source")}
           {_editable_url("Apply URL", "apply_url", job.apply_url, "Open apply link")}
         </dl>
       </div>
     </div>
-    <div class="workspace-three-up">
+    <div class="workspace-two-up">
       <div class="workspace-subpanel">
         <h3>Submission history</h3>
-        {_applications(job.applications)}
+        {history_html}
+        <details class="workspace-form-disclosure">
+          <summary>Record a submission</summary>
+          {_mark_applied_form(job)}
+        </details>
       </div>
       <div class="workspace-subpanel">
-        <h3>Advance state</h3>
+        <h3>Advance status</h3>
+        <p class="muted">Move this job to the right board position.</p>
         {_status_transition_form(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Record submission</h3>
-        {_mark_applied_form(job)}
+        <details class="workspace-form-disclosure">
+          <summary>Start application externally</summary>
+          {_application_started_form(job)}
+        </details>
       </div>
     </div>
     """
     return _workspace_section(
         section_id="application",
         kicker="Application",
-        title="Submission route",
+        title="Application",
         body=body,
-        actions=actions,
     )
 
 
@@ -1799,20 +1832,71 @@ def _workspace_artefacts_section(
     )
 
 
+def _interview_card(interview: InterviewEvent) -> str:
+    scheduled = _value(interview.scheduled_at) if interview.scheduled_at else "Time not set"
+    location = escape(interview.location or "No location")
+    participants = escape(interview.participants or "")
+    notes_html = f'<p class="muted">{escape(interview.notes)}</p>' if interview.notes else ""
+    return f"""
+    <article class="interview-card">
+      <div class="interview-card-head">
+        <strong>{escape(interview.stage)}</strong>
+        <span class="workspace-ai-pill">{escape(scheduled)}</span>
+      </div>
+      <p class="muted">{location}{(" · " + participants) if interview.participants else ""}</p>
+      {notes_html}
+    </article>
+    """
+
+
+def _interview_cards(interviews: list[InterviewEvent]) -> str:
+    if not interviews:
+        return '<p class="empty">No interviews scheduled yet.</p>'
+    sorted_interviews = sorted(
+        interviews,
+        key=lambda item: item.scheduled_at or datetime.max.replace(tzinfo=UTC),
+    )
+    return "".join(_interview_card(i) for i in sorted_interviews)
+
+
 def _workspace_interviews_section(job: Job) -> str:
+    next_interview = min(
+        (i for i in job.interviews if i.scheduled_at),
+        key=lambda i: i.scheduled_at,
+        default=None,
+    )
+    state_hint = ""
+    if next_interview and next_interview.scheduled_at:
+        state_hint = f"""
+        <div class="app-state-bar">
+          <div class="app-state-context">
+            <span class="stage-pill active">Upcoming</span>
+            <div>
+              <strong class="app-state-title">{escape(next_interview.stage)}</strong>
+              <p class="muted">{escape(_value(next_interview.scheduled_at))} · {escape(next_interview.location or "No location")}</p>
+            </div>
+          </div>
+          <div class="app-state-cta">
+            {_compact_status_form(job, "offer", "Record offer", variant="outline") if job.status == "interviewing" else ""}
+          </div>
+        </div>
+        """
     body = f"""
+    {state_hint}
     <div class="workspace-two-up" data-ui-component="interviews-workbench">
       <div class="workspace-subpanel">
-        <h3>Upcoming conversations</h3>
-        {_interviews(job.interviews)}
+        <h3>Interview loop</h3>
+        <div class="interview-card-list">
+          {_interview_cards(job.interviews)}
+        </div>
       </div>
       <div class="workspace-subpanel">
-        <h3>Plan next interview</h3>
+        <h3>Schedule interview</h3>
         {_schedule_interview_form(job)}
       </div>
     </div>
     """
-    return _workspace_section(section_id="interviews", kicker="Interviews", title="Interview loop", body=body)
+    return _workspace_section(section_id="interviews", kicker="Interviews", title="Interviews", body=body)
 
 
 def _follow_up_list(job: Job) -> str:
@@ -1831,61 +1915,117 @@ def _follow_up_list(job: Job) -> str:
     return "<ol>" + "".join(items) + "</ol>"
 
 
+def _follow_up_card(event: Communication) -> str:
+    due = event.follow_up_at
+    now = datetime.now(UTC)
+    if due and due.tzinfo is None:
+        due = due.replace(tzinfo=UTC)
+    is_overdue = due is not None and due < now
+    pill_class = "stage-pill active" if is_overdue else "workspace-ai-pill"
+    pill_label = "Overdue" if is_overdue else _value(due)
+    notes_html = f'<p class="muted">{escape(event.notes)}</p>' if event.notes else ""
+    return f"""
+    <article class="follow-up-card{' overdue' if is_overdue else ''}">
+      <div class="follow-up-card-head">
+        <strong>{escape(event.subject or "Follow-up")}</strong>
+        <span class="{pill_class}">{escape(pill_label)}</span>
+      </div>
+      {notes_html}
+    </article>
+    """
+
+
+def _follow_up_cards(job: Job) -> str:
+    follow_ups = _follow_up_events(job)
+    if not follow_ups:
+        return '<p class="empty">No follow-ups scheduled yet.</p>'
+    return "".join(_follow_up_card(e) for e in follow_ups)
+
+
 def _workspace_follow_ups_section(job: Job) -> str:
+    count = len(_follow_up_events(job))
+    state_label = f"{count} scheduled" if count else "None scheduled"
     body = f"""
-    <div class="workspace-three-up" data-ui-component="follow-ups-workbench">
+    <div class="workspace-two-up" data-ui-component="follow-ups-workbench">
       <div class="workspace-subpanel">
-        <h3>Follow-up queue</h3>
-        {_follow_up_list(job)}
+        <h3>Follow-up queue <span class="workspace-nav-count">{escape(str(count)) if count else "0"}</span></h3>
+        <div class="follow-up-card-list">
+          {_follow_up_cards(job)}
+        </div>
       </div>
       <div class="workspace-subpanel">
-        <h3>Start application</h3>
-        {_application_started_form(job)}
+        <h3>Add a note or follow-up</h3>
+        {_note_form(job)}
+      </div>
+    </div>
+    <div class="workspace-two-up">
+      <div class="workspace-subpanel">
+        <details class="workspace-form-disclosure">
+          <summary>Record a blocker</summary>
+          {_blocker_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Record a return note</summary>
+          {_return_note_form(job)}
+        </details>
       </div>
       <div class="workspace-subpanel">
-        <h3>Surface blockers</h3>
-        {_blocker_form(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Queue return note</h3>
-        {_return_note_form(job)}
+        <details class="workspace-form-disclosure">
+          <summary>Mark application started</summary>
+          {_application_started_form(job)}
+        </details>
       </div>
     </div>
     """
-    return _workspace_section(section_id="follow-ups", kicker="Follow-ups", title="Follow-up queue", body=body)
+    return _workspace_section(section_id="follow-ups", kicker="Follow-ups", title="Follow-ups", body=body)
 
 
 def _workspace_tasks_section(job: Job, artefacts: list[Artefact]) -> str:
+    done, total = _workspace_readiness_score(job, artefacts)
+    readiness_pill = f'<span class="workspace-ai-pill">Ready {done}/{total}</span>'
     body = f"""
     <div class="workspace-two-up" data-ui-component="tasks-workbench">
       <div class="workspace-subpanel">
-        <h3>Current focus</h3>
+        <h3>Next action</h3>
         {_next_action(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Readiness</h3>
-        {_readiness(job, artefacts)}
+        <h3>Readiness {readiness_pill}</h3>
+        <ol class="readiness-list">
+          {_readiness_item("Role captured", bool(job.title and job.description_raw), "Title and description in place." if job.description_raw else "Add the job description.")}
+          {_readiness_item("Application link", bool(job.apply_url or job.source_url), "External route is set." if job.apply_url or job.source_url else "Add a source or apply URL.")}
+          {_readiness_item("Artefacts attached", bool(artefacts), "Files are attached." if artefacts else "Upload a resume or prep file.")}
+          {_readiness_item("Application recorded", bool(job.applications), "Submission on record." if job.applications else "Mark applied once submitted.")}
+        </ol>
+        <a class="workspace-inline-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents ›</a>
       </div>
     </div>
-    <div class="workspace-three-up">
+    <div class="workspace-two-up">
       <div class="workspace-subpanel">
         <h3>Workflow actions</h3>
-        {_mark_applied_form(job)}
-        {_status_transition_form(job)}
-        {_schedule_interview_form(job)}
-        {_application_started_form(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Follow-through</h3>
-        {_blocker_form(job)}
-        {_return_note_form(job)}
+        <details class="workspace-form-disclosure">
+          <summary>Record submission</summary>
+          {_mark_applied_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Advance status</summary>
+          {_status_transition_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Schedule interview</summary>
+          {_schedule_interview_form(job)}
+        </details>
       </div>
       <div class="workspace-subpanel">
         <h3>Maintenance</h3>
-        {_archive_form(job)}
-        {_unarchive_form(job)}
-        <p class="muted">Go to Documents for uploads, existing artefacts, or local AI drafting.</p>
-        <a class="button-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents</a>
+        <details class="workspace-form-disclosure">
+          <summary>Archive this job</summary>
+          {_archive_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Restore archived job</summary>
+          {_unarchive_form(job)}
+        </details>
       </div>
     </div>
     """
@@ -1917,26 +2057,27 @@ def _recent_activity(job: Job, events: list[Communication], artefacts: list[Arte
 
 
 def _workspace_notes_section(job: Job, events: list[Communication], artefacts: list[Artefact]) -> str:
+    event_count = len(events)
     body = f"""
     <div class="workspace-two-up" data-ui-component="notes-workbench">
+      <div class="workspace-subpanel">
+        <h3>Add note or follow-up</h3>
+        {_note_form(job)}
+      </div>
       <div class="workspace-subpanel">
         <h3>Recent activity</h3>
         {_recent_activity(job, events, artefacts)}
       </div>
-      <div class="workspace-subpanel">
-        <h3>Add note</h3>
-        {_note_form(job)}
-      </div>
     </div>
-    {_provenance(job)}
     <section class="workspace-subpanel">
       <details class="timeline-panel">
-        <summary>Journal</summary>
+        <summary>Journal <span class="workspace-nav-count">{event_count}</span></summary>
         {_timeline(events)}
       </details>
     </section>
+    {_provenance(job)}
     """
-    return _workspace_section(section_id="notes", kicker="Notes", title="Activity, context, and provenance", body=body)
+    return _workspace_section(section_id="notes", kicker="Notes", title="Notes", body=body)
 
 
 def _workspace_ai_assessment(ai_outputs: list[AiOutput]) -> str:
@@ -1988,40 +2129,6 @@ def _workspace_ai_sidebar(job: Job, ai_outputs: list[AiOutput], artefact_lookup:
     """
 
 
-def _workspace_tools_section(job: Job, artefacts: list[Artefact]) -> str:
-    body = f"""
-    <div class="workspace-two-up" data-ui-component="tasks-workbench">
-      <div class="workspace-subpanel">
-        <h3>Current focus</h3>
-        {_next_action(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Workflow actions</h3>
-        {_mark_applied_form(job)}
-        {_status_transition_form(job)}
-        {_schedule_interview_form(job)}
-        {_application_started_form(job)}
-      </div>
-    </div>
-    <div class="workspace-three-up">
-      <div class="workspace-subpanel">
-        <h3>Follow-through</h3>
-        {_blocker_form(job)}
-        {_return_note_form(job)}
-      </div>
-      <div class="workspace-subpanel" id="workspace-tools">
-        <h3>Maintenance</h3>
-        {_archive_form(job)}
-        {_unarchive_form(job)}
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Document work</h3>
-        <p class="muted">Go to Documents when you need uploads, existing artefacts, or local AI drafting.</p>
-        <a class="button-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents</a>
-      </div>
-    </div>
-    """
-    return _workspace_section(section_id="tasks", kicker="Tasks", title="Tasks", body=body)
 
 
 def _workspace_utility_strip(job: Job, artefacts: list[Artefact]) -> str:
@@ -2323,7 +2430,7 @@ def _next_board_position(db: DbSession, user: User, job_status: str) -> int:
 
 def render_new_job(user: User) -> str:
     extra_styles = """
-    h1 { font-size: 2rem; line-height: 1.1; }
+    h1 { font-size: 1.6rem; font-weight: 500; line-height: 1.15; }
     .job-entry-panel {
       max-height: 100%;
       min-height: 0;
@@ -2346,14 +2453,15 @@ def render_new_job(user: User) -> str:
     textarea { resize: vertical; }
     button {
       background: var(--accent);
-      border: 0;
+      border: 0.5px solid var(--accent-strong);
       border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
       font-weight: 500;
-      min-height: 38px;
+      min-height: 34px;
       padding: 0 14px;
+      transition: background 120ms ease-out;
     }
     button:hover { background: var(--accent-strong); }
     @media (max-width: 720px) {
@@ -2411,20 +2519,21 @@ def render_job_detail(
     h1, h2, h3, p {{ margin: 0; }}
     a {{ color: var(--accent-strong); font-weight: 500; }}
     button {{
-      background: linear-gradient(180deg, #7a66ef, var(--accent));
-      border: 0;
+      background: var(--accent);
+      border: 0.5px solid var(--accent-strong);
       border-radius: 10px;
       color: #ffffff;
       cursor: pointer;
       font: inherit;
-      font-weight: 600;
-      min-height: 38px;
+      font-weight: 500;
+      min-height: 34px;
       padding: 0 14px;
+      transition: background 120ms ease-out;
     }}
-    button:hover {{ background: var(--accent-strong); }}
+    button:hover:not(:disabled) {{ background: var(--accent-strong); }}
     button.outline, .button-link {{
       background: #ffffff;
-      border: 0.5px solid var(--line);
+      border: 0.5px solid rgba(0,0,0,0.10);
       color: var(--ink);
       text-decoration: none;
     }}
@@ -2451,14 +2560,15 @@ def render_job_detail(
     .stage-pill {{
       border-radius: 999px;
       display: inline-flex;
-      font-size: 0.82rem;
+      font-size: 0.73rem;
+      font-weight: 500;
       line-height: 1;
-      padding: 6px 10px;
+      padding: 4px 8px;
     }}
-    .stage-pill.inbox {{ background: #e8ebf8; color: #2d3a9a; }}
-    .stage-pill.active {{ background: #fdf3e6; color: #8c4a00; }}
-    .stage-pill.success {{ background: #eaf4ee; color: #1a5c38; }}
-    .stage-pill.closed {{ background: #f1f0ed; color: #5f5e5a; }}
+    .stage-pill.inbox {{ background: var(--accent-soft); border: 0.5px solid #C3CCF0; color: var(--accent-strong); }}
+    .stage-pill.active {{ background: var(--amber-soft); border: 0.5px solid #f9d9a0; color: #8c5000; }}
+    .stage-pill.success {{ background: var(--success-soft); border: 0.5px solid #b6dfc5; color: var(--success); }}
+    .stage-pill.closed {{ background: #f1f0ed; border: 0.5px solid #d8d8d4; color: #5f5e5a; }}
     .workspace-grid {{
       display: grid;
       gap: 18px;
@@ -2481,10 +2591,10 @@ def render_job_detail(
     .workspace-next-up,
     .workspace-subpanel,
     .workspace-panel {{
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
-      border: 1px solid var(--line-soft);
+      background: #ffffff;
+      border: 0.5px solid rgba(0,0,0,0.09);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
+      box-shadow: none;
     }}
     .flash {{ margin-bottom: 18px; padding: 18px 20px; }}
     .flash-detail {{
@@ -2495,12 +2605,12 @@ def render_job_detail(
       overflow-wrap: anywhere;
     }}
     .flash-success {{
-      background: linear-gradient(180deg, rgba(234,244,238,0.98), rgba(244,249,246,0.98));
-      border-color: rgba(59,167,134,0.28);
+      background: var(--success-soft);
+      border-color: #b6dfc5;
     }}
     .flash-error {{
-      background: linear-gradient(180deg, rgba(253,239,237,0.98), rgba(255,246,244,0.98));
-      border-color: rgba(226,91,76,0.28);
+      background: var(--danger-soft);
+      border-color: #f8c4be;
     }}
     .workspace-side-card {{ padding: 16px; }}
     .workspace-quick-actions {{
@@ -2508,17 +2618,16 @@ def render_job_detail(
     }}
     .workspace-quick-trigger {{
       align-items: center;
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
-      border: 1px solid var(--line-soft);
+      background: #ffffff;
+      border: 0.5px solid rgba(0,0,0,0.09);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
       color: var(--ink);
       cursor: pointer;
       display: flex;
-      font-weight: 800;
+      font-weight: 500;
       justify-content: space-between;
       list-style: none;
-      min-height: 46px;
+      min-height: 40px;
       padding: 0 16px;
     }}
     .workspace-quick-trigger::-webkit-details-marker {{ display: none; }}
@@ -2527,10 +2636,10 @@ def render_job_detail(
       border-bottom-right-radius: 12px;
     }}
     .workspace-quick-panel {{
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.99));
-      border: 1px solid var(--line-soft);
+      background: #ffffff;
+      border: 0.5px solid rgba(0,0,0,0.09);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-lg);
+      box-shadow: var(--shadow-md);
       display: grid;
       gap: 10px;
       left: 0;
@@ -2551,12 +2660,13 @@ def render_job_detail(
       align-items: center;
       color: var(--muted);
       display: inline-flex;
-      font-size: 0.92rem;
-      font-weight: 700;
-      gap: 8px;
-      min-height: 28px;
+      font-size: 0.85rem;
+      font-weight: 400;
+      gap: 6px;
+      min-height: 26px;
       text-decoration: none;
     }}
+    .workspace-back-link:hover {{ color: var(--ink); }}
     .workspace-anchor-nav {{
       display: grid;
       gap: 4px;
@@ -2564,36 +2674,40 @@ def render_job_detail(
     .workspace-nav-link,
     .workspace-quick-link {{
       align-items: center;
-      border-radius: 10px;
-      color: var(--text-muted);
+      border-radius: 8px;
+      color: var(--muted);
       display: flex;
+      font-size: 0.88rem;
       justify-content: space-between;
-      min-height: 38px;
-      padding: 0 12px;
+      min-height: 34px;
+      padding: 0 10px;
       text-decoration: none;
     }}
     .workspace-quick-link {{
-      background: rgba(112, 87, 232, 0.03);
-      border: 1px solid rgba(112, 87, 232, 0.08);
+      background: rgba(79, 103, 228, 0.03);
+      border: 0.5px solid rgba(79, 103, 228, 0.10);
     }}
     .workspace-nav-link.active {{
-      background: rgba(112, 87, 232, 0.08);
-      border: 1px solid rgba(112, 87, 232, 0.22);
+      background: var(--accent-soft);
+      border: 0.5px solid #C3CCF0;
       color: var(--accent-strong);
+      font-weight: 500;
     }}
     .workspace-nav-count {{
       align-items: center;
-      background: rgba(112, 87, 232, 0.1);
+      background: var(--accent-soft);
+      border: 0.5px solid #C3CCF0;
       border-radius: 999px;
-      color: var(--accent);
+      color: var(--accent-strong);
       display: inline-flex;
-      font-size: 0.75rem;
-      height: 22px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      height: 18px;
       justify-content: center;
-      min-width: 22px;
-      padding: 0 6px;
+      min-width: 18px;
+      padding: 0 5px;
     }}
-    .workspace-side-heading {{ font-size: 0.98rem; font-weight: 800; margin-bottom: 12px; }}
+    .workspace-side-heading {{ font-size: 0.92rem; font-weight: 500; margin-bottom: 10px; }}
     .workspace-score-card {{
       align-items: center;
       display: grid;
@@ -2618,8 +2732,8 @@ def render_job_detail(
       position: absolute;
     }}
     .workspace-score-ring span {{
-      font-size: 1.35rem;
-      font-weight: 800;
+      font-size: 1.2rem;
+      font-weight: 500;
       position: relative;
       z-index: 1;
     }}
@@ -2645,10 +2759,11 @@ def render_job_detail(
       text-decoration: none;
     }}
     .button-link.primary {{
-      background: linear-gradient(180deg, #7a66ef, var(--accent));
-      border-color: #6c59dd;
+      background: var(--accent);
+      border: 0.5px solid var(--accent-strong);
       color: #ffffff;
     }}
+    .button-link.primary:hover {{ background: var(--accent-strong); }}
     .workspace-surface {{
       display: grid;
       gap: 16px;
@@ -2672,8 +2787,9 @@ def render_job_detail(
       justify-content: space-between;
     }}
     .workspace-identity-title {{
-      font-size: 1.45rem;
-      line-height: 1.08;
+      font-size: 1.25rem;
+      font-weight: 500;
+      line-height: 1.15;
       margin: 0 0 6px;
       overflow-wrap: anywhere;
     }}
@@ -2756,7 +2872,7 @@ def render_job_detail(
     .workspace-next-left,
     .workspace-next-right {{ padding: 20px; }}
     .workspace-next-left {{ border-right: 1px solid rgba(112, 87, 232, 0.14); }}
-    .workspace-next-title {{ font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }}
+    .workspace-next-title {{ font-size: 1rem; font-weight: 500; margin-bottom: 6px; }}
     .workspace-checklist {{ display: grid; gap: 10px; margin-top: 14px; }}
     .workspace-check {{
       align-items: start;
@@ -2815,14 +2931,15 @@ def render_job_detail(
     .workspace-chip-row, .artefact-actions {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
     .workspace-chip {{
       align-items: center;
-      background: rgba(112, 87, 232, 0.08);
-      border-radius: 10px;
-      color: var(--accent);
+      background: var(--accent-soft);
+      border: 0.5px solid #C3CCF0;
+      border-radius: 8px;
+      color: var(--accent-strong);
       display: inline-flex;
-      font-size: 0.78rem;
-      font-weight: 700;
-      min-height: 28px;
-      padding: 0 10px;
+      font-size: 0.76rem;
+      font-weight: 500;
+      min-height: 24px;
+      padding: 0 8px;
     }}
     .workspace-add-chip {{
       align-items: center;
@@ -2861,19 +2978,21 @@ def render_job_detail(
       gap: 10px;
     }}
     button.compact {{
-      min-height: 34px;
-      padding: 0 12px;
+      min-height: 28px;
+      padding: 0 10px;
+      font-size: 0.85rem;
     }}
     .workspace-ai-pill {{
       align-items: center;
-      background: rgba(112, 87, 232, 0.1);
+      background: var(--accent-soft);
+      border: 0.5px solid #C3CCF0;
       border-radius: 999px;
-      color: var(--accent);
+      color: var(--accent-strong);
       display: inline-flex;
-      font-size: 0.75rem;
-      font-weight: 800;
-      min-height: 24px;
-      padding: 0 8px;
+      font-size: 0.73rem;
+      font-weight: 500;
+      min-height: 22px;
+      padding: 0 7px;
     }}
     .overview-grid {{
       display: grid;
@@ -2925,22 +3044,24 @@ def render_job_detail(
     .description-editor {{ min-height: 420px; }}
     .savebar {{
       align-items: center;
-      background: rgba(31, 52, 71, 0.96);
+      background: rgba(22, 30, 50, 0.94);
       border-radius: var(--radius-md);
       box-shadow: var(--shadow-lg);
       bottom: 18px;
       color: #ffffff;
       display: none;
-      gap: 12px;
+      gap: 10px;
       left: 50%;
-      padding: 10px 12px;
+      padding: 8px 12px;
       position: fixed;
       transform: translateX(-50%);
       z-index: 20;
     }}
     .savebar.is-visible {{ display: flex; }}
-    .savebar p {{ font-weight: 500; }}
-    .savebar .secondary {{ background: transparent; border: 1px solid rgba(255,255,255,0.45); }}
+    .savebar p {{ font-size: 0.9rem; font-weight: 500; }}
+    .savebar button {{ background: rgba(255,255,255,0.15); border: 0.5px solid rgba(255,255,255,0.30); }}
+    .savebar button:hover {{ background: rgba(255,255,255,0.25); }}
+    .savebar .secondary {{ background: transparent; border: 0.5px solid rgba(255,255,255,0.22); }}
     .readiness-list {{ display: grid; gap: 0; }}
     .readiness-item {{
       border-left: 0;
@@ -3010,12 +3131,12 @@ def render_job_detail(
     .workspace-rail-shell {{ overflow: hidden; padding: 0; }}
     .workspace-rail-head {{
       align-items: center;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 0.5px solid rgba(0,0,0,0.09);
       display: flex;
       gap: 12px;
       justify-content: space-between;
-      padding: 16px 18px;
-      font-weight: 800;
+      padding: 14px 16px;
+      font-weight: 500;
     }}
     .workspace-rail-body {{ display: grid; gap: 12px; padding: 12px; }}
     .workspace-rail-panel {{ display: grid; gap: 12px; padding: 16px; }}
@@ -3096,7 +3217,7 @@ def render_job_detail(
       justify-content: center;
       width: 32px;
     }}
-    .workspace-artefact-name {{ font-size: 0.95rem; font-weight: 800; margin-bottom: 3px; overflow-wrap: anywhere; }}
+    .workspace-artefact-name {{ font-size: 0.9rem; font-weight: 500; margin-bottom: 3px; overflow-wrap: anywhere; }}
     @media (min-width: 761px) {{
       .workspace-artefact-name {{
         overflow: hidden;
@@ -3134,20 +3255,21 @@ def render_job_detail(
     .action-btn {{
       align-items: center;
       background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      color: var(--text);
+      border: 0.5px solid rgba(0,0,0,0.10);
+      border-radius: 8px;
+      color: var(--ink);
       display: inline-flex;
-      font-weight: 700;
-      gap: 8px;
-      min-height: 36px;
-      padding: 0 12px;
+      font-weight: 500;
+      font-size: 0.85rem;
+      gap: 6px;
+      min-height: 30px;
+      padding: 0 10px;
       text-decoration: none;
     }}
     .action-btn.ai {{
-      background: #fbfaff;
-      border-color: #dbd5ff;
-      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: #C3CCF0;
+      color: var(--accent-strong);
     }}
     .workspace-ai-menu {{
       position: relative;
@@ -3198,7 +3320,7 @@ def render_job_detail(
     }}
     .workspace-local-ai-title {{
       color: var(--accent-strong);
-      font-weight: 800;
+      font-weight: 500;
     }}
     .generated-ok {{
       color: var(--green);
@@ -3328,8 +3450,8 @@ def render_job_detail(
       justify-content: space-between;
     }}
     .workspace-modal-title {{
-      font-size: 1.02rem;
-      font-weight: 700;
+      font-size: 1rem;
+      font-weight: 500;
     }}
     .workspace-brief-form {{
       display: grid;
@@ -3431,6 +3553,92 @@ def render_job_detail(
       padding-left: 0;
     }}
     .timeline-panel ol {{ margin-top: 12px; }}
+    .app-state-bar {{
+      align-items: start;
+      background: rgba(247,249,252,0.72);
+      border: 0.5px solid var(--line);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 14px 16px;
+    }}
+    .app-state-context {{
+      align-items: flex-start;
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    .app-state-title {{
+      display: block;
+      font-size: 0.93rem;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }}
+    .app-state-bar .muted {{ margin: 0; font-size: 0.84rem; }}
+    .app-state-cta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .interview-card-list,
+    .follow-up-card-list {{
+      display: grid;
+      gap: 8px;
+    }}
+    .interview-card,
+    .follow-up-card {{
+      background: rgba(247,249,252,0.72);
+      border: 0.5px solid var(--line);
+      border-radius: var(--radius-md);
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+    }}
+    .follow-up-card.overdue {{
+      background: var(--amber-soft);
+      border-color: #f9d9a0;
+    }}
+    .interview-card-head,
+    .follow-up-card-head {{
+      align-items: center;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+    }}
+    .interview-card p,
+    .follow-up-card p {{ font-size: 0.84rem; margin: 0; }}
+    .workspace-form-disclosure {{
+      border: 0.5px solid var(--line);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }}
+    .workspace-form-disclosure > summary {{
+      color: var(--accent-strong);
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 500;
+      list-style: none;
+      padding: 10px 14px;
+    }}
+    .workspace-form-disclosure > summary::-webkit-details-marker {{ display: none; }}
+    .workspace-form-disclosure[open] > summary {{
+      border-bottom: 0.5px solid var(--line);
+    }}
+    .workspace-form-disclosure .note-form,
+    .workspace-form-disclosure .quick-action-form,
+    .workspace-form-disclosure .job-form {{
+      padding: 14px;
+    }}
+    .workspace-inline-link {{
+      color: var(--accent-strong);
+      font-size: 0.88rem;
+      font-weight: 500;
+      text-decoration: none;
+    }}
+    .workspace-inline-link:hover {{ text-decoration: underline; }}
     @media (max-width: 1360px) {{
       .workspace-grid {{ grid-template-columns: 220px minmax(0, 1fr) 300px; }}
     }}
@@ -3596,6 +3804,16 @@ def render_job_detail(
     )}
     """
     scripts = f"""
+  <script>
+    try {{
+      var _jt = JSON.parse(sessionStorage.getItem('at-recents') || '[]');
+      var _ju = {json.dumps(job.uuid)};
+      _jt = _jt.filter(function(j) {{ return j.u !== _ju; }});
+      _jt.unshift({{ u: _ju, t: {json.dumps(job.title)}, h: {json.dumps('/jobs/' + job.uuid)} }});
+      if (_jt.length > 5) _jt.length = 5;
+      sessionStorage.setItem('at-recents', JSON.stringify(_jt));
+    }} catch(e) {{}}
+  </script>
   <script>
     (() => {{
       const jobUuid = "{escape(job.uuid, quote=True)}";

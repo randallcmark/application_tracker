@@ -84,10 +84,11 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert "✦ Fit" in response.text
         assert "✦ Next step" in response.text
         assert "AI Assistant" in response.text
-        assert "Generate fit summary" not in response.text
-        assert "Suggest next step" not in response.text
-        assert "Suggest artefacts" not in response.text
-        assert "Draft tailored resume" not in response.text
+        assert "AI actions" in response.text
+        assert "Tailor documents" in response.text
+        assert "Prepare interviews" in response.text
+        assert "Draft follow-up notes" in response.text
+        assert "Analyse role fit" in response.text
         assert "Overview" in response.text
         assert "Workspace tools" not in response.text
         assert "Maintenance" not in response.text
@@ -97,10 +98,12 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         assert 'data-field="title"' in response.text
         assert 'data-field="description_raw"' in response.text
         assert 'id="edit-savebar"' in response.text
+        assert "sessionStorage.getItem('at-recents')" in response.text
+        assert '"Senior Product Manager"' in response.text
 
         notes_response = client.get(f"/jobs/{job_uuid}?section=notes")
         assert notes_response.status_code == 200
-        assert '<summary>Journal</summary>' in notes_response.text
+        assert "<summary>Journal <span class=\"workspace-nav-count\">1</span></summary>" in notes_response.text
         assert "<details class=\"timeline-panel\">" in notes_response.text
         assert 'class="local-time" datetime="2026-04-11T12:00:00+00:00"' in notes_response.text
         assert "Intl.DateTimeFormat" in notes_response.text
@@ -110,7 +113,7 @@ def test_job_detail_renders_owned_job_and_timeline(tmp_path: Path, monkeypatch) 
         tasks_response = client.get(f"/jobs/{job_uuid}?section=tasks")
         assert tasks_response.status_code == 200
         assert "Tasks" in tasks_response.text
-        assert "Current focus" in tasks_response.text
+        assert "Next action" in tasks_response.text
         assert "Workflow actions" in tasks_response.text
         assert "Maintenance" in tasks_response.text
         assert "Suggest artefacts" not in tasks_response.text
@@ -146,7 +149,8 @@ def test_job_detail_section_query_renders_selected_application_surface(tmp_path:
         assert 'data-ui-component="workspace-frame"' in response.text
         assert 'data-ui-component="overview-identity"' in response.text
         assert 'data-ui-component="application-workbench"' in response.text
-        assert "Submission route" in response.text
+        assert "Application route" in response.text
+        assert "Advance status" in response.text
         assert "Open source" in response.text
         assert "Open apply link" in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
@@ -178,16 +182,15 @@ def test_job_detail_section_query_renders_refined_interviews_and_followups_surfa
         assert interviews_response.status_code == 200
         assert 'data-ui-component="interviews-workbench"' in interviews_response.text
         assert "Interview loop" in interviews_response.text
-        assert "Upcoming conversations" in interviews_response.text
-        assert "Plan next interview" in interviews_response.text
+        assert "Schedule interview" in interviews_response.text
 
         followups_response = client.get(f"/jobs/{job_uuid}?section=follow-ups")
         assert followups_response.status_code == 200
         assert 'data-ui-component="follow-ups-workbench"' in followups_response.text
         assert "Follow-up queue" in followups_response.text
-        assert "Start application" in followups_response.text
-        assert "Surface blockers" in followups_response.text
-        assert "Queue return note" in followups_response.text
+        assert "Add a note or follow-up" in followups_response.text
+        assert "Record a blocker" in followups_response.text
+        assert "Record a return note" in followups_response.text
     finally:
         app.dependency_overrides.clear()
 

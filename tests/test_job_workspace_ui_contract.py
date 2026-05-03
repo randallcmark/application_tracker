@@ -253,7 +253,7 @@ def test_job_workspace_ui_contract_keeps_shared_frame_on_application_section(tmp
         assert 'data-ui-component="utility-strip"' in html
         assert 'data-ui-section="application"' in html
         assert 'data-ui-component="application-workbench"' in html
-        assert "Submission route" in html
+        assert "Application route" in html
         assert 'data-ui-section="overview"' not in html
     finally:
         app.dependency_overrides.clear()
@@ -285,10 +285,9 @@ def test_job_workspace_ui_contract_tasks_section_uses_reduced_structure(tmp_path
         assert 'data-ui-component="tasks-workbench"' in html
         assert html.count('data-ui-section="tasks"') == 1
         assert "Tasks" in html
-        assert "Current focus" in html
+        assert "Next action" in html
         assert "Readiness" in html
         assert "Workflow actions" in html
-        assert "Follow-through" in html
         assert "Maintenance" in html
         assert "Suggest artefacts" not in html
         assert "Workspace tools" not in html
@@ -383,12 +382,12 @@ def test_job_workspace_ui_contract_keeps_ai_in_right_rail(tmp_path: Path, monkey
         assert 'data-ui-component="ai-assessment-body"' in html
         assert 'data-ui-component="ai-help-list"' in html
         assert "AI Assistant" in html
-        assert "Overall Assessment" in html
-        assert "AI can help you with" in html
-        assert "Tailor your resume" in html
+        assert "Fit summary" in html
+        assert "Tailor documents" in html
+        assert "Prepare interviews" in html
+        assert "Draft follow-up notes" in html
         assert "Analyse role fit" in html
-        assert "AI fit summary" in html
-        assert "gemini-flash-latest" in html
+        assert "Strong systems thinking" in html
     finally:
         app.dependency_overrides.clear()
 

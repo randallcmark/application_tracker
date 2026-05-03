@@ -3,6 +3,27 @@ from html import escape
 from typing import Annotated
 from urllib.parse import quote, urlparse
 
+
+def _icon(path: str, *, w: int = 14, h: int = 14) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+        f'viewBox="0 0 20 20" fill="none" stroke="currentColor" '
+        f'stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" '
+        f'aria-hidden="true">{path}</svg>'
+    )
+
+
+_ICON_CHECK = _icon('<polyline points="3 10 8 15 17 5"/>')
+_ICON_EYE   = _icon(
+    '<path d="M1.5 10S5 4 10 4s8.5 6 8.5 6S15 16 10 16s-8.5-6-8.5-6z"/>'
+    '<circle cx="10" cy="10" r="2.5"/>'
+)
+_ICON_X = _icon(
+    '<line x1="4" y1="4" x2="16" y2="16"/>'
+    '<line x1="16" y1="4" x2="4" y2="16"/>'
+)
+_ICON_LINK = _icon('<path d="M8 3H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3"/><polyline points="15 3 20 3 20 8"/><line x1="10" y1="14" x2="20" y2="3"/>')
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -105,7 +126,7 @@ def _source_action(job: Job) -> str:
     url = job.source_url or job.apply_url
     if not url:
         return '<span class="meta">No source link captured</span>'
-    return f'<a class="external-link" href="{escape(url, quote=True)}" target="_blank" rel="noreferrer">Open source ↗</a>'
+    return f'<a class="external-link" href="{escape(url, quote=True)}" target="_blank" rel="noreferrer">{_ICON_LINK}<span>Open source</span></a>'
 
 
 def _review_attention_items(job: Job) -> list[tuple[str, str, str]]:
@@ -179,10 +200,10 @@ def _job_card(job: Job) -> str:
     )
     return f"""
     <article class="inbox-card">
-      <div class="inbox-card-main">
+      <div class="inbox-card-body">
         <div class="inbox-card-title">
           <h2><a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></h2>
-          <span class="status-pill accent">Needs review</span>
+          {attention}
         </div>
         <div class="inbox-card-meta">
           <span>{escape(job.company or "Company not set")}</span>
@@ -191,19 +212,18 @@ def _job_card(job: Job) -> str:
           <span>{escape(confidence)} confidence</span>
           <span>Captured {escape(captured)}</span>
         </div>
-        <div class="inbox-card-summary">
-          {_source_action(job)}
-          {attention}
-        </div>
       </div>
-      <div class="inbox-card-actions">
-        <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/accept">
-          <button type="submit">Accept</button>
-        </form>
-        <a class="secondary" href="/inbox/{escape(job.uuid, quote=True)}/review">Review</a>
-        <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/dismiss">
-          <button class="ghost" type="submit">Dismiss</button>
-        </form>
+      <div class="inbox-card-foot">
+        <div class="inbox-card-actions">
+          <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/accept">
+            <button class="inbox-act accept" type="submit">{_ICON_CHECK}<span>Accept</span></button>
+          </form>
+          <a class="inbox-act review" href="/inbox/{escape(job.uuid, quote=True)}/review">{_ICON_EYE}<span>Review</span></a>
+          <form method="post" action="/inbox/{escape(job.uuid, quote=True)}/dismiss">
+            <button class="inbox-act dismiss" type="submit">{_ICON_X}<span>Dismiss</span></button>
+          </form>
+        </div>
+        {_source_action(job)}
       </div>
     </article>
     """
@@ -213,123 +233,199 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
     cards = "\n".join(_job_card(job) for job in jobs)
     if not cards:
         cards = """
-        <section class="page-panel soft empty-state">
-          <div class="panel-header">
-            <div>
-              <p class="panel-micro">Clear queue</p>
-              <h2>Inbox is clear</h2>
-            </div>
-            <span class="status-pill success">Up to date</span>
-          </div>
-          <p>Captured and recommended jobs that need review will appear here before they move into active work.</p>
-          <div class="empty-actions">
-            <a class="button" href="/inbox/email/new">Paste email</a>
-            <a class="secondary" href="/api/capture/bookmarklet">Set up capture</a>
-          </div>
+        <section class="inbox-empty">
+          <span class="inbox-empty-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 20 20" fill="none"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 10 8 15 17 5"/>
+            </svg>
+          </span>
+          <h2 class="inbox-empty-title">Inbox is clear</h2>
+          <p class="inbox-empty-sub">Captured jobs needing review will appear here.</p>
+          <a class="button" href="/inbox/email/new">Paste email</a>
         </section>
         """
     extra_styles = compact_content_rhythm_styles() + """
-    :root { --warn: #a43d2b; }
-    .inbox-list { display: grid; gap: 12px; }
-    .inbox-card {
-      align-items: start;
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
-      border: 1px solid var(--line-soft);
+    .inbox-empty {
+      align-items: center;
+      background: #ffffff;
+      border: var(--border-default);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
-      display: grid;
-      gap: 16px;
-      grid-template-columns: minmax(0, 1fr) auto;
-      padding: 18px;
-    }
-    .inbox-card-main {
-      display: grid;
+      display: flex;
+      flex-direction: column;
       gap: 10px;
-      min-width: 0;
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .inbox-empty-icon {
+      align-items: center;
+      background: var(--success-soft);
+      border: 0.5px solid #b6dfc5;
+      border-radius: 50%;
+      color: var(--success);
+      display: flex;
+      height: 52px;
+      justify-content: center;
+      margin-bottom: 4px;
+      width: 52px;
+    }
+    .inbox-empty-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .inbox-empty-sub {
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin: 0 0 6px;
+    }
+    .inbox-list { display: grid; gap: 10px; }
+    .inbox-card {
+      background: #ffffff;
+      border: var(--border-default);
+      border-radius: var(--radius-xl);
+      display: grid;
+      gap: 0;
+      overflow: hidden;
+    }
+    .inbox-card-body {
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px 12px;
     }
     .inbox-card-title {
-      align-items: center;
+      align-items: start;
       display: flex;
       gap: 10px;
       justify-content: space-between;
       min-width: 0;
     }
     .inbox-card-title h2 {
+      font-size: 0.98rem;
+      font-weight: 500;
       min-width: 0;
       overflow-wrap: anywhere;
     }
-    .inbox-card-meta,
-    .inbox-card-summary {
+    .inbox-card-title h2 a {
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .inbox-card-title h2 a:hover {
+      color: var(--accent);
+    }
+    .inbox-card-meta {
       align-items: center;
       color: var(--muted);
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 12px;
+      font-size: 0.84rem;
+      gap: 4px 0;
     }
     .inbox-card-meta span:not(:last-child)::after {
       color: var(--soft-text);
       content: "·";
-      margin-left: 12px;
+      margin: 0 6px;
     }
-    .inbox-card-summary .external-link {
+    .meta { color: var(--muted); font-size: 0.88rem; }
+    .inbox-card-foot {
+      align-items: center;
+      background: rgba(247,249,252,0.72);
+      border-top: var(--border-default);
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      padding: 10px 16px;
+    }
+    .inbox-card-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .inbox-card-actions form {
+      display: contents;
+    }
+    .inbox-act {
+      align-items: center;
+      border-radius: 8px;
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 500;
+      gap: 5px;
+      height: 32px;
+      padding: 0 11px;
+      text-decoration: none;
+      transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
       white-space: nowrap;
     }
-    .meta { color: var(--muted); }
-    .inbox-card-actions {
-      align-items: stretch;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-width: 120px;
+    .inbox-act svg { flex-shrink: 0; }
+    .inbox-act.accept {
+      background: var(--success-soft);
+      border: 0.5px solid #b6dfc5;
+      color: var(--success);
     }
-    .inbox-card-actions form,
-    .inbox-card-actions button,
-    .inbox-card-actions a {
-      width: 100%;
+    .inbox-act.accept:hover { background: var(--success); border-color: var(--success); color: #fff; }
+    .inbox-act.review {
+      background: var(--accent-soft);
+      border: 0.5px solid #C3CCF0;
+      color: var(--accent-strong);
     }
-    .inbox-aside { display: grid; gap: 18px; }
+    .inbox-act.review:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .inbox-act.dismiss {
+      background: transparent;
+      border: var(--border-default);
+      color: var(--muted);
+    }
+    .inbox-act.dismiss:hover { background: var(--danger-soft); border-color: #f8c4be; color: var(--danger); }
+    .external-link {
+      align-items: center;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 0.82rem;
+      font-weight: 500;
+      gap: 5px;
+      text-decoration: none;
+      transition: color 120ms ease-out;
+    }
+    .external-link:hover { color: var(--accent-strong); }
+    .external-link svg { flex-shrink: 0; }
+    .inbox-aside { display: grid; gap: 16px; }
     .queue-count {
       align-items: baseline;
       display: flex;
       gap: 8px;
     }
     .queue-count strong {
-      font-size: 2rem;
+      font-size: 1.75rem;
+      font-weight: 500;
       letter-spacing: -0.02em;
       line-height: 1;
     }
     .queue-count span {
       color: var(--muted);
+      font-size: 0.88rem;
     }
     .tip-list {
       display: grid;
-      gap: 10px;
+      gap: 8px;
       list-style: none;
       margin: 0;
       padding: 0;
     }
     .tip-list li {
-      border-left: 3px solid rgba(255,255,255,0.28);
+      border-left: 2px solid rgba(255,255,255,0.28);
+      font-size: 0.88rem;
       padding-left: 10px;
     }
     .inbox-aside .mobile-stack {
       margin-top: 4px;
     }
     @media (max-width: 760px) {
-      .inbox-card {
-        grid-template-columns: 1fr;
-      }
-      .inbox-card-title,
-      .inbox-card-meta,
-      .inbox-card-summary {
-        align-items: start;
+      .inbox-card-foot {
         flex-direction: column;
-      }
-      .inbox-card-meta span::after {
-        display: none;
-      }
-      .inbox-card-actions {
-        width: 100%;
+        align-items: flex-start;
+        gap: 10px;
       }
     }
     """
@@ -343,10 +439,6 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
           <span class="status-pill accent">Inbox</span>
         </div>
         <div class="queue-count"><strong>{len(jobs)}</strong><span>queued</span></div>
-        <p>Review only what looks worth effort, then accept, clean up, or dismiss.</p>
-        <div class="mobile-stack">
-          <a class="secondary" href="/api/capture/bookmarklet">Capture setup</a>
-        </div>
       </section>
       <section class="page-panel emphasis">
         <div class="panel-header">
@@ -371,9 +463,10 @@ def render_inbox(user: User, jobs: list[Job]) -> HTMLResponse:
         render_shell_page(
             user,
             page_title="Inbox",
-            title="Inbox",
+            title="",
             subtitle="",
             active="inbox",
+            show_hero=False,
             actions=(("Paste email", "/inbox/email/new", "paste-email"), ("Add job", "/jobs/new", "add-job")),
             body=body,
             aside=aside,
@@ -849,6 +942,11 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
     error_block = f'<p class="error">{escape(error)}</p>' if error else ""
     extra_styles = compact_content_rhythm_styles() + """
     :root { --warn: #a43d2b; }
+    .email-entry-panel {
+      max-height: 100%;
+      min-height: 0;
+      overflow-y: auto;
+    }
     .hint { color: var(--muted); }
     form[action="/inbox/email"] {
       background: var(--panel);
@@ -882,7 +980,7 @@ def render_email_capture_form(user: User, *, error: str | None = None) -> HTMLRe
     .error { color: var(--warn); }
     """
     body = f"""
-    <section class="page-panel">
+    <section class="page-panel email-entry-panel">
       <div class="panel-header">
         <div>
           <p class="panel-micro">Manual intake</p>

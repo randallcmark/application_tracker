@@ -83,6 +83,13 @@ Repository docs are the durable source of truth; the external QA backlog remains
 - 2026-05-02: Split UI-017 into the dedicated active plan
   `docs/exec-plans/active/job-detail-section-workbenches.md` so larger section redesign work stays
   deliberate and reviewable.
+- 2026-05-02: Imported reviewed shell/UI polish from the sandbox branch into the repository-owned
+  implementation: shared light/dark scheme support, preset appearance themes plus custom accent
+  selection in Settings, and client-side recently-viewed job links surfaced in Focus.
+- 2026-05-02: Completed the broader sandbox UI import for shared shell styling plus the rewritten
+  Focus, Inbox, Board, and Job Workspace surfaces. Follow-up validation also caught and fixed a
+  Focus AI nudge persistence regression, where generated recommendations were not committed before
+  redirecting back to Focus.
 
 ## Decisions
 

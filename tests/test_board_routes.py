@@ -158,7 +158,7 @@ def test_board_prospects_workflow_shows_discovery_stages(tmp_path: Path, monkeyp
         assert 'aria-label="Workflow summary"' not in response.text
         assert 'data-status-target="archived"' in response.text
         assert 'data-status-target="interested"' in response.text
-        assert ">Keep</button>" in response.text
+        assert ">Keep</span></button>" in response.text
         assert 'class="board-column"' not in response.text
         assert 'data-status="applied"' not in response.text
         assert 'option value="applied"' not in response.text

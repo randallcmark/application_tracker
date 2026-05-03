@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession, get_current_user
-from app.api.routes.ui import compact_content_rhythm_styles, render_shell_page
+from app.api.routes.ui import render_shell_page
 from app.db.models.ai_output import AiOutput
 from app.db.models.artefact import Artefact
 from app.db.models.communication import Communication
@@ -27,12 +27,46 @@ router = APIRouter(tags=["focus"])
 ACTIVE_STATUSES = ("interested", "preparing", "applied", "interviewing", "offer")
 
 
+# ── Tiny icon helper (same convention as board/inbox) ────────────────────────
+
+def _icon(path: str, *, w: int = 14, h: int = 14) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+        f'viewBox="0 0 20 20" fill="none" stroke="currentColor" '
+        f'stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" '
+        f'aria-hidden="true">{path}</svg>'
+    )
+
+
+_ICO_FOLLOWUP   = _icon('<circle cx="10" cy="10" r="8"/><polyline points="10 5.5 10 10 13 12.5"/>')
+_ICO_ARTEFACT   = _icon('<path d="M4 2h8l4 4v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><polyline points="12 2 12 6 16 6"/>')
+_ICO_STALE      = _icon('<path d="M10 2a8 8 0 100 16A8 8 0 0010 2z"/><line x1="10" y1="6" x2="10" y2="10"/><line x1="10" y1="13.5" x2="10" y2="14"/>')
+_ICO_INTERVIEW  = _icon('<rect x="3" y="4" width="14" height="13" rx="1.5"/><line x1="3" y1="8" x2="17" y2="8"/><line x1="7" y1="2" x2="7" y2="5"/><line x1="13" y1="2" x2="13" y2="5"/>')
+_ICO_NACTION    = _icon('<circle cx="10" cy="10" r="8"/><line x1="10" y1="6" x2="10" y2="10"/><line x1="13" y1="13" x2="10" y2="10"/>')
+_ICO_PROSPECT   = _icon('<polygon points="10 2 12.5 7.5 18.5 8.2 14 12.5 15.4 18.5 10 15.3 4.6 18.5 6 12.5 1.5 8.2 7.5 7.5"/>')
+_ICO_ACTIVE     = _icon('<rect x="2" y="2" width="6" height="16" rx="1.5"/><rect x="12" y="2" width="6" height="10" rx="1.5"/>')
+_ICO_NUDGE      = _icon('<path d="M10 2l2 6h6l-5 3.5 2 6L10 14l-5 3.5 2-6L2 8h6z"/>')
+_ICO_EXTERNAL   = _icon('<path d="M9 3H4a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1v-5"/><polyline points="14 3 17 3 17 6"/><line x1="10" y1="10" x2="17" y2="3"/>')
+_ICO_SETTINGS   = _icon('<circle cx="10" cy="10" r="2.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4"/>')
+_ICO_CHEVRON    = _icon('<polyline points="5 8 10 13 15 8"/>', w=12, h=12)
+_ICO_CHECK      = _icon('<polyline points="3 10 8 15 17 5"/>')
+_ICO_HISTORY    = _icon('<path d="M2 10a8 8 0 108-8"/><polyline points="2 2 2 10 10 10"/>')
+
+
+# ── Data helpers ─────────────────────────────────────────────────────────────
+
 def _value(value: object) -> str:
     if value is None or value == "":
         return "Not set"
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M")
+        return value.strftime("%b %-d, %Y")
     return str(value)
+
+
+def _value_time(value: datetime | None) -> str:
+    if value is None:
+        return "Not set"
+    return value.strftime("%b %-d · %H:%M")
 
 
 def _profile_is_empty(profile: UserProfile | None) -> bool:
@@ -141,81 +175,164 @@ def _count_active_jobs(db: DbSession, user: User) -> int:
     )
 
 
+def _list_jobs_with_no_next_action(db: DbSession, user: User) -> list[Job]:
+    subq = (
+        select(Communication.job_id)
+        .where(
+            Communication.owner_user_id == user.id,
+            Communication.follow_up_at.is_not(None),
+        )
+        .scalar_subquery()
+    )
+    return list(
+        db.scalars(
+            select(Job)
+            .where(
+                Job.owner_user_id == user.id,
+                Job.status.in_(ACTIVE_STATUSES),
+                Job.id.not_in(subq),
+            )
+            .order_by(Job.updated_at, Job.created_at)
+            .limit(8)
+        )
+    )
+
+
+# ── Item renderers ────────────────────────────────────────────────────────────
+
 def _job_link(job: Job) -> str:
     return f'<a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a>'
 
 
-def _empty(message: str) -> str:
-    return f'<p class="empty">{escape(message)}</p>'
+def _status_dot(status_val: str) -> str:
+    cls = {
+        "interested": "dot-amber",
+        "preparing": "dot-accent",
+        "applied": "dot-accent",
+        "interviewing": "dot-success",
+        "offer": "dot-success",
+        "saved": "dot-muted",
+        "rejected": "dot-danger",
+        "archived": "dot-muted",
+    }.get(status_val, "dot-muted")
+    return f'<span class="status-dot {cls}" title="{escape(status_val)}"></span>'
 
 
 def _followup_item(event: Communication) -> str:
+    when = _value(event.follow_up_at)
+    subject = event.subject or event.notes or "Follow up"
+    job = event.job
     return f"""
-    <li>
-      <strong>{_job_link(event.job)}</strong>
-      <span>{escape(_value(event.follow_up_at))}</span>
-      <p>{escape(event.subject or event.notes or "Follow up")}</p>
+    <li class="focus-row">
+      <span class="row-when urgent">{_ICO_FOLLOWUP}{escape(when)}</span>
+      <span class="row-title">{_status_dot(job.status)}{_job_link(job)}</span>
+      <span class="row-meta">{escape(job.company or "—")}</span>
+      <span class="row-subject">{escape(subject)}</span>
     </li>
     """
 
 
-def _job_item(job: Job, *, detail: str) -> str:
+def _stale_item(job: Job) -> str:
+    when = _value(job.updated_at)
     return f"""
-    <li>
-      <strong>{_job_link(job)}</strong>
-      <span>{escape(detail)}</span>
-      <p>{escape(job.company or "Company not set")} · {escape(job.status)}</p>
+    <li class="focus-row">
+      <span class="row-when warn">{_ICO_STALE}{escape(when)}</span>
+      <span class="row-title">{_status_dot(job.status)}{_job_link(job)}</span>
+      <span class="row-meta">{escape(job.company or "—")}</span>
+      <span class="row-subject">{escape(job.status)}</span>
     </li>
     """
 
 
 def _interview_item(interview: InterviewEvent) -> str:
+    when = _value_time(interview.scheduled_at)
     return f"""
-    <li>
-      <strong>{_job_link(interview.job)}</strong>
-      <span>{escape(_value(interview.scheduled_at))}</span>
-      <p>{escape(interview.stage)} · {escape(interview.location or "Location not set")}</p>
+    <li class="focus-row">
+      <span class="row-when ok">{_ICO_INTERVIEW}{escape(when)}</span>
+      <span class="row-title">{_status_dot("interviewing")}{_job_link(interview.job)}</span>
+      <span class="row-meta">{escape(interview.job.company or "—")}</span>
+      <span class="row-subject">{escape(interview.stage)}{(" · " + escape(interview.location)) if interview.location else ""}</span>
     </li>
     """
 
 
-def _artefact_followup_item(artefact: Artefact) -> str:
+def _artefact_item(artefact: Artefact) -> str:
     linked_jobs = {link.job.id: link.job for link in artefact.job_links}
     if artefact.job:
         linked_jobs[artefact.job.id] = artefact.job
-    linked_context = ", ".join(
-        job.title for job in sorted(linked_jobs.values(), key=lambda item: item.title.lower())
-    )
-    if not linked_context:
-        linked_context = "No linked jobs"
+    context = ", ".join(
+        job.title for job in sorted(linked_jobs.values(), key=lambda x: x.title.lower())
+    ) or "—"
+    when = _value(artefact.follow_up_at)
     return f"""
-    <li>
-      <strong><a href="/artefacts">{escape(artefact.filename)}</a></strong>
-      <span>{escape(_value(artefact.follow_up_at))}</span>
-      <p>{escape(artefact.purpose or artefact.kind)} · {escape(linked_context)}</p>
+    <li class="focus-row">
+      <span class="row-when warn">{_ICO_ARTEFACT}{escape(when)}</span>
+      <span class="row-title"><a href="/artefacts">{escape(artefact.filename)}</a></span>
+      <span class="row-meta">{escape(artefact.purpose or artefact.kind)}</span>
+      <span class="row-subject">{escape(context)}</span>
     </li>
     """
 
 
-def _section(title: str, body: str, *, section_id: str, wide: bool = False) -> str:
-    wide_class = " span-wide" if wide else ""
+def _no_action_item(job: Job) -> str:
     return f"""
-    <article class="focus-card{wide_class}" id="{escape(section_id, quote=True)}">
-      <div class="card-header">
-        <div>
-          <h2>{escape(title)}</h2>
-        </div>
-        <span class="status-pill accent">Now</span>
-      </div>
-      {body}
-    </article>
+    <li class="focus-row">
+      <span class="row-when muted">{_ICO_NACTION}No follow-up</span>
+      <span class="row-title">{_status_dot(job.status)}{_job_link(job)}</span>
+      <span class="row-meta">{escape(job.company or "—")}</span>
+      <span class="row-subject">{escape(job.status)}</span>
+    </li>
     """
 
 
-def _list(items: list[str], empty_message: str) -> str:
+def _recent_item(job: Job) -> str:
+    when = _value(job.created_at)
+    return f"""
+    <li class="focus-row">
+      <span class="row-when muted">{_ICO_PROSPECT}{escape(when)}</span>
+      <span class="row-title">{_status_dot(job.status)}{_job_link(job)}</span>
+      <span class="row-meta">{escape(job.company or "—")}</span>
+      <span class="row-subject">{escape(job.status)}</span>
+    </li>
+    """
+
+
+def _row_list(items: list[str], empty: str) -> str:
     if not items:
-        return _empty(empty_message)
-    return '<ul class="focus-list">' + "\n".join(items) + "</ul>"
+        return f'<p class="focus-empty">{escape(empty)}</p>'
+    return '<ul class="focus-rows">' + "\n".join(items) + "</ul>"
+
+
+# ── Section builders ──────────────────────────────────────────────────────────
+
+def _section(
+    icon: str,
+    title: str,
+    body: str,
+    *,
+    section_id: str,
+    count: int,
+    badge_tone: str = "neutral",
+    span_wide: bool = False,
+) -> str:
+    tone_class = {
+        "urgent": "badge-urgent",
+        "warn": "badge-warn",
+        "ok": "badge-ok",
+        "neutral": "badge-neutral",
+    }.get(badge_tone, "badge-neutral")
+    badge = f'<span class="section-badge {tone_class}">{count}</span>' if count else ""
+    wide_class = " span-wide" if span_wide else ""
+    return f"""
+    <section class="focus-section{wide_class}" id="{escape(section_id, quote=True)}">
+      <header class="section-head">
+        <span class="section-icon">{icon}</span>
+        <h2>{escape(title)}</h2>
+        {badge}
+      </header>
+      {body}
+    </section>
+    """
 
 
 def _focus_ai_target(
@@ -233,7 +350,7 @@ def _focus_ai_target(
 
 
 def _flash_message(message: str, *, tone: str) -> str:
-    return f'<section class="page-panel flash flash-{escape(tone, quote=True)}"><p>{escape(message)}</p></section>'
+    return f'<p class="focus-flash flash-{escape(tone, quote=True)}">{escape(message)}</p>'
 
 
 def _focus_redirect(*, ai_status: str | None = None, ai_error: str | None = None) -> str:
@@ -247,51 +364,432 @@ def _focus_redirect(*, ai_status: str | None = None, ai_error: str | None = None
     return "/focus?" + "&".join(params)
 
 
-def _focus_ai_output(output: AiOutput | None, job: Job | None) -> str:
-    if output is None or job is None:
-        return '<p class="meta">No AI nudge yet. Generate one when you want a quick steer on the next useful move.</p>'
-    return f"""
-    <article class="focus-ai-card">
-      <div class="panel-header">
-        <div>
-          <h2>AI nudge</h2>
-        </div>
-        <span class="status-pill accent">Optional</span>
-      </div>
-      <p class="meta">For <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></p>
-      {render_markdown_blocks(output.body, class_name="ai-markdown")}
-    </article>
-    """
-
-
-def _focus_ai_panel(job: Job | None) -> str:
+def _focus_ai_panel(job: Job | None, ai_output: "AiOutput | None") -> str:
     if job is None:
-        return """
-        <section class="page-panel soft">
-          <div class="panel-header">
-            <div>
-              <h2>No current target</h2>
-            </div>
-          </div>
-          <p>No due follow-up, stale active job, or recent prospect is available for a Focus suggestion right now.</p>
-        </section>
+        return ""
+    output_html = ""
+    if ai_output is not None:
+        output_html = f"""
+        <div class="ai-output">
+          <p class="ai-output-label">{_ICO_NUDGE} For <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></p>
+          {render_markdown_blocks(ai_output.body, class_name="ai-markdown")}
+        </div>
         """
     return f"""
-    <section class="page-panel ai">
-      <div class="panel-header">
-        <div>
-          <h2>Suggest the next useful move</h2>
-        </div>
-        <span class="status-pill accent">Manual</span>
-      </div>
-      <p class="meta">Targeting <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a>. Focus uses one explicit recommendation at a time.</p>
+    <section class="aside-panel aside-ai">
+      <header class="section-head">
+        <span class="section-icon">{_ICO_NUDGE}</span>
+        <h2>AI nudge</h2>
+        <span class="section-badge badge-neutral">Optional</span>
+      </header>
+      <p class="aside-meta">Target: <a href="/jobs/{escape(job.uuid, quote=True)}">{escape(job.title)}</a></p>
       <form method="post" action="/focus/ai-nudge">
         <input type="hidden" name="job_uuid" value="{escape(job.uuid, quote=True)}">
-        <button type="submit">Suggest next step</button>
+        <button type="submit" class="secondary ai-btn">{_ICO_NUDGE}<span>Suggest next step</span></button>
       </form>
+      {output_html}
     </section>
     """
 
+
+# ── Styles ────────────────────────────────────────────────────────────────────
+
+_FOCUS_STYLES = """
+  /* ── Summary stat strip ───────────────────────────────── */
+  .focus-stat-strip {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    align-items: center;
+    background: #ffffff;
+    border: var(--border-default);
+    border-radius: var(--radius-lg);
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 10px 10px;
+    text-align: center;
+    text-decoration: none;
+    transition: box-shadow 120ms ease-out, transform 120ms ease-out, border-color 120ms ease-out;
+  }
+  .stat-card:hover {
+    border-color: var(--line);
+    box-shadow: 0 4px 14px rgba(16,34,52,0.10);
+    transform: translateY(-1px);
+  }
+  .stat-card .stat-icon {
+    color: var(--soft-text);
+    display: flex;
+    margin-bottom: 2px;
+  }
+  .stat-card .stat-num {
+    font-size: 1.6rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .stat-card .stat-label {
+    color: var(--muted);
+    font-size: 0.76rem;
+    line-height: 1.3;
+  }
+  .stat-card.urgent .stat-num  { color: var(--danger); }
+  .stat-card.warn   .stat-num  { color: #8c5000; }
+  .stat-card.ok     .stat-num  { color: var(--success); }
+  .stat-card.accent .stat-num  { color: var(--accent-strong); }
+
+  /* ── Focus grid ────────────────────────────────────────── */
+  .focus-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .focus-section {
+    background: #ffffff;
+    border: var(--border-default);
+    border-radius: var(--radius-xl);
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+  }
+  .focus-section.span-wide {
+    grid-column: 1 / -1;
+  }
+
+  /* ── Section header ────────────────────────────────────── */
+  .section-head {
+    align-items: center;
+    border-bottom: var(--border-default);
+    display: flex;
+    gap: 8px;
+    padding: 11px 16px;
+  }
+  .section-head h2 {
+    flex: 1 1 auto;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    margin: 0;
+    min-width: 0;
+    text-transform: none;
+  }
+  .section-icon {
+    color: var(--soft-text);
+    display: flex;
+    flex-shrink: 0;
+  }
+  .section-badge {
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    min-width: 20px;
+    padding: 2px 7px;
+    text-align: center;
+  }
+  .badge-urgent { background: var(--danger-soft);   border: 0.5px solid #f8c4be; color: var(--danger); }
+  .badge-warn   { background: var(--amber-soft);    border: 0.5px solid #f9d9a0; color: #8c5000; }
+  .badge-ok     { background: var(--success-soft);  border: 0.5px solid #b6dfc5; color: var(--success); }
+  .badge-neutral { background: var(--accent-soft);  border: 0.5px solid #c3ccf0; color: var(--accent-strong); }
+
+  /* ── Row list ──────────────────────────────────────────── */
+  .focus-rows {
+    display: grid;
+    gap: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .focus-row {
+    align-items: center;
+    border-bottom: var(--border-default);
+    display: grid;
+    gap: 0 12px;
+    grid-template-columns: 130px minmax(0,1fr) minmax(100px,0.7fr) minmax(120px,1fr);
+    min-height: 44px;
+    padding: 8px 16px;
+    transition: background 100ms ease-out;
+  }
+  .focus-row:last-child { border-bottom: none; }
+  .focus-row:hover { background: var(--surface-soft); }
+  .focus-section.span-wide .focus-row {
+    grid-template-columns: 130px minmax(0,1.4fr) minmax(100px,0.7fr) minmax(140px,1fr);
+  }
+  .focus-empty {
+    color: var(--soft-text);
+    font-size: 0.84rem;
+    padding: 14px 16px;
+    margin: 0;
+  }
+
+  /* ── Row cells ─────────────────────────────────────────── */
+  .row-when {
+    align-items: center;
+    display: flex;
+    font-size: 0.78rem;
+    font-weight: 500;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .row-when svg { flex-shrink: 0; }
+  .row-when.urgent { color: var(--danger); }
+  .row-when.warn   { color: #8c5000; }
+  .row-when.ok     { color: var(--success); }
+  .row-when.muted  { color: var(--soft-text); }
+
+  .row-title {
+    align-items: center;
+    display: flex;
+    font-size: 0.88rem;
+    font-weight: 500;
+    gap: 7px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .row-title a {
+    color: var(--ink);
+    overflow: hidden;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row-title a:hover { color: var(--accent-strong); text-decoration: underline; }
+
+  .row-meta {
+    color: var(--muted);
+    font-size: 0.81rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row-subject {
+    color: var(--soft-text);
+    font-size: 0.81rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Status dot ─────────────────────────────────────────── */
+  .status-dot {
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    height: 7px;
+    width: 7px;
+  }
+  .dot-accent  { background: var(--accent); }
+  .dot-amber   { background: var(--amber); }
+  .dot-success { background: var(--success); }
+  .dot-danger  { background: var(--danger); }
+  .dot-muted   { background: var(--soft-text); }
+
+  /* ── Aside ──────────────────────────────────────────────── */
+  .focus-aside {
+    display: grid;
+    gap: 14px;
+  }
+  .aside-panel {
+    background: #ffffff;
+    border: var(--border-default);
+    border-radius: var(--radius-xl);
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+  }
+  .aside-nav-list {
+    display: grid;
+    gap: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .aside-nav-list li {
+    border-bottom: var(--border-default);
+  }
+  .aside-nav-list li:last-child { border-bottom: none; }
+  .aside-nav-item {
+    align-items: center;
+    color: var(--ink);
+    display: flex;
+    font-size: 0.86rem;
+    font-weight: 500;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0 16px;
+    text-decoration: none;
+    transition: background 100ms ease-out;
+  }
+  .aside-nav-item:hover { background: var(--surface-soft); }
+  .aside-nav-item .nav-icon { color: var(--soft-text); display: flex; flex-shrink: 0; }
+  .aside-nav-item .nav-label { flex: 1 1 auto; min-width: 0; }
+  .aside-nav-item .nav-count {
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 7px;
+  }
+  .nav-count.urgent  { background: var(--danger-soft);  border: 0.5px solid #f8c4be; color: var(--danger); }
+  .nav-count.warn    { background: var(--amber-soft);   border: 0.5px solid #f9d9a0; color: #8c5000; }
+  .nav-count.ok      { background: var(--success-soft); border: 0.5px solid #b6dfc5; color: var(--success); }
+  .nav-count.neutral { background: var(--accent-soft);  border: 0.5px solid #c3ccf0; color: var(--accent-strong); }
+  .nav-count.zero    { background: var(--surface-muted); border: var(--border-default); color: var(--soft-text); }
+
+  .aside-panel-body {
+    padding: 14px 16px;
+    display: grid;
+    gap: 10px;
+  }
+  .aside-meta {
+    color: var(--muted);
+    font-size: 0.84rem;
+    margin: 0;
+    padding: 10px 16px 0;
+  }
+  .aside-meta a { color: var(--accent-strong); font-weight: 500; }
+  .ai-btn { justify-content: center; width: 100%; }
+  .ai-btn span { flex: 0; }
+
+  .ai-output {
+    border-top: var(--border-default);
+    display: grid;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+  .ai-output-label {
+    align-items: center;
+    color: var(--muted);
+    display: flex;
+    font-size: 0.82rem;
+    gap: 5px;
+    margin: 0;
+  }
+  .ai-output-label a { color: var(--accent-strong); font-weight: 500; }
+  .ai-markdown { display: grid; gap: 8px; max-height: 200px; overflow-y: auto; }
+  .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 { font-size: 0.93rem; margin: 0; }
+  .ai-markdown p, .ai-markdown ul { font-size: 0.88rem; margin: 0; }
+  .ai-markdown ul { padding-left: 16px; }
+
+  .aside-ai form { padding: 10px 16px 0; }
+  .aside-ai .ai-btn { margin-bottom: 0; }
+
+  /* ── Profile prompt ─────────────────────────────────────── */
+  .profile-prompt {
+    align-items: center;
+    background: linear-gradient(135deg, rgba(79,103,228,0.06), rgba(79,103,228,0.02));
+    border: 0.5px solid #c3ccf0;
+    border-radius: var(--radius-xl);
+    display: flex;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+  }
+  .profile-prompt-icon { color: var(--accent); display: flex; flex-shrink: 0; }
+  .profile-prompt-text { flex: 1 1 auto; min-width: 0; }
+  .profile-prompt-text strong { color: var(--ink); display: block; font-size: 0.9rem; font-weight: 600; }
+  .profile-prompt-text span   { color: var(--muted); font-size: 0.82rem; }
+  .profile-prompt a.btn-prompt {
+    align-items: center;
+    background: var(--accent);
+    border: 0.5px solid var(--accent-strong);
+    border-radius: var(--radius-md);
+    color: #fff;
+    display: inline-flex;
+    flex-shrink: 0;
+    font-size: 0.84rem;
+    font-weight: 500;
+    gap: 5px;
+    padding: 6px 14px;
+    text-decoration: none;
+    transition: background 120ms ease-out;
+    white-space: nowrap;
+  }
+  .profile-prompt a.btn-prompt:hover { background: var(--accent-strong); }
+
+  /* ── Flash messages ─────────────────────────────────────── */
+  .focus-flash {
+    border-radius: var(--radius-md);
+    font-size: 0.86rem;
+    font-weight: 500;
+    margin: 0;
+    padding: 10px 14px;
+  }
+  .flash-success { background: var(--success-soft); border: 0.5px solid #b6dfc5; color: var(--success); }
+  .flash-error   { background: var(--danger-soft);  border: 0.5px solid #f8c4be; color: var(--danger); }
+
+  /* ── Responsive ─────────────────────────────────────────── */
+  @media (max-width: 1180px) {
+    .focus-stat-strip { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .focus-row {
+      grid-template-columns: 110px minmax(0,1fr) minmax(80px,0.6fr);
+    }
+    .focus-row .row-subject { display: none; }
+    .focus-section.span-wide .focus-row {
+      grid-template-columns: 110px minmax(0,1fr) minmax(80px,0.6fr);
+    }
+  }
+  @media (max-width: 860px) {
+    .focus-stat-strip { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .focus-grid { grid-template-columns: 1fr; }
+    .focus-row { grid-template-columns: 100px minmax(0,1fr); }
+    .focus-row .row-meta,
+    .focus-row .row-subject { display: none; }
+  }
+
+  /* ── Recently viewed sidebar panel ──────── */
+  #at-recents-panel .nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+"""
+
+
+# ── Recently viewed JS helper ─────────────────────────────────────────────────
+
+def _recents_focus_js() -> str:
+    ico = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 20 20"'
+        ' fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"'
+        ' stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M2 10a8 8 0 108-8"/>'
+        '<polyline points="2 2 2 10 10 10"/>'
+        '</svg>'
+    )
+    return f"""<script>
+  (() => {{
+    try {{
+      var items = JSON.parse(sessionStorage.getItem('at-recents') || '[]');
+      var panel = document.getElementById('at-recents-panel');
+      if (!panel || !items.length) return;
+      var list = panel.querySelector('.recents-list');
+      if (!list) return;
+      items.forEach(function(job) {{
+        var li = document.createElement('li');
+        var a = document.createElement('a');
+        a.className = 'aside-nav-item';
+        a.href = job.h;
+        var icon = document.createElement('span');
+        icon.className = 'nav-icon';
+        icon.innerHTML = `{ico}`;
+        var label = document.createElement('span');
+        label.className = 'nav-label';
+        label.textContent = job.t;
+        a.appendChild(icon);
+        a.appendChild(label);
+        li.appendChild(a);
+        list.appendChild(li);
+      }});
+      panel.style.display = '';
+    }} catch(e) {{}}
+  }})();
+</script>"""
+
+
+# ── Main render ───────────────────────────────────────────────────────────────
 
 def render_focus(
     user: User,
@@ -302,12 +800,14 @@ def render_focus(
     stale_jobs: list[Job],
     recent_jobs: list[Job],
     interviews: list[InterviewEvent],
+    no_next_action_jobs: list[Job],
     active_count: int,
     ai_output: AiOutput | None = None,
     ai_target_job: Job | None = None,
     ai_status: str | None = None,
     ai_error: str | None = None,
 ) -> HTMLResponse:
+    # ── Goal chip ──────────────────────────────────────────────────────────
     goal = None
     if profile and (profile.target_roles or profile.target_locations or profile.salary_min or profile.salary_max):
         goal_bits = ['<span class="goal-chip-label">Target:</span>']
@@ -318,223 +818,118 @@ def render_focus(
             goal_bits.append(f'<span class="goal-chip-secondary">{escape(profile.target_locations)}</span>')
         if profile.salary_min or profile.salary_max:
             salary = " / ".join(
-                part
-                for part in (
+                part for part in (
                     _format_salary_goal(profile.salary_min, profile.salary_currency),
                     _format_salary_goal(profile.salary_max, profile.salary_currency),
-                )
-                if part
+                ) if part
             )
             if salary:
                 goal_bits.append('<span class="goal-chip-sep tertiary">|</span>')
                 goal_bits.append(f'<span class="goal-chip-tertiary">{escape(salary)}</span>')
         goal = "".join(goal_bits)
 
-    profile_prompt = (
-        """
-        <section class="page-panel ai prompt">
-          <div class="panel-header">
-            <div>
-              <p class="panel-micro">Profile signal</p>
-              <h2>Complete your job-search profile</h2>
-            </div>
-            <span class="status-pill accent">Useful next</span>
+    # ── Profile prompt ─────────────────────────────────────────────────────
+    profile_prompt = ""
+    if _profile_is_empty(profile):
+        profile_prompt = f"""
+        <div class="profile-prompt">
+          <span class="profile-prompt-icon">{_ICO_SETTINGS}</span>
+          <div class="profile-prompt-text">
+            <strong>Complete your search profile</strong>
+            <span>Add target roles, locations and salary to unlock smarter focus signals.</span>
           </div>
-          <p>Focus will become more useful when it knows your target roles, locations, constraints, and positioning notes.</p>
-          <a class="button" href="/settings#profile">Add profile</a>
-        </section>
+          <a class="btn-prompt" href="/settings#profile">{_ICO_SETTINGS}<span>Set up profile</span></a>
+        </div>
         """
-        if _profile_is_empty(profile)
-        else ""
-    )
-    due_items = [_followup_item(event) for event in due_followups]
-    artefact_followup_items = [
-        _artefact_followup_item(artefact) for artefact in due_artefact_followups
-    ]
-    stale_items = [_job_item(job, detail=f"Updated {_value(job.updated_at)}") for job in stale_jobs]
-    recent_items = [_job_item(job, detail=f"Added {_value(job.created_at)}") for job in recent_jobs]
-    interview_items = [_interview_item(interview) for interview in interviews]
-    extra_styles = compact_content_rhythm_styles() + """
-    .focus-summary {
-      display: grid;
-      gap: 12px;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      margin-bottom: 18px;
-    }
-    .focus-summary .metric-card {
-      color: inherit;
-      min-width: 0;
-      text-decoration: none;
-      transition: border-color 120ms ease-out, transform 120ms ease-out;
-    }
-    .focus-summary .metric-card:hover,
-    .focus-summary .metric-card:focus-visible {
-      border-color: var(--line);
-      transform: translateY(-1px);
-    }
-    .focus-grid {
-      display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .focus-card.span-wide {
-      grid-column: 1 / -1;
-    }
-    .focus-card {
-      background: linear-gradient(180deg, rgba(255,255,255,1), rgba(249,251,253,0.98));
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-md);
-      display: grid;
-      gap: 14px;
-      padding: 18px;
-    }
-    .focus-list {
-      display: grid;
-      gap: 10px;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    .focus-list li {
-      background: rgba(247,249,252,0.92);
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius-lg);
-      display: grid;
-      gap: 4px;
-      padding: 14px;
-    }
-    .focus-list li strong { font-size: 1rem; }
-    .focus-list li span,
-    .focus-list li p,
-    .empty { color: var(--muted); }
-    .focus-card.span-wide .focus-list li {
-      align-items: center;
-      grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 0.8fr) minmax(180px, 1fr);
-    }
-    .focus-card.span-wide .focus-list li p {
-      margin: 0;
-    }
-    .focus-aside {
-      display: grid;
-      gap: 18px;
-    }
-    .tip-list {
-      display: grid;
-      gap: 10px;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    .tip-list li {
-      border-left: 3px solid rgba(255,255,255,0.28);
-      padding-left: 10px;
-    }
-    .empty {
-      background: rgba(247,249,252,0.92);
-      border: 1px dashed var(--line);
-      border-radius: var(--radius-lg);
-      padding: 14px;
-    }
-    .flash { padding: 14px 18px; }
-    .flash-success {
-      background: rgba(59, 167, 134, 0.10);
-      border-color: rgba(59, 167, 134, 0.28);
-    }
-    .flash-error {
-      background: rgba(226, 91, 76, 0.10);
-      border-color: rgba(226, 91, 76, 0.28);
-    }
-    .focus-ai-card {
-      background: rgba(232, 239, 255, 0.72);
-      border: 1px solid var(--ai-line);
-      border-radius: var(--radius-xl);
-      display: grid;
-      gap: 12px;
-      padding: 18px;
-    }
-    .focus-ai-card .ai-markdown {
-      max-height: 220px;
-      overflow-y: auto;
-    }
-    .focus-aside form { display: grid; gap: 10px; }
-    .ai-markdown { display: grid; gap: 10px; }
-    .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 { font-size: 1rem; margin: 0; }
-    .ai-markdown p, .ai-markdown ul { margin: 0; }
-    .ai-markdown ul { padding-left: 18px; }
-    @media (max-width: 1180px) {
-      .focus-summary {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-      .focus-card.span-wide .focus-list li {
-        align-items: start;
-        grid-template-columns: 1fr;
-      }
-    }
-    @media (max-width: 760px) {
-      .focus-summary {
-        grid-template-columns: 1fr;
-      }
-      .focus-grid { grid-template-columns: 1fr; }
-    }
-    """
-    flash_parts = []
+
+    # ── Flash messages ─────────────────────────────────────────────────────
+    flashes = ""
     if ai_status:
-        flash_parts.append(_flash_message(ai_status, tone="success"))
+        flashes += _flash_message(ai_status, tone="success")
     if ai_error:
-        flash_parts.append(_flash_message(ai_error, tone="error"))
+        flashes += _flash_message(ai_error, tone="error")
+
+    # ── Section rows ────────────────────────────────────────────────────────
+    followup_rows    = [_followup_item(e) for e in due_followups]
+    artefact_rows    = [_artefact_item(a) for a in due_artefact_followups]
+    stale_rows       = [_stale_item(j) for j in stale_jobs]
+    interview_rows   = [_interview_item(i) for i in interviews]
+    no_action_rows   = [_no_action_item(j) for j in no_next_action_jobs]
+    recent_rows      = [_recent_item(j) for j in recent_jobs]
+
+    all_fu_rows      = followup_rows + artefact_rows
+    all_fu_count     = len(due_followups) + len(due_artefact_followups)
+
+    grid = f"""
+    <div class="focus-grid">
+      {_section(_ICO_FOLLOWUP, "Due follow-ups", _row_list(all_fu_rows, "No follow-ups due — all clear."),
+                section_id="due-follow-ups", count=all_fu_count,
+                badge_tone="urgent" if all_fu_count else "neutral")}
+      {_section(_ICO_INTERVIEW, "Upcoming interviews", _row_list(interview_rows, "No interviews scheduled."),
+                section_id="upcoming-interviews", count=len(interviews),
+                badge_tone="ok" if interviews else "neutral")}
+      {_section(_ICO_STALE, "Stale active jobs", _row_list(stale_rows, "No stale jobs — everything is moving."),
+                section_id="stale-active-jobs", count=len(stale_jobs),
+                badge_tone="warn" if stale_jobs else "neutral")}
+      {_section(_ICO_NACTION, "Need next action", _row_list(no_action_rows, "All active jobs have a scheduled follow-up."),
+                section_id="no-next-action", count=len(no_next_action_jobs),
+                badge_tone="warn" if no_next_action_jobs else "neutral")}
+      {_section(_ICO_PROSPECT, "Recent prospects", _row_list(recent_rows, "No new saved or interested jobs."),
+                section_id="recent-prospects", count=len(recent_jobs),
+                badge_tone="neutral", span_wide=True)}
+    </div>
+    """
+
+    body = profile_prompt + grid
+
+    # ── Aside ───────────────────────────────────────────────────────────────
+    def _nav_count(n: int, tone: str) -> str:
+        t = tone if n else "zero"
+        return f'<span class="nav-count {t}">{n}</span>'
+
     aside = f"""
     <div class="focus-aside">
-      {' '.join(flash_parts)}
-      <section class="page-panel soft">
-        <div class="panel-header">
-          <div>
-            <h2>Where to resume</h2>
-          </div>
-          <a class="secondary" href="/board">Board</a>
-        </div>
-        <p>Start with the highest-signal queue, then jump into the matching work surface.</p>
-        <div class="mobile-stack">
-          <a class="status-pill accent" href="#due-follow-ups">{len(due_followups)} due follow-ups</a>
-          <a class="status-pill accent" href="#artefact-reviews">{len(due_artefact_followups)} artefact reviews</a>
-          <a class="status-pill warn" href="#stale-active-jobs">{len(stale_jobs)} stale jobs</a>
-          <a class="status-pill success" href="#upcoming-interviews">{len(interviews)} interviews</a>
-        </div>
-      </section>
-      {_focus_ai_panel(ai_target_job)}
-      {_focus_ai_output(ai_output, ai_target_job)}
-      <section class="page-panel emphasis">
-        <div class="panel-header">
-          <div>
-            <h2>Keep the loop tight</h2>
-          </div>
-        </div>
-        <p>Start with follow-ups, review what has gone stale, and end by deciding whether new prospects belong in the workflow.</p>
-        <ul class="tip-list">
-          <li>Review Inbox before adding new manual jobs.</li>
-          <li>Use Job Workspace when a role needs execution, not just status movement.</li>
-          <li>Record return notes after external actions so Focus stays trustworthy.</li>
+      {flashes}
+      <section class="aside-panel">
+        <header class="section-head">
+          <span class="section-icon">{_ICO_ACTIVE}</span>
+          <h2>Queue</h2>
+          {_nav_count(active_count, "neutral")}
+        </header>
+        <ul class="aside-nav-list">
+          <li><a class="aside-nav-item" href="#due-follow-ups">
+            <span class="nav-icon">{_ICO_FOLLOWUP}</span>
+            <span class="nav-label">Due follow-ups</span>
+            {_nav_count(len(due_followups) + len(due_artefact_followups), "urgent")}
+          </a></li>
+          <li><a class="aside-nav-item" href="#upcoming-interviews">
+            <span class="nav-icon">{_ICO_INTERVIEW}</span>
+            <span class="nav-label">Interviews</span>
+            {_nav_count(len(interviews), "ok")}
+          </a></li>
+          <li><a class="aside-nav-item" href="#stale-active-jobs">
+            <span class="nav-icon">{_ICO_STALE}</span>
+            <span class="nav-label">Stale jobs</span>
+            {_nav_count(len(stale_jobs), "warn")}
+          </a></li>
+          <li><a class="aside-nav-item" href="#no-next-action">
+            <span class="nav-icon">{_ICO_NACTION}</span>
+            <span class="nav-label">Need next action</span>
+            {_nav_count(len(no_next_action_jobs), "warn")}
+          </a></li>
         </ul>
       </section>
+      {_focus_ai_panel(ai_target_job, ai_output)}
+      <section class="aside-panel" id="at-recents-panel" style="display:none">
+        <header class="section-head">
+          <span class="section-icon">{_ICO_HISTORY}</span>
+          <h2>Recently viewed</h2>
+        </header>
+        <ul class="aside-nav-list recents-list"></ul>
+      </section>
     </div>
     """
-    body = f"""
-    {profile_prompt}
-    <div class="metric-grid focus-summary" aria-label="Focus summary">
-      <a class="metric-card" href="#due-follow-ups"><strong>{len(due_followups)}</strong><span>Due follow-ups</span></a>
-      <a class="metric-card" href="#artefact-reviews"><strong>{len(due_artefact_followups)}</strong><span>Artefact reviews</span></a>
-      <a class="metric-card" href="#stale-active-jobs"><strong>{len(stale_jobs)}</strong><span>Stale jobs</span></a>
-      <a class="metric-card" href="#upcoming-interviews"><strong>{len(interviews)}</strong><span>Upcoming interviews</span></a>
-      <a class="metric-card" href="/board?workflow=in_progress"><strong>{active_count}</strong><span>Active jobs</span></a>
-    </div>
-    <div class="focus-grid">
-      {_section("Due follow-ups", _list(due_items, "No due follow-ups."), section_id="due-follow-ups")}
-      {_section("Artefact reviews", _list(artefact_followup_items, "No artefact reviews due."), section_id="artefact-reviews")}
-      {_section("Stale active jobs", _list(stale_items, "No stale active jobs."), section_id="stale-active-jobs")}
-      {_section("Upcoming interviews", _list(interview_items, "No upcoming interviews."), section_id="upcoming-interviews")}
-      {_section("Recent prospects", _list(recent_items, "No recent saved or interested jobs."), section_id="recent-prospects", wide=True)}
-    </div>
-    """
+
     return HTMLResponse(
         render_shell_page(
             user,
@@ -547,10 +942,14 @@ def render_focus(
             aside=aside,
             goal=goal,
             container="split",
-            extra_styles=extra_styles,
+            extra_styles=_FOCUS_STYLES,
+            scripts=_recents_focus_js(),
+            show_hero=False,
         )
     )
 
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/focus", response_class=HTMLResponse, include_in_schema=False)
 def focus(
@@ -586,6 +985,7 @@ def focus(
         stale_jobs=stale_jobs,
         recent_jobs=recent_jobs,
         interviews=_list_upcoming_interviews(db, current_user, now=now),
+        no_next_action_jobs=_list_jobs_with_no_next_action(db, current_user),
         active_count=_count_active_jobs(db, current_user),
         ai_output=ai_output,
         ai_target_job=ai_target_job,
@@ -620,14 +1020,13 @@ def create_focus_ai_nudge(
             profile=get_user_profile(db, current_user),
             surface="focus",
         )
-    except AiExecutionError as exc:
-        db.rollback()
+        db.commit()
         return RedirectResponse(
-            url=_focus_redirect(ai_error=str(exc)),
+            url=_focus_redirect(ai_status=f"Next step suggestion generated for {job.title}"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
-    db.commit()
-    return RedirectResponse(
-        url=_focus_redirect(ai_status="AI nudge generated"),
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    except AiExecutionError as e:
+        return RedirectResponse(
+            url=_focus_redirect(ai_error=str(e)),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
