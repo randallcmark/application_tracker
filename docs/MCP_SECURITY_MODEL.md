@@ -18,6 +18,29 @@ MCP changes the threat model because an external AI client may be able to read u
 - keep MCP disabled unless explicitly configured
 - allow users to revoke access
 - avoid exposing MCP publicly by default
+- support OAuth 2.0 based authorization for production MCP use
+- support Dynamic Client Registration or a deliberate documented equivalent for self-hosted deployments
+
+---
+
+## OAuth/DCR prerequisite
+
+Production-quality MCP support requires an OAuth 2.0 based authorization model with Dynamic Client Registration.
+
+Static tokens may be acceptable only for constrained local development. They must not define the production MCP security model.
+
+Application Tracker should support:
+
+- registered MCP clients
+- scoped authorization
+- user consent
+- token expiry
+- token revocation
+- client revocation
+- audit logging
+- owner-scoped tool/resource access
+
+See `docs/MCP_OAUTH_DCR_PLAN.md` for the dedicated OAuth/DCR plan.
 
 ---
 
@@ -47,6 +70,8 @@ Threats include:
 - unauthorised MCP access over network
 - unsafe Markdown or generated content rendering
 - external AI hallucination saved as authoritative evidence
+- unregistered or spoofed MCP clients
+- stale client grants that remain active after user intent changes
 
 ---
 
@@ -63,11 +88,15 @@ no workflow mutation
 no destructive actions
 ```
 
+For local development, a static local token mode may exist only if clearly marked as non-production.
+
+For production-quality MCP, external clients should register and obtain scoped authorization through OAuth/DCR.
+
 ---
 
 ## Permission model
 
-Use explicit scopes.
+Use explicit OAuth scopes mapped to MCP tool permissions.
 
 Initial scopes:
 
@@ -88,6 +117,31 @@ mcp:write_artefacts
 mcp:write_competency_evidence
 mcp:mutate_workflow
 mcp:admin
+```
+
+Default consent should grant the smallest useful scope set. State-changing scopes should not be part of the default MCP grant.
+
+---
+
+## Client registration and consent
+
+A production MCP client should be represented by a registered client record.
+
+A consent screen should show:
+
+- client name
+- requested scopes
+- what the client can read
+- what the client can write
+- whether workflow mutation is permitted
+- how the user can revoke access
+
+Consent copy should use Application Tracker domain language rather than generic account language.
+
+Example:
+
+```text
+This client can read your job summaries, artefact previews, Focus queue, and competency evidence summaries. It can save visible Markdown AI outputs. It cannot change job status, delete records, or overwrite artefacts.
 ```
 
 ---
@@ -178,17 +232,17 @@ Do not expose MCP publicly by default.
 
 Preferred options:
 
-- localhost-only MCP server
-- private LAN only
+- localhost-only MCP server for local development
+- private LAN only for constrained self-hosted deployments
 - sidecar service not published outside Docker network
 - reverse proxy disabled unless user explicitly configures it
 
 If exposed remotely:
 
 - require TLS
-- require token auth
+- require OAuth-based authorization
 - document risk
-- support revocation
+- support client and token revocation
 - consider IP allowlists
 
 ---
@@ -199,6 +253,7 @@ Every MCP write should record:
 
 ```text
 owner_id
+client_id
 tool_name
 tool_version
 created_via = mcp
@@ -217,12 +272,14 @@ Do not store full private AI chat transcripts by default.
 The user should be able to:
 
 - enable/disable MCP
-- create/revoke MCP tokens
+- view registered MCP clients
+- create/revoke local development credentials where supported
+- revoke OAuth client grants
 - see last-used timestamp
 - see scopes granted
 - view MCP-created outputs
 - delete generated outputs
-- rotate token
+- rotate credentials where applicable
 
 ---
 
@@ -245,11 +302,12 @@ Therefore:
 MCP work is acceptable only if:
 
 - MCP is disabled unless configured
+- OAuth/DCR or a documented self-hosted equivalent is planned before production runtime exposure
 - owner scoping is enforced
 - scopes are explicit
 - broad data export is avoided
 - no silent state mutation occurs
 - all created outputs are visible
-- tokens can be revoked
+- clients and tokens can be revoked
 - prompt injection is considered
 - secrets are not logged
