@@ -1,6 +1,6 @@
 # Execution Plan: UI Density, Layout, And AI Surface Cleanup
 
-Status: Active
+Status: Completed
 
 Owner: Agent
 
@@ -28,7 +28,7 @@ denser, and more action-oriented while preserving existing product flows.
 - `docs/roadmap/task-map.md`
 - `docs/agent/ui-ux-rules.md`
 - `docs/design/DESIGN_SYSTEM.md`
-- `docs/exec-plans/active/job-workspace-reduction.md`
+- `docs/exec-plans/completed/job-workspace-reduction.md`
 
 Repository docs are the durable source of truth; the external QA backlog remains triage input.
 
@@ -81,7 +81,7 @@ Repository docs are the durable source of truth; the external QA backlog remains
 - 2026-05-02: Completed the first artefact Markdown preview quality pass. Derived previews now keep
   paragraphs, simple headings, and list structure instead of collapsing into one flat text blob.
 - 2026-05-02: Split UI-017 into the dedicated active plan
-  `docs/exec-plans/active/job-detail-section-workbenches.md` so larger section redesign work stays
+  `docs/exec-plans/completed/job-detail-section-workbenches.md` so larger section redesign work stays
   deliberate and reviewable.
 - 2026-05-02: Imported reviewed shell/UI polish from the sandbox branch into the repository-owned
   implementation: shared light/dark scheme support, preset appearance themes plus custom accent

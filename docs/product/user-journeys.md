@@ -59,9 +59,9 @@ Use this file for the workflows agents should understand and validate.
 - User: admin
 - Goal: operate the self-hosted deployment safely
 - Entry point: `/admin`
-- Main path: inspect health, manage capture tokens, use setup/help/admin tools, download backup
-- Important states: admin-only visibility, backup success path, health visibility
-- Failure states: admin leakage to non-admin users, unclear maintenance path, unsafe defaults in production
+- Main path: inspect health and runtime details, manage capture tokens, use setup/help/admin tools, download backup, validate a backup archive before manual restore
+- Important states: admin-only visibility, backup success path, restore dry-run pass/fail, health visibility
+- Failure states: admin leakage to non-admin users, unclear restore path, unsafe defaults in production
 - Validation: auth/admin tests, storage and docker-related tests, README operational docs
 
 ### Visible, non-mutating AI output flows

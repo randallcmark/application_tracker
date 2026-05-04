@@ -6,7 +6,7 @@ Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-05-02
+Last Updated: 2026-05-03
 
 ## Goal
 
@@ -116,6 +116,8 @@ make test
   Pasted rubric text now generates visible `employer_competency_mapping` output against saved
   competency evidence, preserves pasted source text in output context, labels sparse input as low
   confidence, and leaves evidence non-mutating.
+- 2026-05-03: Promoted this plan to the primary active implementation track after deferring Inbox
+  follow-ons and further provider expansion.
 
 ## Decisions
 

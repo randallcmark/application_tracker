@@ -26,7 +26,7 @@ AI-generated text so the first shared Markdown renderer slice can be implemented
 - `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`
 - `docs/DOCUMENT_HANDLING_TASK_MAP.md`
-- `docs/exec-plans/active/document-handling-foundation.md`
+- `docs/exec-plans/completed/document-handling-foundation.md`
 - `docs/agent/security-rules.md`
 - `docs/agent/ai-feature-rules.md`
 

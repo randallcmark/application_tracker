@@ -2,8 +2,6 @@
 
 Application Tracker is a self-hosted, goal-aware job-search workspace for capturing roles, deciding what deserves attention, preparing applications, managing artefacts, and learning what works during a job search.
 
-This repository is a clean rebuild of the original personal MVP.
-
 ## Product Direction
 
 The target product is:
@@ -16,7 +14,7 @@ The target product is:
   settings, capture setup, help, sign-out, and admin tools;
 - workflow-board friendly for stage management without making kanban the product centre;
 - browser-capture friendly for importing jobs from job pages;
-- profile-aware over time, with optional matching and writing assistance;
+- profile-aware over time, with optional visible AI guidance and writing assistance;
 - private by default, with no required external services.
 
 The board remains an important workflow view, especially for active applications, but the planned product direction is a focus-led workspace: the app should help the user understand what matters today, triage new opportunities, prepare strong applications, preserve context across external systems, and reuse artefacts intelligently.
@@ -26,6 +24,10 @@ Current planning starts with the three hub documents:
 - Vision: `docs/PRODUCT_VISION.md`
 - Strategy and order of execution: `docs/roadmap/implementation-sequencing.md`
 - Execution-ready task breakdown: `docs/roadmap/task-map.md`
+
+Current planning also includes active document-handling, AI/provider, and MCP planning tracks. MCP
+is planning-only today and is framed as an alternative AI execution path, not a replacement for
+the UI or the app’s visible-output rules.
 
 ### Product strategy and design docs
 
@@ -71,25 +73,42 @@ Job detail page notes live in:
 
 ## Current State
 
-This clean repo now contains a usable authenticated tracker:
+The repository now contains a usable authenticated tracker with a substantial working product
+surface:
 
 - local login/logout and first admin bootstrap command;
 - scoped API tokens for capture integrations;
 - owner-scoped jobs API and browser capture endpoint;
-- Focus home surface for due follow-ups, stale work, upcoming interviews, and recent prospects;
-- Inbox review surface for captured jobs that need acceptance before active workflow views;
+- Focus home surface for due follow-ups, stale work, upcoming interviews, recent prospects, missing
+  next actions, and recently viewed jobs;
+- Inbox review surface for captured jobs and pasted email intake that need acceptance before active
+  workflow views;
 - shared server-rendered layout across the main authenticated pages, with a top-right user menu for
-  User Settings, Capture Settings, Help, Sign out, and admin-only Admin/API Docs;
+  User Settings, Capture Settings, appearance controls, Help, Sign out, and admin-only Admin/API
+  Docs;
 - built-in Help page with task-oriented guidance for the main workflow;
-- manual job creation and editable job detail pages;
+- manual job creation and editable job detail pages with compact section workspaces;
 - workflow board views with drag/drop and a `Move to column` fallback;
 - status-change timeline, notes, follow-up dates, applications, interviews, archive/unarchive;
-- job-level artefact upload/download;
+- job-level artefact upload/download plus artefact detail views and Markdown/text previews where
+  available;
+- Markdown-first rendering for visible AI output and role/artefact preview surfaces;
+- competency evidence storage and visible employer rubric mapping from pasted text;
+- visible AI output workflows for fit summaries, next-step guidance, artefact analysis, tailoring,
+  and drafting;
+- provider-backed AI settings with owner-scoped configuration, encrypted API key storage, and model
+  discovery for supported providers;
 - stage-aging, stale-card, and follow-up indicators;
 - Alembic migrations, Dockerfile, Docker Compose file, and pytest coverage.
 
-The next implementation work should follow `docs/roadmap/implementation-sequencing.md` and the
-execution-ready workstream detail in `docs/roadmap/task-map.md`.
+Near-term work is driven by the roadmap hubs above. Current active/planned workstreams include:
+
+- artefact AI and competency evidence continuation;
+- scheduler/worker runtime planning;
+- MCP planning and OAuth/DCR prerequisite design before any runtime MCP exposure.
+
+Use `docs/roadmap/implementation-sequencing.md` for current order and
+`docs/roadmap/task-map.md` for execution-ready breakdown.
 
 ## Local Docker Runtime
 
@@ -272,7 +291,8 @@ http://localhost:8000/admin
 ```
 
 The admin page can create and revoke capture API tokens across users, open capture setup, check
-health, and download a backup ZIP containing the SQLite database and local artefact files.
+health, download a backup ZIP containing the SQLite database and local artefact files, and dry-run
+validate a backup archive before any manual restore.
 
 For a NAS or homelab deployment, keep `/app/data` on persistent storage. That directory contains
 the SQLite database and uploaded artefacts. The bundled Compose file uses a named volume:
@@ -318,6 +338,16 @@ The rebuilt container applies any pending Alembic migrations before starting the
 
 Download periodic backups from `/admin`, or back up the persistent `/app/data` mount directly from
 the host.
+
+Before replacing live data, validate any downloaded archive from `/admin` or from the CLI:
+
+```bash
+.venv/bin/python -m app.cli backup validate --file /path/to/application-tracker-backup.zip
+```
+
+Validation checks ZIP shape, manifest metadata, and SQLite readability without mutating the
+deployment. Actual restore is still a deliberate manual operation: stop the app, replace `/app/data`
+from a validated backup, then start the app again.
 
 For `APP_ENV=production`, `PUBLIC_BASE_URL` must be HTTPS and the default session secret is
 rejected. Put the app behind QNAP's reverse proxy, another reverse proxy, or a TLS terminator, then

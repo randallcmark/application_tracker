@@ -646,6 +646,7 @@ This is the area most likely to need design control and consolidation.
 
 - system summary stats
 - admin tasks
+- runtime/restore visibility
 - create capture token
 - API token table
 - backup/download actions
@@ -655,6 +656,7 @@ This is the area most likely to need design control and consolidation.
 - review user/job/token counts
 - create/revoke admin-side capture tokens
 - access backup flow
+- dry-run validate a backup archive before manual restore
 - jump to capture setup
 
 **API/form actions**
@@ -662,6 +664,7 @@ This is the area most likely to need design control and consolidation.
 - `POST /admin/api-tokens`
 - `POST /admin/api-tokens/{token_uuid}/revoke`
 - `GET /admin/backup`
+- `POST /admin/restore/validate`
 
 **Current AI footprint**
 

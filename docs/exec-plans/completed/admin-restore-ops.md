@@ -1,12 +1,12 @@
 # Execution Plan: Admin, Restore, And Self-Hosted Operations
 
-Status: Active
+Status: Completed
 
 Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-04-28
+Last Updated: 2026-05-03
 
 ## Goal
 
@@ -43,10 +43,14 @@ Expand the self-hosted operations surface so backups, restore validation, operat
 ## Progress Log
 
 - 2026-04-28: Created admin/restore/ops workstream from the delivery plan.
+- 2026-05-03: Added shared backup/restore service logic, admin restore dry-run validation, CLI backup validation, and runtime visibility on `/admin`.
+- 2026-05-03: Updated README and Docker deployment docs so backup and manual restore instructions align with the validated dry-run flow.
+- 2026-05-03: Completed the current admin/restore/ops roadmap slice and archived the plan.
 
 ## Decisions
 
 - Keep restore validation as a first-class acceptance criterion, not a later documentation-only step.
+- Keep destructive restore manual until the validated archive shape and operator flow are explicit and trustworthy.
 
 ## Validation
 

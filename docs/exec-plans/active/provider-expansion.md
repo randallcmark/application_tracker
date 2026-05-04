@@ -1,12 +1,12 @@
 # Execution Plan: AI Provider Expansion
 
-Status: Active
+Status: Deferred
 
 Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-05-01
+Last Updated: 2026-05-03
 
 ## Goal
 
@@ -69,6 +69,9 @@ Extend provider execution beyond the current OpenAI-compatible and Gemini paths,
 - 2026-05-01: Added authenticated model discovery for OpenAI, Gemini, Anthropic, and best-effort
   OpenAI-compatible endpoints. Settings now uses a two-step setup: save key/discover models, then
   enable one selected model. Custom endpoint discovery failures preserve manual model entry.
+- 2026-05-03: Deferred further provider expansion. OpenAI, Gemini, Anthropic, and configurable
+  OpenAI-compatible setup cover the intended provider surface for now; additional provider work is
+  superseded by later MCP-oriented options and does not need more active implementation.
 
 ## Decisions
 

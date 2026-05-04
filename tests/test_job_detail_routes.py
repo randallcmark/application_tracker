@@ -150,11 +150,13 @@ def test_job_detail_section_query_renders_selected_application_surface(tmp_path:
         assert 'data-ui-component="overview-identity"' in response.text
         assert 'data-ui-component="application-workbench"' in response.text
         assert "Application route" in response.text
-        assert "Advance status" in response.text
+        assert "Next step" in response.text
+        assert "Submission status" in response.text
+        assert "Materials and AI help" in response.text
         assert "Open source" in response.text
         assert "Open apply link" in response.text
         assert f'action="/jobs/{job_uuid}/status"' in response.text
-        assert "Role overview" not in response.text
+        assert "Role details" not in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -181,14 +183,18 @@ def test_job_detail_section_query_renders_refined_interviews_and_followups_surfa
         interviews_response = client.get(f"/jobs/{job_uuid}?section=interviews")
         assert interviews_response.status_code == 200
         assert 'data-ui-component="interviews-workbench"' in interviews_response.text
+        assert "Next interview" in interviews_response.text
         assert "Interview loop" in interviews_response.text
-        assert "Schedule interview" in interviews_response.text
+        assert "Interview actions" in interviews_response.text
+        assert "Preparation tools" in interviews_response.text
 
         followups_response = client.get(f"/jobs/{job_uuid}?section=follow-ups")
         assert followups_response.status_code == 200
         assert 'data-ui-component="follow-ups-workbench"' in followups_response.text
         assert "Follow-up queue" in followups_response.text
-        assert "Add a note or follow-up" in followups_response.text
+        assert "Next outbound action" in followups_response.text
+        assert "Communication actions" in followups_response.text
+        assert "Recent context" in followups_response.text
         assert "Record a blocker" in followups_response.text
         assert "Record a return note" in followups_response.text
     finally:

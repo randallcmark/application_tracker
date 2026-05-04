@@ -177,6 +177,10 @@ Acceptance criteria:
 - recommendation is grounded in product workflows;
 - Docker/QNAP runtime compatibility is considered before FTS.
 
+Status: complete. `docs/SEARCH_AND_RETRIEVAL_DECISION.md` now keeps the current phase on
+owner-scoped structured retrieval first, defers broad text indexing, and documents the triggers
+required before SQLite FTS5 or embeddings are reconsidered.
+
 ## Task 9: Export Boundary Design
 
 Goal: define how Markdown content becomes external output formats.
@@ -191,3 +195,7 @@ Acceptance criteria:
 - source lineage is preserved;
 - no pixel-perfect roundtrip promise is made;
 - first export target is identified.
+
+Status: complete. `docs/EXPORT_STRATEGY.md` now defines export as a user-triggered derived
+boundary, preserves lineage, rejects pixel-perfect roundtrip promises, and identifies Markdown
+export as the first target.

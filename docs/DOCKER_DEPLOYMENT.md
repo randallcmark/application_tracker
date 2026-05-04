@@ -228,3 +228,29 @@ ssh qnap "cd /share/Container/application_tracker && sudo docker compose ps"
 ```
 
 Do not treat QNAP deployment as tested unless these commands were run against the QNAP.
+
+## Backup And Restore
+
+The admin page at `/admin` provides two separate operations:
+
+- `Download backup`: produces a ZIP archive containing `MANIFEST.txt`, the SQLite database snapshot
+  when available, and local artefact files or an explanatory README.
+- `Restore dry-run`: uploads a backup ZIP and validates archive shape, manifest metadata, and
+  SQLite readability without changing live data.
+
+You can run the same dry-run from the CLI:
+
+```bash
+.venv/bin/python -m app.cli backup validate --file /path/to/application-tracker-backup.zip
+```
+
+Current restore remains manual by design. The safe operator flow is:
+
+1. Download a backup from `/admin`.
+2. Run restore dry-run validation in `/admin` or with the CLI command above.
+3. Stop the deployment with `make docker-down` or your NAS/container runtime equivalent.
+4. Replace the persistent `/app/data` contents with the validated backup material.
+5. Start the deployment with `make docker-up`.
+6. Confirm `/health`, sign-in, and the Admin page all load normally.
+
+Do not replace live data from an unvalidated archive.

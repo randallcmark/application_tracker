@@ -29,6 +29,8 @@ During maintenance, check:
 
 - broken links;
 - empty placeholder files;
+- the root `README.md` still matches the current product vision, roadmap, and shipped capability
+  set;
 - stale references to missing local-only Codex routing files;
 - validation commands that no longer exist;
 - product docs that conflict with tests or implementation;

@@ -7,79 +7,106 @@ Use it after reading `docs/PRODUCT_VISION.md` and `docs/roadmap/implementation-s
 
 | Order | Workstream | Status | Entry Point | Next Slice |
 | --- | --- | --- | --- | --- |
-| 1 | UI density, layout, and AI surface cleanup | Active | `docs/exec-plans/active/ui-density-layout-ai-cleanup.md` | Core QA cleanup is complete: compact headings, Focus, Inbox, Board, Job Workspace AI/documents polish, Competency Evidence workspace redesign, and the first artefact Markdown preview quality pass. |
-| 2 | Inbox follow-ons | Active | `docs/exec-plans/active/inbox-follow-up.md` | Validate review-readiness behavior in use, then scope provider-backed ingestion only if needed. |
-| 3 | Job Workspace reduction | Active | `docs/exec-plans/active/job-workspace-reduction.md` | Core pane cleanup and QA-driven polish are complete; next work should follow the dedicated section-workbench plan rather than ad hoc workspace patches. |
-| 4 | Job Detail section workbenches | Active | `docs/exec-plans/active/job-detail-section-workbenches.md` | Define and then implement compact workbenches for Application, Interviews, Follow-Ups, Tasks, and Notes one section at a time. |
-| 5 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | Pasted-text employer rubric mapping is implemented; keep uploaded rubric documents and outcome-aware refinement deferred until real usage or document-handling needs justify them. |
-| 6 | AI provider expansion | Active | `docs/exec-plans/active/provider-expansion.md` | Anthropic, minimum-input provider setup, and model discovery are implemented; next slice is provider polish from real use or document handling needs. |
-| 7 | Document Handling Foundation | Active planning | `docs/exec-plans/active/document-handling-foundation.md` | Shared renderer now covers AI outputs and Job Workspace descriptions; artefact access is formalized behind a no-schema Markdown contract and the next slice should build on that boundary. |
-| 8 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape after document source/Markdown/provenance rules are stable. |
-| 9 | Admin, restore, and self-hosted operations | Active planning | `docs/exec-plans/active/admin-restore-ops.md` | Inventory restore and operations gaps, then add restore validation and operational smoke coverage. |
-| 10 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
+| 1 | Artefact AI / competency evidence continuation | Active | `docs/exec-plans/active/artefact-ai-g4-continuation.md` | Pasted-text employer rubric mapping is implemented; keep uploaded rubric documents and outcome-aware refinement deferred until real usage or document-handling needs justify them. |
+| 2 | Scheduler and worker | Active planning | `docs/exec-plans/active/scheduler-worker.md` | Define the minimal runtime shape after document source/Markdown/provenance rules are stable. |
+| 3 | Admin, restore, and self-hosted operations | Completed | `docs/exec-plans/completed/admin-restore-ops.md` | Runtime visibility, backup download, restore dry-run validation, and self-hosted backup/restore docs are complete. Resume only if object-management or scheduler-linked admin follow-ons justify a new slice. |
+| 4 | MCP integration planning and auth prerequisite | Active planning | `docs/MCP_INTEGRATION_STRATEGY.md`, `docs/MCP_TASK_MAP.md` | Keep MCP at planning level; next slice is to choose deployment mode and turn the OAuth/DCR prerequisite into execution-ready implementation work after document/Markdown handling is closed. |
+| 5 | UI/UX technical debt | Active planning | `docs/quality/technical-debt.md` | Keep broad responsive/polish debt centralized here instead of reopening ad hoc UI cleanup workstreams. |
+| 6 | Job Detail section workbenches | Completed | `docs/exec-plans/completed/job-detail-section-workbenches.md` | Section workbench implementation and targeted validation are complete. Resume only if new workspace issues justify a dedicated follow-on slice. |
+| 7 | Inbox follow-ons | Deferred | `docs/exec-plans/active/inbox-follow-up.md` | Leave provider/board-specific ingestion logic deferred until a later planning pass justifies the complexity. |
+| 8 | AI provider expansion | Deferred | `docs/exec-plans/active/provider-expansion.md` | OpenAI, Gemini, Anthropic, and configurable OpenAI-compatible setup are sufficient for now; defer further provider work. |
+| 9 | Deferred auth/provider modes | Deferred | `docs/AUTHENTICATION.md`, `docs/quality/technical-debt.md` | Re-scope when workflow and operations priorities are stable. |
 
 Harness cleanup baseline is complete. Historical context now lives in
 `docs/exec-plans/completed/harness-adoption-and-validator.md`; keep `bash scripts/validate-harness.sh`
 passing and continue moving finished plans out of `docs/exec-plans/active/` promptly.
 
-## UI Density, Layout, And AI Surface Cleanup
+Document Handling Foundation is complete in
+`docs/exec-plans/completed/document-handling-foundation.md`. The shared renderer, no-schema
+Markdown access contract, search/retrieval decision, and export strategy now form the settled
+document boundary for later work.
 
-Goal: incorporate the latest UI QA backlog into repository-owned planning and make the core
-authenticated pages cleaner, denser, and more action-oriented without changing workflow semantics.
+## Artefact AI / Competency Evidence Continuation
+
+Goal: continue artefact-local AI and competency evidence grounding with explicit provenance and no
+hidden mutation.
+
+Current status:
+
+1. Explicit save-back for AI-shaped STAR responses is implemented as a user action.
+2. Artefact-local tailoring/draft outputs preserve resolved evidence UUIDs, compact visible
+   evidence references in output metadata, and model-backed evidence-link history.
+3. The model-backed evidence-link history stores generation-time evidence snapshots for later reuse
+   reporting, audit, and outcome-aware refinement.
+4. Employer rubric mapping is implemented for the first pasted-text slice through visible
+   `employer_competency_mapping` output in the competency library.
+5. Outcome-aware refinement remains deferred until evidence reuse has real usage.
 
 Next slices:
 
-1. Compact page headers are implemented for Focus, Inbox, Board, Add Job, Paste Email, Settings,
-   Artefacts, and Competency Evidence.
-2. Focus counters and priority surfaces are compact and actionable.
-3. Inbox cards and right rail are compacted.
-4. Board count/subtext duplication is removed.
-5. Job Workspace AI, navigation, and document layout cleanup is complete for the current QA pass.
-6. Competency Evidence workspace redesign is complete.
-7. The first artefact Markdown preview quality pass is complete.
-8. Job Detail section workbenches now continue through a dedicated active plan instead of this
-   cleanup checklist.
+1. Keep outcome-aware refinement deferred until evidence-link history has real usage.
+2. Keep uploaded rubric documents deferred until artefact/document handling reuse is explicit.
+3. Revisit rubric mapping only when real usage exposes gaps in preparation output or source
+   handling.
 
 Acceptance criteria:
 
-- Main page headers use compact title-first hierarchy.
-- Primary actions remain visible and unchanged.
-- UI changes preserve owner scoping, route compatibility, and AI non-mutation rules.
-- Browser validation is included for layout-affecting slices when feasible.
+- Evidence grounding is opt-in.
+- AI output remains visible and attributable.
+- Saving shaped evidence or generated artefacts is an explicit user action.
+- The app still works when no AI provider is configured.
+- Evidence-link history is owner-scoped and queryable without parsing `source_context`.
+- Employer rubric mapping remains preparation support and must not fabricate or silently mutate
+  evidence.
 
 Validation:
 
 ```sh
-bash scripts/validate-harness.sh
-git diff --check
+make test
 ```
 
 Supporting docs:
 
-- `docs/exec-plans/active/ui-density-layout-ai-cleanup.md`
-- `docs/agent/ui-ux-rules.md`
-- `docs/design/DESIGN_SYSTEM.md`
-- `docs/exec-plans/active/job-workspace-reduction.md`
-- `docs/exec-plans/active/job-detail-section-workbenches.md`
+- `docs/exec-plans/active/artefact-ai-g4-continuation.md`
+- `docs/ARTEFACT_AI_PLAN.md`
+- `docs/COMPETENCY_EVIDENCE_PLAN.md`
+- `docs/AI_READINESS.md`
+- `docs/DOCUMENT_HANDLING_STRATEGY.md`
+- `docs/design/COMPETENCY_EVIDENCE_UX.md`
+
+## Job Detail Section Workbenches
+
+Status: completed
+
+Goal: finish the compact execution redesign inside Job Workspace one section at a time without
+reopening broad shell or generic polish work.
+
+Completion summary:
+
+1. Application, Interviews, Follow-Ups, Tasks, and Notes now use compact workbench structure.
+2. Targeted overflow and wrapping fixes were validated after implementation.
+3. Resume only if new workspace issues justify a dedicated follow-on slice.
 
 ## Inbox Follow-Ons
+
+Status: deferred
 
 Goal: make intake review richer without losing the distinction between manual, captured, and
 system-recommended opportunities.
 
 Next slices:
 
-1. Validate multi-candidate and review-readiness behavior against real pasted/captured examples.
-2. Keep provider-specific parsing conservative and stop at provider-backed ingestion decisions unless
-   the review model exposes a hard gap.
-3. Scope provider-backed ingestion after the review model is stable.
+1. Leave provider/board-specific parsing deferred until a later planning pass justifies the
+   complexity.
+2. Resume only if real use shows a review-readiness gap that current pasted-email handling cannot
+   cover.
 
 Acceptance criteria:
 
 - Inbox preserves provenance and review-before-activation semantics.
 - One email can produce zero, one, or many review candidates without auto-activating jobs.
 - Accepted and dismissed items remain owner-scoped and do not leak into active views incorrectly.
-- Provider-backed ingestion is explicit and optional.
+- Provider-backed ingestion is explicit and optional when resumed.
 
 Validation:
 
@@ -92,38 +119,6 @@ Supporting docs:
 - `docs/INBOX.md`
 - `docs/product/application_tracker_inbox_monitoring_decision_memo.md`
 - `docs/product/user-journeys.md`
-
-## Job Workspace Reduction
-
-Goal: make the Job Workspace calmer and easier to execute from, especially on narrow screens.
-
-Next slices:
-
-1. Run any remaining larger-viewport manual checks not covered by the available browser viewport.
-2. Treat further section redesign through `docs/exec-plans/active/job-detail-section-workbenches.md`
-   rather than ad hoc workspace polish.
-3. Reassess utility cards only after section-workbench changes expose a concrete need.
-
-Acceptance criteria:
-
-- The workspace remains a one-opportunity execution surface.
-- Duplicate summaries and redundant actions are reduced.
-- Mobile portrait remains readable and actionable.
-- AI controls remain visible, optional, and non-mutating.
-
-Validation:
-
-```sh
-make test
-```
-
-Include browser/manual checks for desktop and mobile widths when layout changes.
-
-Supporting docs:
-
-- `docs/JOB_WORKSPACE_REDUCTION_PLAN.md`
-- `docs/JOB_DETAIL.md`
-- `docs/design/DESIGN_SYSTEM.md`
 
 ## Artefact AI / Competency Evidence Continuation
 
@@ -174,21 +169,16 @@ Supporting docs:
 
 ## AI Provider Expansion
 
+Status: deferred
+
 Goal: add provider capability without changing product semantics or making AI mandatory.
 
 Next slices:
 
-1. Standard provider setup is normalized around one active provider per user and minimum viable
-   user input.
-2. Published service details are preconfigured for standard providers: OpenAI, Gemini, and
-   Anthropic.
-3. Model discovery is implemented for OpenAI, Gemini, Anthropic, and best-effort
-   OpenAI-compatible endpoints.
-4. Custom OpenAI-compatible setup remains explicit: friendly label, base URL, API token, and
-   selected or manually entered model name.
-5. Anthropic provider execution is implemented through the Messages API.
-6. Next provider slice should come from real-use polish, error-message gaps, or document handling
-   needs rather than adding more provider modes speculatively.
+1. OpenAI, Gemini, Anthropic, and configurable OpenAI-compatible setup are sufficient for the
+   current product surface.
+2. Defer further provider work unless real use exposes a concrete provider gap that MCP does not
+   supersede.
 
 Acceptance criteria:
 
@@ -214,8 +204,11 @@ Supporting docs:
 
 ## Document Handling Foundation
 
-Goal: establish source-preserving, Markdown-first content handling before adding more
-document-heavy AI, artefact, rubric, search, export, or background automation workflows.
+Status: completed
+
+Goal: close the source-preserving, Markdown-first document-handling foundation before adding more
+document-heavy AI, MCP-dependent Markdown features, search, export, or background automation
+workflows.
 
 Next slices:
 
@@ -227,11 +220,15 @@ Next slices:
    `docs/exec-plans/completed/artefact-markdown-representation.md`.
 4. Keep current artefact behaviour computed/no-schema and route future feature work through the
    Markdown access contract instead of direct extraction helpers.
-5. Move to persisted Markdown records only when the decision triggers in
+5. Close the foundation by deciding whether one more foundation slice is required or whether the
+   remaining document work is intentionally deferred behind later dedicated decisions.
+6. Move to persisted Markdown records only when the decision triggers in
    `docs/architecture/decisions/2026-05-02-artefact-markdown-access-contract.md` are met.
-6. Keep uploaded rubric documents and richer rubric-source handling deferred until artefact/document
+7. Keep uploaded rubric documents and richer rubric-source handling deferred until artefact/document
    handling reuse is explicit.
-7. Defer search, FTS, embeddings, DOCX export, and PDF export until explicit decision docs exist.
+8. Defer search, FTS, embeddings, DOCX export, and PDF export until explicit decision docs exist.
+   Search and retrieval now has its decision doc in `docs/SEARCH_AND_RETRIEVAL_DECISION.md`, and
+   export now has its decision doc in `docs/EXPORT_STRATEGY.md`.
 
 Acceptance criteria:
 
@@ -239,10 +236,12 @@ Acceptance criteria:
 - Markdown is the internal working representation for rendered text, AI context, generated output,
   and future export preparation.
 - Rendered Markdown goes through one safe sanitized path.
+- The foundation is explicit enough that MCP and later search/export planning can depend on the
+  Markdown boundary without re-deciding the representation.
 - AI prompts treat external source material as data, not instructions.
 - Employer rubric mapping is not implemented before the Markdown foundation is in place.
 - Search and export stay deferred until `docs/SEARCH_AND_RETRIEVAL_DECISION.md` and
-  `docs/EXPORT_STRATEGY.md` are created by future decision work.
+  `docs/EXPORT_STRATEGY.md` are created by future decision work. Both requirements are now met.
 
 Validation:
 
@@ -256,8 +255,99 @@ Supporting docs:
 - `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`
 - `docs/DOCUMENT_HANDLING_TASK_MAP.md`
+- `docs/SEARCH_AND_RETRIEVAL_DECISION.md`
+- `docs/EXPORT_STRATEGY.md`
 - `docs/architecture/decisions/2026-05-02-markdown-first-document-handling.md`
 - `docs/architecture/decisions/2026-05-02-artefact-markdown-access-contract.md`
+
+## UI/UX Technical Debt
+
+Goal: keep broad cross-surface polish, responsive hardening, and remaining UI regressions in one
+intentional debt track so they do not get lost or leak into unrelated feature slices.
+
+Current status:
+
+1. The broad UI density/layout cleanup pass is complete and preserved in
+   `docs/exec-plans/completed/ui-density-layout-ai-cleanup.md`.
+2. The broad Job Workspace reduction/polish pass is complete and preserved in
+   `docs/exec-plans/completed/job-workspace-reduction.md`.
+3. Remaining UI issues should now be resumed through this debt track or through the dedicated Job
+   Detail section-workbench plan, not by reopening broad ad hoc polish plans.
+
+Next slices:
+
+1. Keep shell/header overflow issues, mobile portrait hardening, and similar cross-surface polish in
+   `docs/quality/technical-debt.md`.
+2. Use dedicated feature plans when a UI change is really part of a feature or workbench redesign,
+   not generic debt.
+3. Re-run browser/manual validation when layout changes land elsewhere so resolved polish work does
+   not regress quietly.
+
+Acceptance criteria:
+
+- UI debt remains visible in one canonical place.
+- Finished broad polish plans stay archived rather than lingering in `active/`.
+- Cross-surface layout debt does not get mixed into unrelated feature implementation by default.
+
+Validation:
+
+```sh
+bash scripts/validate-harness.sh
+git diff --check
+```
+
+Supporting docs:
+
+- `docs/quality/technical-debt.md`
+- `docs/exec-plans/completed/ui-density-layout-ai-cleanup.md`
+- `docs/exec-plans/completed/job-workspace-reduction.md`
+
+## MCP Integration Planning And Auth Prerequisite
+
+Goal: treat MCP as an alternative AI execution path for Application Tracker without bypassing the
+product’s visible-output, owner-scoped, non-mutating rules.
+
+Current status:
+
+1. Strategy, architecture, security, tool-contract, task-map, and OAuth/DCR prerequisite planning
+   docs exist.
+2. MCP is explicitly framed as optional and as a complement to the existing UI and provider-backed
+   AI path, not a replacement for either.
+3. Production-quality MCP runtime support is gated behind OAuth 2.0 with Dynamic Client
+   Registration or a deliberate documented self-hosted equivalent.
+
+Next slices:
+
+1. Decide first deployment mode: embedded FastAPI surface, sidecar service, or local CLI/server.
+2. Convert the OAuth/DCR prerequisite into execution-ready implementation planning for registered
+   clients, scoped consent, token issuance/revocation, and audit foundations.
+3. Keep V1 runtime scope narrow: read-scoped context plus visible Markdown `ai_output_create`.
+4. Defer workflow mutation, destructive writes, and broad account/admin access until the scope,
+   confirmation, and audit model is proven.
+
+Acceptance criteria:
+
+- MCP remains disabled unless explicitly configured.
+- Runtime MCP is not treated as a static API-token feature in production.
+- Tool naming and schemas stay domain-oriented, stable, and owner-scoped.
+- External AI clients can only save visible, attributable outputs in the first runtime slice.
+- MCP does not outrank current workflow, document-handling, or operational work.
+
+Validation:
+
+```sh
+bash scripts/validate-harness.sh
+git diff --check
+```
+
+Supporting docs:
+
+- `docs/MCP_INTEGRATION_STRATEGY.md`
+- `docs/MCP_TOOL_CONTRACTS.md`
+- `docs/MCP_ARCHITECTURE_PLAN.md`
+- `docs/MCP_SECURITY_MODEL.md`
+- `docs/MCP_TASK_MAP.md`
+- `docs/MCP_OAUTH_DCR_PLAN.md`
 - `docs/exec-plans/completed/free-text-markdown-rendering-audit.md`
 - `docs/exec-plans/completed/artefact-markdown-representation.md`
 
@@ -297,11 +387,17 @@ Supporting docs:
 
 Goal: make private self-hosted operation trustworthy.
 
-Next slices:
+Current status:
 
-1. Inventory restore and operations gaps.
-2. Add backup restore dry-run validation before destructive restore behavior.
-3. Add admin operational visibility and smoke checks alongside scheduler/runtime work.
+1. Admin runtime visibility is available on `/admin`.
+2. Backup download and restore dry-run validation are implemented.
+3. Deployment docs cover the validated manual restore flow.
+
+Resume only if:
+
+1. Scheduler/worker work needs admin run visibility.
+2. Object-management pages become necessary.
+3. Real self-hosted use exposes an operational gap not covered by the current backup/restore flow.
 
 Acceptance criteria:
 

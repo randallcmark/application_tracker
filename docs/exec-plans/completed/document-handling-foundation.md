@@ -1,17 +1,17 @@
 # Execution Plan: Document Handling Foundation
 
-Status: Active planning
+Status: Completed
 
 Owner: Agent
 
 Created: 2026-05-02
 
-Last Updated: 2026-05-02
+Last Updated: 2026-05-03
 
 ## Goal
 
-Establish source-preserving, Markdown-first document handling before adding more document-heavy AI,
-artefact, rubric, search, export, or background automation workflows.
+Close out the source-preserving, Markdown-first document-handling foundation so later MCP,
+document-heavy AI, search, export, or background automation work can build on one settled boundary.
 
 ## Non-Goals
 
@@ -34,7 +34,7 @@ artefact, rubric, search, export, or background automation workflows.
 
 ## Acceptance Criteria
 
-- Document handling is visible as roadmap item 6 after AI provider expansion.
+- Document handling is visible as the current top-priority roadmap workstream before MCP.
 - Supporting docs and ADR are linked from architecture and agent indexes.
 - The free-text Markdown rendering audit is complete and preserved in
   `docs/exec-plans/completed/free-text-markdown-rendering-audit.md`.
@@ -44,22 +44,23 @@ artefact, rubric, search, export, or background automation workflows.
   extracted-text previews for supported documents.
 - The no-schema artefact phase now has a formal Markdown access contract, so later features can
   depend on one service boundary before persistence exists.
-- The next implementation task can build on that contract instead of extending ad hoc previews.
+- The remaining foundation work is explicit enough to either finish one last foundation slice or
+  intentionally defer later work without leaving the representation decision ambiguous.
 - Employer rubric mapping now has a first pasted-text slice in the competency library and continues
   to depend on the Markdown foundation for later source expansion.
 - Search and export remain deferred until explicit decision docs exist.
+  Search and retrieval and export decisions are now both documented.
 
 ## Plan
 
-1. Import strategy, architecture, and task-map docs as supporting references.
-2. Add ADR for Markdown-first internal representation and source preservation.
-3. Update roadmap sequencing and task-map ordering.
-4. Add the free-text Markdown rendering audit execution plan.
-5. Move the completed audit to `docs/exec-plans/completed/`.
-6. Implement the shared safe Markdown renderer as the first code slice.
-7. Update competency evidence planning with employer rubric mapping as a dependent follow-on slice.
-8. Plan the artefact Markdown representation slice.
-9. Run documentation validation and stale-reference checks.
+1. Keep the source-canonical, Markdown-first boundary as the non-negotiable foundation.
+2. Route remaining artefact/document feature work through the Markdown access contract rather than
+   direct extraction helpers.
+3. Decide whether one additional foundation slice is required before this plan can move to
+   completed.
+4. Keep uploaded rubric documents, persisted Markdown records, search, and export deferred behind
+   explicit later triggers or decision work.
+5. Run documentation validation and stale-reference checks when the close-out decision lands.
 
 ## Progress Log
 
@@ -83,16 +84,33 @@ artefact, rubric, search, export, or background automation workflows.
 - 2026-05-02: Employer rubric mapping is implemented for the first pasted-text slice on top of the
   shared Markdown renderer and visible AI-output contract. Uploaded rubric documents remain
   deferred to later document-handling reuse work.
+- 2026-05-03: Roadmap priority is updated so document handling is now the next close-out track
+  before MCP planning moves toward implementation. Broad UI cleanup is archived separately as
+  UI/UX technical debt, leaving document handling and section workbenches as the main unfinished
+  cross-cutting tracks.
+- 2026-05-03: Added `docs/SEARCH_AND_RETRIEVAL_DECISION.md`. The foundation now has an explicit
+  structured-retrieval-first decision grounded in current workflows and self-hosted runtime
+  constraints. Export strategy remains the last named document-handling decision gap.
+- 2026-05-03: Added `docs/EXPORT_STRATEGY.md`. Export is now defined as a user-triggered derived
+  boundary with Markdown export as the first target, which closes the last named document-handling
+  decision gap.
+- 2026-05-03: The document-handling foundation is complete. Later search, export, rubric-source,
+  persisted-Markdown, or MCP-dependent document work should build on the settled
+  source/Markdown/provenance boundary rather than reopen representation choices.
 
 ## Decisions
 
-- Foundation-first sequencing: document handling comes after provider expansion and before
-  scheduler/worker.
+- Foundation-first sequencing: document handling now closes before MCP runtime planning moves
+  further and still remains ahead of scheduler/worker.
 - Source remains canonical; Markdown is the internal working representation.
 - Later rubric source expansion waits for shared Markdown rendering, AI-output Markdown display, and
   intentional source-handling reuse for uploaded documents.
 - Centralize existing AI output rendering before expanding Markdown rendering to notes, artefacts,
   profile fields, employer rubrics, search, or export.
+- Search now stays explicitly structured-first until a later workflow proves that narrow text
+  search, FTS5, or embeddings are necessary.
+- Export now stays explicitly derived, lineage-preserving, and Markdown-first until a later
+  workflow justifies templated DOCX or PDF generation.
 - Job Workspace descriptions can move onto the shared helper in the same slice when they reuse the
   same sanitized rendering path and do not expand Markdown support.
 

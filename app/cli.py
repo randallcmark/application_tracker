@@ -1,8 +1,10 @@
 import argparse
 from getpass import getpass
+from pathlib import Path
 
 from app.auth.users import UserAlreadyExists, create_local_user
 from app.db.session import SessionLocal
+from app.services.admin_backups import validate_backup_zip_bytes
 
 
 def create_admin(args: argparse.Namespace) -> int:
@@ -27,6 +29,32 @@ def create_admin(args: argparse.Namespace) -> int:
     return 0
 
 
+def validate_backup(args: argparse.Namespace) -> int:
+    payload = Path(args.file).read_bytes()
+    result = validate_backup_zip_bytes(payload, archive_name=Path(args.file).name)
+
+    print(f"Archive: {result.archive_name or args.file}")
+    print(f"Created at: {result.created_at or 'Unknown'}")
+    print(f"Backup version: {result.backup_version or 'Unknown'}")
+    print(f"Database entry: {result.database_entry or 'Missing'}")
+    print(f"Artefact files: {result.artefact_entries}")
+    print(f"Archive members: {result.member_count}")
+
+    if result.warnings:
+        print("Warnings:")
+        for item in result.warnings:
+            print(f"- {item}")
+
+    if result.errors:
+        print("Errors:")
+        for item in result.errors:
+            print(f"- {item}")
+        return 1
+
+    print("Backup validation passed.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="application-tracker")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -40,12 +68,19 @@ def build_parser() -> argparse.ArgumentParser:
     create_admin_parser.add_argument("--display-name")
     create_admin_parser.set_defaults(func=create_admin)
 
+    backup_parser = subparsers.add_parser("backup")
+    backup_subparsers = backup_parser.add_subparsers(dest="backup_command", required=True)
+
+    validate_backup_parser = backup_subparsers.add_parser("validate")
+    validate_backup_parser.add_argument("--file", required=True)
+    validate_backup_parser.set_defaults(func=validate_backup)
+
     return parser
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args.func(args)
 
 

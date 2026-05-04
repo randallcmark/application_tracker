@@ -1,12 +1,12 @@
 # Execution Plan: Job Detail Section Workbenches
 
-Status: Active
+Status: Completed
 
 Owner: Agent
 
 Created: 2026-05-02
 
-Last Updated: 2026-05-02
+Last Updated: 2026-05-03
 
 ## Goal
 
@@ -30,7 +30,7 @@ Turn the Job Detail secondary sections into compact workbenches that answer what
 - `docs/roadmap/task-map.md`
 - `docs/design/DESIGN_SYSTEM.md`
 - `docs/product/user-journeys.md`
-- `docs/exec-plans/active/job-workspace-reduction.md`
+- `docs/exec-plans/completed/job-workspace-reduction.md`
 - Origin triage input: `/Users/markrandall/Documents/application_tracker_ui_qa_backlog.md` (`UI-017`)
 
 ## Acceptance Criteria
@@ -63,12 +63,11 @@ Turn the Job Detail secondary sections into compact workbenches that answer what
 ## Slice Plan
 
 1. Define the workbench contract for each section and keep this document as the canonical plan.
-2. Rework Application first because it is the broadest section and still carries the most generic
-   summary weight.
-3. Rework Interviews and Follow-Ups next as action-first timeline surfaces.
-4. Rework Tasks and Notes last, keeping them compact and local to execution rather than turning them
-   into general-purpose databases.
-5. Validate each section on desktop and narrow/mobile widths before moving to the next slice.
+2. Application is complete as the first slice because it carried the most generic summary weight.
+3. Interviews and Follow-Ups are complete as action-first timeline surfaces.
+4. Tasks and Notes are complete as compact execution-local workbenches.
+5. Validate all section workbenches on desktop and narrow/mobile widths, then address only targeted
+   polish found from that pass.
 
 ## Progress Log
 
@@ -76,6 +75,12 @@ Turn the Job Detail secondary sections into compact workbenches that answer what
   broader UI density cleanup, Job Workspace AI cleanup, Competency Evidence workspace redesign, and
   artefact Markdown preview quality pass. No large section redesign should proceed without landing
   against this plan.
+- 2026-05-03: Reworked the `Application` pane into a compact execution workbench. The section now
+  emphasizes current route, readiness gaps, submission state, external handoff, and links into the
+  existing Documents AI surface instead of repeating broad role-summary fields.
+- 2026-05-03: Reworked the remaining `Interviews`, `Follow-Ups`, `Tasks`, and `Notes` panes into
+  compact workbenches. The implementation work is complete; the next step is desktop and
+  narrow/mobile manual validation plus any targeted polish it exposes.
 
 ## Decisions
 

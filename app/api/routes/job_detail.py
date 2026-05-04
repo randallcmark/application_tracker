@@ -124,6 +124,22 @@ def _field(label: str, value: object) -> str:
     """
 
 
+def _display_filename(filename: str, *, max_length: int = 72) -> str:
+    if len(filename) <= max_length:
+        return filename
+    if "." in filename:
+        stem, dot, suffix = filename.rpartition(".")
+        extension = dot + suffix
+    else:
+        stem = filename
+        extension = ""
+    head = max_length // 2 - 6
+    tail = max_length - head - len(extension) - 3
+    if tail < 8:
+        tail = 8
+    return f"{stem[:head]}...{stem[-tail:]}{extension}"
+
+
 def _editable_text(label: str, field_name: str, value: object, *, input_type: str = "text") -> str:
     raw_value = _input_value(value)
     return f"""
@@ -928,6 +944,32 @@ def _follow_up_events(job: Job) -> list[Communication]:
     )
 
 
+def _note_events(job: Job) -> list[Communication]:
+    return sorted(
+        [event for event in job.communications if event.event_type == "note"],
+        key=lambda event: event.occurred_at or event.created_at,
+        reverse=True,
+    )
+
+
+def _next_scheduled_interview(job: Job) -> InterviewEvent | None:
+    now = datetime.now(UTC)
+    upcoming: list[InterviewEvent] = []
+    for interview in job.interviews:
+        scheduled_at = interview.scheduled_at
+        if scheduled_at is None:
+            continue
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=UTC)
+        if scheduled_at >= now:
+            upcoming.append(interview)
+    return min(
+        upcoming,
+        key=lambda item: item.scheduled_at or datetime.max.replace(tzinfo=UTC),
+        default=None,
+    )
+
+
 def _workspace_anchor_nav(job: Job, artefacts: list[Artefact], events: list[Communication], active_section: str) -> str:
     follow_up_count = len(_follow_up_events(job))
     items = [
@@ -1254,22 +1296,127 @@ def _application_state_bar(job: Job) -> str:
     """
 
 
-def _workspace_application_section(job: Job) -> str:
-    has_applications = bool(job.applications)
-    history_html = _applications(job.applications) if has_applications else '<p class="empty">No submission recorded yet.</p>'
+def _latest_application(job: Job) -> Application | None:
+    return max(
+        job.applications,
+        key=lambda item: item.applied_at or datetime.min.replace(tzinfo=UTC),
+        default=None,
+    )
+
+
+def _application_readiness_list(job: Job, artefacts: list[Artefact]) -> str:
+    items = [
+        _readiness_item(
+            "External route",
+            bool(job.apply_url or job.source_url),
+            "Apply or source link is in place."
+            if job.apply_url or job.source_url
+            else "Add an apply or source URL before leaving the workspace.",
+        ),
+        _readiness_item(
+            "Submission materials",
+            bool(artefacts),
+            "At least one artefact is attached to this job."
+            if artefacts
+            else "Open Documents to attach a resume, cover letter, or prep file.",
+        ),
+        _readiness_item(
+            "Application record",
+            bool(job.applications),
+            "A submission is already on record."
+            if job.applications
+            else "Record the submission here once you apply externally.",
+        ),
+        _readiness_item(
+            "Current workflow state",
+            job.status not in {"saved", "archived"},
+            "This role is already in active execution."
+            if job.status not in {"saved", "archived"}
+            else "Move it forward when it is worth active attention.",
+        ),
+    ]
+    return f'<ol class="readiness-list" data-ui-component="application-readiness">{"".join(items)}</ol>'
+
+
+def _application_submission_panel(job: Job) -> str:
+    latest_application = _latest_application(job)
+    if latest_application is None:
+        summary = '<p class="empty">No submission recorded yet.</p>'
+        history = ""
+    else:
+        notes_html = f'<p class="muted">{escape(latest_application.notes)}</p>' if latest_application.notes else ""
+        summary = f"""
+        <article class="interview-card">
+          <div class="interview-card-head">
+            <strong>{escape(latest_application.status.title())}</strong>
+            <span class="workspace-ai-pill">{escape(_value(latest_application.applied_at))}</span>
+          </div>
+          <p class="muted">Channel: {escape(_value(latest_application.channel))}</p>
+          {notes_html}
+        </article>
+        """
+        history = ""
+        if len(job.applications) > 1:
+            history = f"""
+            <details class="workspace-form-disclosure">
+              <summary>Submission history</summary>
+              {_applications(job.applications)}
+            </details>
+            """
+    return f"""
+    <div data-ui-component="application-submission-status">
+      {summary}
+      {history}
+      <details class="workspace-form-disclosure">
+        <summary>Record submission</summary>
+        {_mark_applied_form(job)}
+      </details>
+      <details class="workspace-form-disclosure">
+        <summary>Advance status</summary>
+        {_status_transition_form(job)}
+      </details>
+    </div>
+    """
+
+
+def _application_materials_panel(job: Job, artefacts: list[Artefact], ai_outputs: list[AiOutput]) -> str:
+    artefact_count = len(artefacts)
+    latest_output = _latest_artefact_ai_output(ai_outputs, artefacts)
+    ai_label = (
+        latest_output.title
+        or latest_output.output_type.replace("_", " ").title()
+        if latest_output is not None
+        else "Use AI in Documents to compare, tailor, or draft from visible artefacts."
+    )
+    artefact_summary = f"{artefact_count} attached" if artefact_count else "No files attached yet"
+    return f"""
+    <div class="workspace-help-list" data-ui-component="application-materials">
+      <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">
+        <strong>Open documents</strong>
+        <span>{escape(artefact_summary)}</span>
+      </a>
+      <form class="workspace-help-action" method="post" action="/jobs/{escape(job.uuid, quote=True)}/artefact-suggestions">
+        <button class="workspace-help-item workspace-help-button" type="submit">
+          <strong>Suggest materials with AI</strong>
+          <span>{escape(ai_label)}</span>
+        </button>
+      </form>
+      <a class="workspace-help-item" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">
+        <strong>Create evidence from this role</strong>
+        <span>Save examples you can reuse in applications and interviews.</span>
+      </a>
+    </div>
+    """
+
+
+def _workspace_application_section(job: Job, artefacts: list[Artefact], ai_outputs: list[AiOutput]) -> str:
     body = f"""
     {_application_state_bar(job)}
     <div class="workspace-two-up" data-ui-component="application-workbench">
       <div class="workspace-subpanel">
-        <h3>Role details</h3>
-        <dl class="overview-grid">
-          {_editable_text("Company", "company", job.company)}
-          {_editable_text("Location", "location", job.location)}
-          {_editable_text("Remote policy", "remote_policy", job.remote_policy)}
-          {_editable_text("Salary min", "salary_min", job.salary_min)}
-          {_editable_text("Salary max", "salary_max", job.salary_max)}
-          {_editable_text("Currency", "salary_currency", job.salary_currency)}
-        </dl>
+        <h3>Next step</h3>
+        <p class="muted">Use this pane to confirm the route, spot missing setup, and record the handoff back from external application work.</p>
+        {_application_readiness_list(job, artefacts)}
       </div>
       <div class="workspace-subpanel">
         <h3>Application route</h3>
@@ -1279,25 +1426,20 @@ def _workspace_application_section(job: Job) -> str:
           {_editable_url("Source URL", "source_url", job.source_url, "Open source")}
           {_editable_url("Apply URL", "apply_url", job.apply_url, "Open apply link")}
         </dl>
-      </div>
-    </div>
-    <div class="workspace-two-up">
-      <div class="workspace-subpanel">
-        <h3>Submission history</h3>
-        {history_html}
-        <details class="workspace-form-disclosure">
-          <summary>Record a submission</summary>
-          {_mark_applied_form(job)}
-        </details>
-      </div>
-      <div class="workspace-subpanel">
-        <h3>Advance status</h3>
-        <p class="muted">Move this job to the right board position.</p>
-        {_status_transition_form(job)}
         <details class="workspace-form-disclosure">
           <summary>Start application externally</summary>
           {_application_started_form(job)}
         </details>
+      </div>
+    </div>
+    <div class="workspace-two-up">
+      <div class="workspace-subpanel">
+        <h3>Submission status</h3>
+        {_application_submission_panel(job)}
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Materials and AI help</h3>
+        {_application_materials_panel(job, artefacts, ai_outputs)}
       </div>
     </div>
     """
@@ -1750,12 +1892,14 @@ def _generation_brief_modal(
 def _workspace_artefact_item(job: Job, artefact: Artefact) -> str:
     updated = escape(_value(artefact.updated_at))
     badges = _artefact_primary_badge(artefact)
+    display_name = escape(_display_filename(artefact.filename))
+    full_name = escape(artefact.filename, quote=True)
     return f"""
     <article class="workspace-artefact-item">
       <div class="workspace-artefact-left">
         <div class="workspace-doc-icon">▣</div>
         <div>
-          <div class="workspace-artefact-name" title="{escape(artefact.filename, quote=True)}">{escape(artefact.filename)}</div>
+          <div class="workspace-artefact-name" title="{full_name}">{display_name}</div>
           <div class="meta-row">
             <span>{escape(_artefact_type_label(artefact))}</span>
             <span>•</span>
@@ -1859,12 +2003,70 @@ def _interview_cards(interviews: list[InterviewEvent]) -> str:
     return "".join(_interview_card(i) for i in sorted_interviews)
 
 
-def _workspace_interviews_section(job: Job) -> str:
-    next_interview = min(
-        (i for i in job.interviews if i.scheduled_at),
-        key=lambda i: i.scheduled_at,
-        default=None,
-    )
+def _interview_preparation_list(job: Job, artefacts: list[Artefact]) -> str:
+    next_interview = _next_scheduled_interview(job)
+    note_events = _note_events(job)
+    items = [
+        _readiness_item(
+            "Interview scheduled",
+            next_interview is not None,
+            "A scheduled conversation is already on the calendar."
+            if next_interview is not None
+            else "Schedule the next interview when details are confirmed.",
+        ),
+        _readiness_item(
+            "Preparation notes",
+            bool(note_events),
+            "Notes already capture active interview context."
+            if note_events
+            else "Open Notes to capture questions, research, and talking points.",
+        ),
+        _readiness_item(
+            "Documents ready",
+            bool(artefacts),
+            "Application materials are attached for preparation."
+            if artefacts
+            else "Open Documents to attach the resume or other prep files.",
+        ),
+        _readiness_item(
+            "Workflow state",
+            job.status in {"interviewing", "offer"},
+            "The job already reflects active interview work."
+            if job.status in {"interviewing", "offer"}
+            else "Move the workflow when the interview process is active.",
+        ),
+    ]
+    return f'<ol class="readiness-list" data-ui-component="interview-prep-list">{"".join(items)}</ol>'
+
+
+def _interview_prep_tools(job: Job) -> str:
+    return f"""
+    <div class="workspace-help-list" data-ui-component="interview-tools">
+      <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=notes">
+        <strong>Open notes</strong>
+        <span>Capture prep threads, questions, and takeaways.</span>
+      </a>
+      <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">
+        <strong>Open documents</strong>
+        <span>Review resumes, role context, and tailored materials.</span>
+      </a>
+      <a class="workspace-help-item" href="/competencies?source_job_uuid={escape(job.uuid, quote=True)}">
+        <strong>Open competency evidence</strong>
+        <span>Reuse saved examples during interview prep.</span>
+      </a>
+      <form class="workspace-help-action" method="post" action="/jobs/{escape(job.uuid, quote=True)}/ai-outputs">
+        <input type="hidden" name="output_type" value="recommendation">
+        <button class="workspace-help-item workspace-help-button" type="submit">
+          <strong>Generate next-step guidance</strong>
+          <span>Create visible AI preparation guidance for this role.</span>
+        </button>
+      </form>
+    </div>
+    """
+
+
+def _workspace_interviews_section(job: Job, artefacts: list[Artefact]) -> str:
+    next_interview = _next_scheduled_interview(job)
     state_hint = ""
     if next_interview and next_interview.scheduled_at:
         state_hint = f"""
@@ -1881,9 +2083,36 @@ def _workspace_interviews_section(job: Job) -> str:
           </div>
         </div>
         """
+    next_interview_card = (
+        _interview_card(next_interview)
+        if next_interview is not None
+        else '<p class="empty">No upcoming interview is scheduled yet.</p>'
+    )
     body = f"""
     {state_hint}
     <div class="workspace-two-up" data-ui-component="interviews-workbench">
+      <div class="workspace-subpanel">
+        <h3>Next interview</h3>
+        <div data-ui-component="interview-next-step">
+          <div class="interview-card-list">
+            {next_interview_card}
+          </div>
+          {_interview_preparation_list(job, artefacts)}
+        </div>
+      </div>
+      <div class="workspace-subpanel">
+        <h3>Interview actions</h3>
+        <details class="workspace-form-disclosure">
+          <summary>Schedule interview</summary>
+          {_schedule_interview_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Advance status</summary>
+          {_status_transition_form(job)}
+        </details>
+      </div>
+    </div>
+    <div class="workspace-two-up">
       <div class="workspace-subpanel">
         <h3>Interview loop</h3>
         <div class="interview-card-list">
@@ -1891,8 +2120,8 @@ def _workspace_interviews_section(job: Job) -> str:
         </div>
       </div>
       <div class="workspace-subpanel">
-        <h3>Schedule interview</h3>
-        {_schedule_interview_form(job)}
+        <h3>Preparation tools</h3>
+        {_interview_prep_tools(job)}
       </div>
     </div>
     """
@@ -1942,10 +2171,68 @@ def _follow_up_cards(job: Job) -> str:
     return "".join(_follow_up_card(e) for e in follow_ups)
 
 
+def _recent_note_cards(job: Job, *, limit: int = 4) -> str:
+    notes = _note_events(job)[:limit]
+    if not notes:
+        return '<p class="empty">No recent notes yet.</p>'
+    cards = []
+    for note in notes:
+        occurred_at = note.occurred_at or note.created_at
+        follow_up = (
+            f'<span class="workspace-ai-pill">Follow-up {_value(note.follow_up_at)}</span>'
+            if note.follow_up_at
+            else ""
+        )
+        notes_html = f'<p class="muted">{escape(note.notes)}</p>' if note.notes else ""
+        cards.append(
+            f"""
+            <article class="follow-up-card">
+              <div class="follow-up-card-head">
+                <strong>{escape(note.subject or "Note")}</strong>
+                <span class="workspace-ai-pill">{escape(_value(occurred_at))}</span>
+              </div>
+              {notes_html}
+              {follow_up}
+            </article>
+            """
+        )
+    return '<div class="follow-up-card-list" data-ui-component="recent-note-cards">' + "".join(cards) + "</div>"
+
+
 def _workspace_follow_ups_section(job: Job) -> str:
-    count = len(_follow_up_events(job))
-    state_label = f"{count} scheduled" if count else "None scheduled"
+    follow_up_events = _follow_up_events(job)
+    count = len(follow_up_events)
+    overdue_count = 0
+    now = datetime.now(UTC)
+    for event in follow_up_events:
+        due = event.follow_up_at
+        if due is None:
+            continue
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
+        if due < now:
+            overdue_count += 1
+    next_due = follow_up_events[0] if follow_up_events else None
+    state_hint = ""
+    if next_due is not None:
+        due_label = "Overdue follow-up" if overdue_count else "Next follow-up"
+        due_pill = "Overdue" if overdue_count else _value(next_due.follow_up_at)
+        state_hint = f"""
+        <div class="app-state-bar">
+          <div class="app-state-context">
+            <span class="stage-pill active">{escape(due_label)}</span>
+            <div>
+              <strong class="app-state-title">{escape(next_due.subject or "Follow-up")}</strong>
+              <p class="muted">{escape(_value(next_due.follow_up_at))}</p>
+            </div>
+          </div>
+          <div class="app-state-cta">
+            <span class="workspace-ai-pill">{escape(due_pill)}</span>
+          </div>
+        </div>
+        """
     body = f"""
+    {state_hint}
     <div class="workspace-two-up" data-ui-component="follow-ups-workbench">
       <div class="workspace-subpanel">
         <h3>Follow-up queue <span class="workspace-nav-count">{escape(str(count)) if count else "0"}</span></h3>
@@ -1954,12 +2241,16 @@ def _workspace_follow_ups_section(job: Job) -> str:
         </div>
       </div>
       <div class="workspace-subpanel">
-        <h3>Add a note or follow-up</h3>
-        {_note_form(job)}
+        <h3>Next outbound action</h3>
+        <p class="muted">Capture the next message or reminder with an optional follow-up date.</p>
+        <div data-ui-component="follow-up-outbound">
+          {_note_form(job)}
+        </div>
       </div>
     </div>
     <div class="workspace-two-up">
       <div class="workspace-subpanel">
+        <h3>Communication actions</h3>
         <details class="workspace-form-disclosure">
           <summary>Record a blocker</summary>
           {_blocker_form(job)}
@@ -1975,6 +2266,10 @@ def _workspace_follow_ups_section(job: Job) -> str:
           {_application_started_form(job)}
         </details>
       </div>
+      <div class="workspace-subpanel">
+        <h3>Recent context</h3>
+        {_recent_note_cards(job)}
+      </div>
     </div>
     """
     return _workspace_section(section_id="follow-ups", kicker="Follow-ups", title="Follow-ups", body=body)
@@ -1983,41 +2278,89 @@ def _workspace_follow_ups_section(job: Job) -> str:
 def _workspace_tasks_section(job: Job, artefacts: list[Artefact]) -> str:
     done, total = _workspace_readiness_score(job, artefacts)
     readiness_pill = f'<span class="workspace-ai-pill">Ready {done}/{total}</span>'
+    follow_up_count = len(_follow_up_events(job))
+    queue_items = [
+        _readiness_item(
+            "Confirm the external route",
+            bool(job.apply_url or job.source_url),
+            "Apply or source link is already available."
+            if job.apply_url or job.source_url
+            else "Add the application route in Application before leaving the workspace.",
+        ),
+        _readiness_item(
+            "Attach working materials",
+            bool(artefacts),
+            "Documents are already attached to this role."
+            if artefacts
+            else "Open Documents to attach the files you need.",
+        ),
+        _readiness_item(
+            "Record current progress",
+            bool(job.applications or job.interviews),
+            "Execution progress is already on record."
+            if job.applications or job.interviews
+            else "Record the submission or first interview when it happens.",
+        ),
+        _readiness_item(
+            "Capture the next contact point",
+            follow_up_count > 0,
+            "A follow-up reminder is already scheduled."
+            if follow_up_count > 0
+            else "Add a follow-up or blocker note so the next touchpoint stays visible.",
+        ),
+    ]
     body = f"""
     <div class="workspace-two-up" data-ui-component="tasks-workbench">
       <div class="workspace-subpanel">
-        <h3>Next action</h3>
-        {_next_action(job)}
+        <h3>Execution queue</h3>
+        <div data-ui-component="task-queue">
+          <p class="muted">Keep only the current execution work visible here rather than reopening every section.</p>
+          <ol class="readiness-list">
+            {"".join(queue_items)}
+          </ol>
+        </div>
       </div>
       <div class="workspace-subpanel">
-        <h3>Readiness {readiness_pill}</h3>
-        <ol class="readiness-list">
-          {_readiness_item("Role captured", bool(job.title and job.description_raw), "Title and description in place." if job.description_raw else "Add the job description.")}
-          {_readiness_item("Application link", bool(job.apply_url or job.source_url), "External route is set." if job.apply_url or job.source_url else "Add a source or apply URL.")}
-          {_readiness_item("Artefacts attached", bool(artefacts), "Files are attached." if artefacts else "Upload a resume or prep file.")}
-          {_readiness_item("Application recorded", bool(job.applications), "Submission on record." if job.applications else "Mark applied once submitted.")}
-        </ol>
-        <a class="workspace-inline-link" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">Open documents ›</a>
-      </div>
-    </div>
-    <div class="workspace-two-up">
-      <div class="workspace-subpanel">
-        <h3>Workflow actions</h3>
+        <h3>Quick capture {readiness_pill}</h3>
         <details class="workspace-form-disclosure">
           <summary>Record submission</summary>
           {_mark_applied_form(job)}
         </details>
         <details class="workspace-form-disclosure">
-          <summary>Advance status</summary>
-          {_status_transition_form(job)}
-        </details>
-        <details class="workspace-form-disclosure">
           <summary>Schedule interview</summary>
           {_schedule_interview_form(job)}
+        </details>
+        <details class="workspace-form-disclosure">
+          <summary>Add note or follow-up</summary>
+          {_note_form(job)}
+        </details>
+      </div>
+    </div>
+    <div class="workspace-two-up">
+      <div class="workspace-subpanel">
+        <h3>Workflow actions</h3>
+        {_next_action(job)}
+        <details class="workspace-form-disclosure">
+          <summary>Advance status</summary>
+          {_status_transition_form(job)}
         </details>
       </div>
       <div class="workspace-subpanel">
         <h3>Maintenance</h3>
+        <div class="workspace-help-list" data-ui-component="task-shortcuts">
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=application">
+            <strong>Open application</strong>
+            <span>Check route details and submission state.</span>
+          </a>
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=documents">
+            <strong>Open documents</strong>
+            <span>Manage artefacts and visible AI drafting work.</span>
+          </a>
+          <a class="workspace-help-item" href="/jobs/{escape(job.uuid, quote=True)}?section=follow-ups">
+            <strong>Open follow-ups</strong>
+            <span>Keep reminders, blockers, and return notes visible.</span>
+          </a>
+        </div>
         <details class="workspace-form-disclosure">
           <summary>Archive this job</summary>
           {_archive_form(job)}
@@ -2041,7 +2384,14 @@ def _recent_activity(job: Job, events: list[Communication], artefacts: list[Arte
         if application.applied_at:
             entries.append((application.applied_at, "✓", "Application submitted", _value(application.applied_at)))
     for artefact in artefacts:
-        entries.append((artefact.updated_at, "▣", f"{artefact.filename} available", _value(artefact.updated_at)))
+        entries.append(
+            (
+                artefact.updated_at,
+                "▣",
+                f"{_display_filename(artefact.filename)} available",
+                _value(artefact.updated_at),
+            )
+        )
     entries.sort(key=lambda item: item[0], reverse=True)
     if not entries:
         return '<p class="empty">No recent activity yet.</p>'
@@ -2061,20 +2411,27 @@ def _workspace_notes_section(job: Job, events: list[Communication], artefacts: l
     body = f"""
     <div class="workspace-two-up" data-ui-component="notes-workbench">
       <div class="workspace-subpanel">
-        <h3>Add note or follow-up</h3>
+        <h3>Working note</h3>
+        <p class="muted">Use this space for the live thread you want to keep attached to the role.</p>
         {_note_form(job)}
       </div>
       <div class="workspace-subpanel">
-        <h3>Recent activity</h3>
+        <h3>Current context</h3>
         {_recent_activity(job, events, artefacts)}
       </div>
     </div>
-    <section class="workspace-subpanel">
-      <details class="timeline-panel">
-        <summary>Journal <span class="workspace-nav-count">{event_count}</span></summary>
-        {_timeline(events)}
-      </details>
-    </section>
+    <div class="workspace-two-up">
+      <div class="workspace-subpanel">
+        <h3>Recent notes</h3>
+        {_recent_note_cards(job)}
+      </div>
+      <div class="workspace-subpanel">
+        <details class="timeline-panel">
+          <summary>Journal <span class="workspace-nav-count">{event_count}</span></summary>
+          {_timeline(events)}
+        </details>
+      </div>
+    </div>
     {_provenance(job)}
     """
     return _workspace_section(section_id="notes", kicker="Notes", title="Notes", body=body)
@@ -3088,14 +3445,15 @@ def render_job_detail(
     .next-action {{
       align-items: start;
       display: grid;
-      gap: 16px;
-      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      grid-template-columns: minmax(0, 1fr);
     }}
     .next-action-controls {{
       align-items: center;
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
-      justify-content: flex-end;
+      justify-content: flex-start;
     }}
     .inline-action-form {{ margin: 0; }}
     .action-stack {{ display: grid; gap: 8px; }}
@@ -3111,9 +3469,15 @@ def render_job_detail(
       display: grid;
       gap: 12px;
       grid-template-columns: 36px 1fr;
+      min-width: 0;
       padding: 8px 0;
     }}
     .workspace-activity-row:first-child {{ border-top: 0; }}
+    .workspace-activity-row > div {{ min-width: 0; }}
+    .workspace-activity-row strong,
+    .workspace-activity-row p {{
+      overflow-wrap: anywhere;
+    }}
     .workspace-activity-icon {{
       align-items: center;
       background: rgba(112, 87, 232, 0.1);
@@ -3150,19 +3514,31 @@ def render_job_detail(
     .workspace-help-list {{ display: grid; gap: 12px; }}
     .workspace-help-action {{ margin: 0; }}
     .workspace-help-item {{
-      align-items: center;
+      align-items: start;
       border-top: 1px solid #f0f1f6;
       color: var(--text-muted);
-      display: flex;
+      display: grid;
       font-size: 0.9rem;
-      gap: 12px;
-      justify-content: space-between;
+      gap: 4px;
+      grid-template-columns: minmax(0, 1fr);
+      min-width: 0;
       text-decoration: none;
       padding: 14px 0;
     }}
     .workspace-help-item:first-child {{ border-top: 0; }}
-    .workspace-help-item strong {{ color: var(--accent-strong); }}
-    .workspace-help-item span {{ color: var(--muted); font-size: 0.82rem; }}
+    .workspace-help-item strong {{
+      color: var(--accent-strong);
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }}
+    .workspace-help-item span {{
+      color: var(--muted);
+      display: block;
+      font-size: 0.82rem;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }}
     .workspace-help-button {{
       background: transparent;
       border: 0;
@@ -3217,13 +3593,12 @@ def render_job_detail(
       justify-content: center;
       width: 32px;
     }}
-    .workspace-artefact-name {{ font-size: 0.9rem; font-weight: 500; margin-bottom: 3px; overflow-wrap: anywhere; }}
-    @media (min-width: 761px) {{
-      .workspace-artefact-name {{
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }}
+    .workspace-artefact-left > div {{ min-width: 0; }}
+    .workspace-artefact-name {{
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 3px;
+      overflow-wrap: anywhere;
     }}
     .meta-row {{
       color: var(--text-muted);
@@ -3595,6 +3970,7 @@ def render_job_detail(
       border-radius: var(--radius-md);
       display: grid;
       gap: 4px;
+      min-width: 0;
       padding: 12px 14px;
     }}
     .follow-up-card.overdue {{
@@ -3607,6 +3983,12 @@ def render_job_detail(
       display: flex;
       gap: 10px;
       justify-content: space-between;
+    }}
+    .interview-card-head strong,
+    .follow-up-card-head strong,
+    .interview-card p,
+    .follow-up-card p {{
+      overflow-wrap: anywhere;
     }}
     .interview-card p,
     .follow-up-card p {{ font-size: 0.84rem; margin: 0; }}
@@ -3756,8 +4138,8 @@ def render_job_detail(
     """
     section_map = {
         "overview": _workspace_overview_section(job, ai_outputs),
-        "application": _workspace_application_section(job),
-        "interviews": _workspace_interviews_section(job),
+        "application": _workspace_application_section(job, artefacts, ai_outputs),
+        "interviews": _workspace_interviews_section(job, artefacts),
         "follow-ups": _workspace_follow_ups_section(job),
         "tasks": _workspace_tasks_section(job, artefacts),
         "notes": _workspace_notes_section(job, events, artefacts),

@@ -253,6 +253,9 @@ def test_job_workspace_ui_contract_keeps_shared_frame_on_application_section(tmp
         assert 'data-ui-component="utility-strip"' in html
         assert 'data-ui-section="application"' in html
         assert 'data-ui-component="application-workbench"' in html
+        assert 'data-ui-component="application-readiness"' in html
+        assert 'data-ui-component="application-submission-status"' in html
+        assert 'data-ui-component="application-materials"' in html
         assert "Application route" in html
         assert 'data-ui-section="overview"' not in html
     finally:
@@ -285,8 +288,10 @@ def test_job_workspace_ui_contract_tasks_section_uses_reduced_structure(tmp_path
         assert 'data-ui-component="tasks-workbench"' in html
         assert html.count('data-ui-section="tasks"') == 1
         assert "Tasks" in html
-        assert "Next action" in html
-        assert "Readiness" in html
+        assert 'data-ui-component="task-queue"' in html
+        assert 'data-ui-component="task-shortcuts"' in html
+        assert "Execution queue" in html
+        assert "Quick capture" in html
         assert "Workflow actions" in html
         assert "Maintenance" in html
         assert "Suggest artefacts" not in html
@@ -324,9 +329,11 @@ def test_job_workspace_ui_contract_notes_section_uses_reduced_structure(tmp_path
         html = response.text
         assert 'data-ui-active-section="notes"' in html
         assert 'data-ui-component="notes-workbench"' in html
+        assert 'data-ui-component="recent-note-cards"' in html
         assert html.count('data-ui-section="notes"') == 1
-        assert "Recent activity" in html
-        assert "Add note" in html
+        assert "Working note" in html
+        assert "Current context" in html
+        assert "Recent notes" in html
         assert "Journal" in html
         assert "Role &amp; notes" not in html
     finally:

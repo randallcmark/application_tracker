@@ -1,17 +1,11 @@
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from html import escape
-from io import BytesIO
-from pathlib import Path
-import sqlite3
-import tempfile
 from typing import Annotated
-from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
-from sqlalchemy.engine import make_url
 
 from app.api.deps import DbSession, get_current_user, require_admin
 from app.api.routes.auth import authenticate_local_user, create_login_session
@@ -30,6 +24,7 @@ from app.db.models.api_token import ApiToken
 from app.db.models.job import Job
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
+from app.services.admin_backups import app_version, build_backup_zip, validate_backup_zip_bytes
 from app.services.ai import (
     KNOWN_PROVIDERS,
     enable_ai_provider_model,
@@ -781,6 +776,7 @@ def admin_page(
     token_count: int,
     api_tokens: list[ApiToken],
     new_token: str | None = None,
+    restore_validation=None,
 ) -> HTMLResponse:
     token_rows = "\n".join(_admin_api_token_row(api_token) for api_token in api_tokens)
     if not token_rows:
@@ -797,6 +793,40 @@ def admin_page(
         if new_token
         else ""
     )
+    restore_validation_block = ""
+    if restore_validation is not None:
+        validation_state = "Ready for restore review" if restore_validation.is_valid else "Restore validation failed"
+        validation_tone = "ok" if restore_validation.is_valid else "warn"
+        warning_items = "".join(f"<li>{escape(item)}</li>" for item in restore_validation.warnings) or "<li>None</li>"
+        error_items = "".join(f"<li>{escape(item)}</li>" for item in restore_validation.errors) or "<li>None</li>"
+        archive_name = restore_validation.archive_name or "Uploaded archive"
+        created_at = restore_validation.created_at or "Unknown"
+        backup_version_value = restore_validation.backup_version or "Unknown"
+        database_entry = restore_validation.database_entry or "Missing"
+        restore_validation_block = f"""
+        <section class="restore-result">
+          <h2>Restore Dry-Run Result</h2>
+          <p class="status-pill {validation_tone}">{escape(validation_state)}</p>
+          <dl class="ops-grid">
+            <div><dt>Archive</dt><dd>{escape(archive_name)}</dd></div>
+            <div><dt>Created at</dt><dd>{escape(created_at)}</dd></div>
+            <div><dt>Backup version</dt><dd>{escape(backup_version_value)}</dd></div>
+            <div><dt>Database entry</dt><dd>{escape(database_entry)}</dd></div>
+            <div><dt>Artefact files</dt><dd>{restore_validation.artefact_entries}</dd></div>
+            <div><dt>Archive members</dt><dd>{restore_validation.member_count}</dd></div>
+          </dl>
+          <div class="ops-columns">
+            <div>
+              <h3>Warnings</h3>
+              <ul class="ops-list">{warning_items}</ul>
+            </div>
+            <div>
+              <h3>Errors</h3>
+              <ul class="ops-list">{error_items}</ul>
+            </div>
+          </div>
+        </section>
+        """
     extra_styles = compact_content_rhythm_styles() + """
     input {
       border: 0.5px solid var(--line);
@@ -844,6 +874,62 @@ def admin_page(
       gap: 10px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .ops-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 0;
+    }
+    .ops-grid div {
+      border: 0.5px solid var(--line-soft);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .ops-grid dt {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .ops-grid dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .ops-columns {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ops-list {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding-left: 18px;
+    }
+    .restore-actions {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .restore-actions section {
+      margin-bottom: 0;
+    }
+    .status-pill {
+      border-radius: 999px;
+      display: inline-flex;
+      font-size: 0.86rem;
+      font-weight: 700;
+      margin: 0 0 12px;
+      padding: 6px 10px;
+    }
+    .status-pill.ok {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+    .status-pill.warn {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
     table { border-collapse: collapse; width: 100%; }
     th, td {
       border-bottom: 0.5px solid var(--line);
@@ -855,7 +941,7 @@ def admin_page(
     td form { margin: 0; }
     .secret { border-color: var(--accent); }
     @media (max-width: 760px) {
-      .stats, .link-list { grid-template-columns: 1fr; }
+      .stats, .link-list, .ops-grid, .ops-columns, .restore-actions { grid-template-columns: 1fr; }
       table {
         display: block;
         max-width: 100%;
@@ -874,9 +960,14 @@ def admin_page(
         <div class="stat"><strong>{job_count}</strong><span class="muted">Jobs</span></div>
         <div class="stat"><strong>{token_count}</strong><span class="muted">API tokens</span></div>
       </div>
-      <p>Environment: {escape(settings.app_env)} · Auth: {escape(settings.auth_mode)}</p>
-      <p>Public URL: {escape(str(settings.public_base_url))}</p>
-      <p>Storage: {escape(settings.storage_backend)} at {escape(settings.local_storage_path)}</p>
+      <dl class="ops-grid">
+        <div><dt>App version</dt><dd>{escape(app_version())}</dd></div>
+        <div><dt>Environment</dt><dd>{escape(settings.app_env)} · auth {escape(settings.auth_mode)}</dd></div>
+        <div><dt>Public URL</dt><dd>{escape(str(settings.public_base_url))}</dd></div>
+        <div><dt>Database</dt><dd>{escape(settings.database_url)}</dd></div>
+        <div><dt>Storage</dt><dd>{escape(settings.storage_backend)} at {escape(settings.local_storage_path)}</dd></div>
+        <div><dt>Session cookies</dt><dd>{"Secure" if settings.session_cookie_secure else "Local development mode"}</dd></div>
+      </dl>
     </section>
     <section>
       <h2>Admin Tasks</h2>
@@ -887,6 +978,29 @@ def admin_page(
         <a href="/admin/backup">Download backup</a>
       </div>
     </section>
+    <section>
+      <h2>Backup And Restore</h2>
+      <div class="restore-actions">
+        <section>
+          <h3>Backup</h3>
+          <p>Download a portable ZIP containing the SQLite database snapshot, local artefacts, and manifest metadata for restore review.</p>
+          <p><a href="/admin/backup">Download backup ZIP</a></p>
+        </section>
+        <section>
+          <h3>Restore dry-run</h3>
+          <p>Validate a backup archive before replacing live data. This checks ZIP structure, manifest metadata, and SQLite readability without mutating the deployment.</p>
+          <form method="post" action="/admin/restore/validate" enctype="multipart/form-data">
+            <label>
+              Backup archive
+              <input name="backup_file" type="file" accept=".zip,application/zip" required>
+            </label>
+            <button type="submit">Validate backup</button>
+          </form>
+        </section>
+      </div>
+      <p class="muted">Dry-run validation does not perform a restore. Replace `/app/data` only after the archive validates and the deployment is stopped.</p>
+    </section>
+    {restore_validation_block}
     <section>
       <h2>Create Capture Token</h2>
       <p>Create a scoped capture token owned by your admin account.</p>
@@ -1195,72 +1309,6 @@ def _has_users(db: DbSession) -> bool:
     return db.scalar(select(User.id).limit(1)) is not None
 
 
-def _sqlite_database_path() -> Path | None:
-    url = make_url(settings.database_url)
-    if url.get_backend_name() != "sqlite" or not url.database or url.database == ":memory:":
-        return None
-    return Path(url.database).resolve()
-
-
-def _write_sqlite_backup(archive: ZipFile) -> None:
-    database_path = _sqlite_database_path()
-    if database_path is None or not database_path.exists():
-        archive.writestr("database/README.txt", "SQLite database file was not available for backup.\n")
-        return
-
-    with tempfile.NamedTemporaryFile(suffix=".db") as backup_file:
-        source = sqlite3.connect(database_path)
-        destination = sqlite3.connect(backup_file.name)
-        try:
-            source.backup(destination)
-        finally:
-            destination.close()
-            source.close()
-        archive.write(backup_file.name, "database/app.db")
-
-
-def _write_local_artefacts_backup(archive: ZipFile) -> None:
-    if settings.storage_backend != "local":
-        archive.writestr(
-            "artefacts/README.txt",
-            f"Artefact backup is not supported for storage backend: {settings.storage_backend}.\n",
-        )
-        return
-
-    storage_root = Path(settings.local_storage_path)
-    if not storage_root.exists():
-        archive.writestr("artefacts/README.txt", "No local artefact storage directory exists yet.\n")
-        return
-
-    for path in sorted(storage_root.rglob("*")):
-        if not path.is_file():
-            continue
-        archive.write(path, Path("artefacts") / path.relative_to(storage_root))
-
-
-def _build_backup_zip() -> bytes:
-    buffer = BytesIO()
-    timestamp = datetime.now(UTC).replace(microsecond=0).isoformat()
-    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
-        archive.writestr(
-            "MANIFEST.txt",
-            "\n".join(
-                [
-                    "Application Tracker backup",
-                    f"Created at: {timestamp}",
-                    f"Database URL: {settings.database_url}",
-                    f"Storage backend: {settings.storage_backend}",
-                    f"Local storage path: {settings.local_storage_path}",
-                    "",
-                ]
-            ),
-        )
-        _write_sqlite_backup(archive)
-        _write_local_artefacts_backup(archive)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
 def login_form() -> HTMLResponse:
     return login_page()
@@ -1397,12 +1445,32 @@ def admin_backup(
     current_user: Annotated[User, Depends(require_admin)],
 ) -> Response:
     _ = current_user
-    backup = _build_backup_zip()
+    backup = build_backup_zip()
     filename = f'application-tracker-backup-{datetime.now(UTC).strftime("%Y%m%d-%H%M%S")}.zip'
     return Response(
         backup,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/admin/restore/validate", response_class=HTMLResponse, include_in_schema=False)
+async def admin_restore_validate(
+    db: DbSession,
+    current_user: Annotated[User, Depends(require_admin)],
+    backup_file: UploadFile = File(...),
+) -> HTMLResponse:
+    payload = await backup_file.read()
+    user_count = db.scalar(select(func.count(User.id))) or 0
+    job_count = db.scalar(select(func.count(Job.id))) or 0
+    token_count = db.scalar(select(func.count(ApiToken.id))) or 0
+    return admin_page(
+        current_user,
+        user_count=user_count,
+        job_count=job_count,
+        token_count=token_count,
+        api_tokens=_list_all_api_tokens(db),
+        restore_validation=validate_backup_zip_bytes(payload, archive_name=backup_file.filename),
     )
 
 

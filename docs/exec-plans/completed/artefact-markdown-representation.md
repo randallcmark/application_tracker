@@ -27,7 +27,7 @@ provenance.
 - `docs/DOCUMENT_HANDLING_STRATEGY.md`
 - `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`
 - `docs/DOCUMENT_HANDLING_TASK_MAP.md`
-- `docs/exec-plans/active/document-handling-foundation.md`
+- `docs/exec-plans/completed/document-handling-foundation.md`
 - `docs/ARTEFACTS.md`
 - `docs/ARTEFACT_AI_PLAN.md`
 - `app/db/models/artefact.py`

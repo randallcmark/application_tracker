@@ -1,6 +1,7 @@
 import json
-from pathlib import Path
 from io import BytesIO
+from pathlib import Path
+import sqlite3
 from urllib.error import URLError
 from zipfile import ZipFile
 
@@ -728,6 +729,9 @@ def test_admin_page_shows_system_links_and_counts(tmp_path: Path, monkeypatch) -
         assert 'href="/api/capture/bookmarklet"' in response.text
         assert 'href="/health"' in response.text
         assert 'href="/admin/backup"' in response.text
+        assert "Restore dry-run" in response.text
+        assert 'action="/admin/restore/validate"' in response.text
+        assert "App version" in response.text
     finally:
         app.dependency_overrides.clear()
 
@@ -837,6 +841,70 @@ def test_admin_backup_download_contains_database_and_artefacts(tmp_path: Path, m
             assert "database/app.db" in names
             assert "artefacts/jobs/job-uuid/artefacts/resume.txt" in names
             assert archive.read("artefacts/jobs/job-uuid/artefacts/resume.txt") == b"resume bytes"
+            assert b"App version:" in archive.read("MANIFEST.txt")
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_restore_validate_reports_ready_archive(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    database_path = tmp_path / "app.db"
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{database_path}")
+    try:
+        with session_local() as db:
+            create_local_user(db, email="admin@example.com", password="password", is_admin=True)
+            db.commit()
+
+        sqlite_connection = sqlite3.connect(database_path)
+        try:
+            sqlite_connection.execute("create table example (id integer primary key)")
+            sqlite_connection.commit()
+        finally:
+            sqlite_connection.close()
+
+        client.post(
+            "/login",
+            data={"email": "admin@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        backup_response = client.get("/admin/backup")
+        assert backup_response.status_code == 200
+
+        response = client.post(
+            "/admin/restore/validate",
+            files={"backup_file": ("application-tracker-backup.zip", backup_response.content, "application/zip")},
+        )
+
+        assert response.status_code == 200
+        assert "Restore Dry-Run Result" in response.text
+        assert "Ready for restore review" in response.text
+        assert "application-tracker-backup.zip" in response.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_restore_validate_reports_invalid_archive(tmp_path: Path, monkeypatch) -> None:
+    client, session_local = build_client(tmp_path, monkeypatch)
+    try:
+        with session_local() as db:
+            create_local_user(db, email="admin@example.com", password="password", is_admin=True)
+            db.commit()
+
+        client.post(
+            "/login",
+            data={"email": "admin@example.com", "password": "password"},
+            follow_redirects=False,
+        )
+
+        response = client.post(
+            "/admin/restore/validate",
+            files={"backup_file": ("not-a-backup.zip", b"plain text", "application/zip")},
+        )
+
+        assert response.status_code == 200
+        assert "Restore validation failed" in response.text
+        assert "Archive is not a valid ZIP file." in response.text
     finally:
         app.dependency_overrides.clear()
 

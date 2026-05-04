@@ -18,6 +18,8 @@ from tests.test_database_baseline import run_migrations
 def build_client(tmp_path: Path, monkeypatch) -> tuple[TestClient, sessionmaker[Session]]:
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr(settings, "database_url", database_url)
+    monkeypatch.setattr(settings, "local_storage_path", str(tmp_path / "artefacts"))
     run_migrations(database_url)
 
     engine = create_engine(database_url, connect_args={"check_same_thread": False})

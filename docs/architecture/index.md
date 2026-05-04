@@ -27,7 +27,11 @@ The application entrypoint is `app/main.py`. Route modules under `app/api/routes
 - Boundaries and dependency rules: `docs/architecture/boundaries.md`.
 - Decision records: `docs/architecture/decisions/`.
 - Document handling strategy: `docs/DOCUMENT_HANDLING_STRATEGY.md`,
-  `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`, and `docs/DOCUMENT_HANDLING_TASK_MAP.md`.
+  `docs/DOCUMENT_HANDLING_ARCHITECTURE.md`, `docs/DOCUMENT_HANDLING_TASK_MAP.md`, and
+  `docs/SEARCH_AND_RETRIEVAL_DECISION.md`, and `docs/EXPORT_STRATEGY.md`.
+- MCP planning and prerequisites: `docs/MCP_INTEGRATION_STRATEGY.md`,
+  `docs/MCP_ARCHITECTURE_PLAN.md`, `docs/MCP_SECURITY_MODEL.md`,
+  `docs/MCP_TOOL_CONTRACTS.md`, `docs/MCP_TASK_MAP.md`, and `docs/MCP_OAUTH_DCR_PLAN.md`.
 - Product vision and roadmap: `docs/PRODUCT_VISION.md`, `docs/roadmap/implementation-sequencing.md`, and `docs/roadmap/task-map.md`.
 - Product behavior contracts: `docs/product/product-brief.md`.
 - Quality gaps: `docs/quality/technical-debt.md`.

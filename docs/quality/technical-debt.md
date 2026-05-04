@@ -13,6 +13,7 @@ Track known gaps here so agents can improve the system incrementally.
 | TD-005 | Timezone rendering | Board follow-up timestamps still use server-rendered UTC/date handling. | Users can misread due/aging state across timezones. | Align board timestamps with browser-local rendering used in job detail journal. | Open |
 | TD-006 | Product/doc drift | Product planning previously lived across overlapping roadmap and product docs. | Future agent work can restart from the wrong document surface if historical docs are treated as current. | Three planning hubs now route current vision, execution order, and task detail; keep historical docs bannered and active plans clean. | Monitoring |
 | TD-007 | Codex overlay drift | `.codex/*` remains optional and ignored, so local overlays can diverge from the tracked repo-native harness. | Future contributors may rely on untracked local routing or prompts. | Keep `docs/agent/codex-routing.md` authoritative and document overlay limits. | Open |
+| TD-008 | UI/UX refinement drift | Broad UI polish issues can get rediscovered piecemeal while feature work lands elsewhere. | Rework accumulates and finished cleanup passes can regress quietly. | Treat cross-surface UI/UX polish as one canonical debt track, archive finished cleanup plans, and re-run browser/manual validation when layout changes land. | Open |
 
 ## Cleanup Rules
 

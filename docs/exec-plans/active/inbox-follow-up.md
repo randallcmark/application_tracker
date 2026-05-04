@@ -1,12 +1,12 @@
 # Execution Plan: Inbox Follow-On Work
 
-Status: Active
+Status: Deferred
 
 Owner: Agent
 
 Created: 2026-04-28
 
-Last Updated: 2026-05-01
+Last Updated: 2026-05-03
 
 ## Goal
 
@@ -52,6 +52,9 @@ Continue Inbox from the first capture/review slice into richer email review, pro
 - 2026-05-01: Added review-readiness checks to the Inbox review surface for missing company,
   location, source URL, description, and low/unknown confidence so partial candidates are cleaned
   up before acceptance.
+- 2026-05-03: Deferred further Inbox follow-on work. Current pasted-email review behavior is
+  sufficient for now, and board/provider-specific ingestion logic is intentionally left for a later
+  planning pass instead of continuing incremental implementation now.
 
 ## Decisions
 

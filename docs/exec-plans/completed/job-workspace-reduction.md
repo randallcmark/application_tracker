@@ -1,6 +1,6 @@
 # Execution Plan: Job Workspace Reduction
 
-Status: Active
+Status: Completed
 
 Owner: Agent
 
@@ -27,7 +27,7 @@ Reduce Job Workspace density so users can execute application work from one calm
 - `docs/roadmap/task-map.md`
 - `docs/design/DESIGN_SYSTEM.md`
 - `docs/product/user-journeys.md`
-- `docs/exec-plans/active/ui-density-layout-ai-cleanup.md`
+- `docs/exec-plans/completed/ui-density-layout-ai-cleanup.md`
 
 ## Acceptance Criteria
 
@@ -72,7 +72,7 @@ Reduce Job Workspace density so users can execute application work from one calm
   is removed from the primary reading area, and the help panel exposes real actions instead of
   pseudo-clickable guidance.
 - 2026-05-02: Split UI-017 into the dedicated active plan
-  `docs/exec-plans/active/job-detail-section-workbenches.md` so larger section redesign work does
+  `docs/exec-plans/completed/job-detail-section-workbenches.md` so larger section redesign work does
   not get folded into incremental pane polish.
 
 ## Decisions
